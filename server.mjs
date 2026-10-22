@@ -658,7 +658,10 @@ const server = createServer(async (req, res) => {
     /* Drop a brand-logo.png (black artwork on transparent) into the web folder to
        use your own mark; otherwise a neutral aperture is served. */
     if (path === '/favicon.ico' || path === '/brand/logo') {
-      const own = join(CFG.webDir, 'brand-logo.png');
+      /* an operator may supply brand-logo-dark.png (light artwork) for dark UIs */
+      const wantDark = url.searchParams.get('theme') === 'dark';
+      const darkFile = join(CFG.webDir, 'brand-logo-dark.png');
+      const own = (wantDark && existsSync(darkFile)) ? darkFile : join(CFG.webDir, 'brand-logo.png');
       if (existsSync(own)) {
         res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' });
         return res.end(await readFile(own));

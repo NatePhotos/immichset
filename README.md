@@ -57,6 +57,10 @@ Set `BRAND_NAME`, `BRAND_URL`, `BRAND_SOCIAL` and `BRAND_SOCIAL_LABEL`. For your
 **`web/brand-logo.png`** — black artwork on a transparent background. It is used as a mask, so it
 renders white over the cover photo and dark in the footer. Without one, a neutral aperture is used.
 
+It also becomes the favicon and iOS home-screen icon. Optionally add
+**`web/brand-logo-dark.png`** — the same mark in white — and browsers in dark mode will use it,
+so the icon stays visible on a dark tab strip.
+
 ### Email
 
 Verify your domain in Resend and add the DNS records it gives you, including DMARC. Mail sent from
