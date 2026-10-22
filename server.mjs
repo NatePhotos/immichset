@@ -877,6 +877,31 @@ async function serveStatic(res, file) {
   }
 }
 
+/* Pasted into a message, a bare link says nothing. These tags give it the cover,
+   the title and the date — the same things the gallery shows before its gate. */
+async function serveGalleryPage(res, gallery) {
+  let html;
+  try { html = await readFile(join(CFG.webDir, 'index.html'), 'utf8'); }
+  catch { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+  const base = CFG.publicUrl || '';
+  const date = prettyDate(gallery.subtitle);
+  const desc = date || (CFG.brandName ? `Photographs by ${CFG.brandName}` : 'A private gallery');
+  const slug = encodeURIComponent(gallery.slug);
+  const tags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:title" content="${esc(gallery.title)}">`,
+    `<meta property="og:description" content="${esc(desc)}">`,
+    `<meta property="og:site_name" content="${esc(CFG.brandName || gallery.title)}">`,
+    base ? `<meta property="og:image" content="${esc(base)}/api/g/${slug}/cover">` : '',
+    base ? `<meta property="og:url" content="${esc(base)}/${slug}">` : '',
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="description" content="${esc(desc)}">`,
+  ].filter(Boolean).join('\n');
+  html = html.replace('<title>Gallery</title>', `<title>${esc(gallery.title)}</title>\n${tags}`);
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(html);
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const path = url.pathname;
@@ -994,8 +1019,11 @@ const server = createServer(async (req, res) => {
     if (bare) {
       const slug = decodeURIComponent(bare[1]).toLowerCase();
       /* only serve the shell for a slug that exists, so a typo still gets a real 404 */
-      if (slugShape(slug) && slugFree(slug) && q.gallBySlug.get(slug))
-        return await serveStatic(res, 'index.html');
+      const g = slugShape(slug) && slugFree(slug) ? q.gallBySlug.get(slug) : null;
+      /* only a live gallery gets a preview card; a draft or an expired one stays plain */
+      if (g) return (g.published_at && !isExpired(g))
+        ? await serveGalleryPage(res, g)
+        : await serveStatic(res, 'index.html');
     }
 
     return await serveStatic(res, path.replace(/^\/+/, '') || 'index.html');
@@ -1135,7 +1163,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       return json(res, 404, { error: 'not_found' });
     }
     const size = url.searchParams.get('size') || 'thumbnail';
-    if (size === 'original') {
+    if (size === 'original' || size === 'web') {
       if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
       log(gallery, who.r, 'download', img[1], req);
     }
@@ -1177,11 +1205,14 @@ async function galleryRoutes(req, res, gallery, rest, url) {
 }
 
 async function proxyImage(req, res, assetId, size) {
-  const path = size === 'video'
+  /* `web` is the preview Immich already made: a few hundred KB instead of twenty
+     megabytes, which is what someone on a phone actually wants to keep */
+  const want = size === 'web' ? 'preview' : size;
+  const path = want === 'video'
     ? `/api/assets/${assetId}/video/playback`          /* the stream a browser can actually play */
-    : size === 'original'
+    : want === 'original'
       ? `/api/assets/${assetId}/original`
-      : `/api/assets/${assetId}/thumbnail?size=${encodeURIComponent(size)}`;
+      : `/api/assets/${assetId}/thumbnail?size=${encodeURIComponent(want)}`;
 
   /* Carry the browser's Range through. Without it a video comes back as one
      unseekable response that the player has to swallow whole before it starts —
@@ -1198,6 +1229,7 @@ async function proxyImage(req, res, assetId, size) {
   for (const h of ['content-disposition', 'content-length', 'content-range']) {
     const v = up.headers.get(h); if (v) headers[h] = v;
   }
+  if (size === 'web') headers['content-disposition'] = 'attachment';   /* a preview, offered as a file */
   res.writeHead(up.status, headers);
   if (req.method === 'HEAD') return res.end();
 

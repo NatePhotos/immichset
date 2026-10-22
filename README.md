@@ -18,8 +18,11 @@ everything client-facing — the gallery page, who may see it, and what they did
   one set never shows its name
 - **Any image as the cover** — upload one, or pick from the album
 - **Two independent gates per gallery** — ask for an email, require a password, both, or neither
-- **Downloads** — single photos at full resolution, or the whole gallery as a zip, with progress
-  and a working cancel
+- **Favourites** — clients pick their photos; you see each client's list, and they can download
+  just those
+- **Downloads** — web size or full resolution per photo, the set or the picks as a zip, with
+  progress and a working cancel
+- **Link previews** — a pasted gallery link shows its cover, title and date
 - **Save to Photos on iOS** — via the share sheet, not a file dumped into Downloads
 - **Activity** — who registered, who opened it, what was downloaded
 - **Email** — "your gallery is ready", plus expiry reminders you schedule per gallery
@@ -146,8 +149,6 @@ enable its scheduled backup too.
 
 ## Limitations
 
-- Client favourites are not implemented yet
-- Only full-resolution downloads; no "web size" option
 - No watermarking
 - One admin account
 - No tests
