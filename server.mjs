@@ -86,6 +86,18 @@ CREATE TABLE IF NOT EXISTS registrations (
   UNIQUE (gallery_id, email)
 );
 
+/* A client's picks. Tied to a registration, so a selection has a name on it —
+   an anonymous list of favourites tells a photographer nothing. */
+CREATE TABLE IF NOT EXISTS favourites (
+  id              INTEGER PRIMARY KEY,
+  gallery_id      INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
+  asset_id        TEXT NOT NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (registration_id, asset_id)
+);
+CREATE INDEX IF NOT EXISTS ix_fav ON favourites(gallery_id, registration_id);
+
 CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY,
   gallery_id  INTEGER REFERENCES galleries(id) ON DELETE CASCADE,
@@ -200,6 +212,15 @@ const q = {
                  require_email=?, allow_download=?, expires_at=?, published_at=? WHERE id=?`),
   gallPw:     db.prepare('UPDATE galleries SET password_hash=?, password_salt=? WHERE id=?'),
   coverClear: db.prepare('UPDATE galleries SET cover_asset_id = NULL WHERE cover_asset_id = ?'),
+  favMine:    db.prepare('SELECT asset_id FROM favourites WHERE registration_id = ? ORDER BY created_at'),
+  favAdd:     db.prepare('INSERT OR IGNORE INTO favourites (gallery_id,registration_id,asset_id) VALUES (?,?,?)'),
+  favDel:     db.prepare('DELETE FROM favourites WHERE registration_id = ? AND asset_id = ?'),
+  favCount:   db.prepare('SELECT COUNT(*) n FROM favourites WHERE registration_id = ?'),
+  favWho:     db.prepare(`SELECT r.id, r.email, r.name, COUNT(f.id) n, MAX(f.created_at) last
+                          FROM registrations r JOIN favourites f ON f.registration_id = r.id
+                          WHERE r.gallery_id = ? GROUP BY r.id ORDER BY n DESC, last DESC`),
+  favOf:      db.prepare('SELECT asset_id FROM favourites WHERE registration_id = ? ORDER BY created_at'),
+  favTotal:   db.prepare('SELECT COUNT(DISTINCT asset_id) n FROM favourites WHERE gallery_id = ?'),
   setsFor:    db.prepare('SELECT * FROM sets WHERE gallery_id = ? ORDER BY position, id'),
   setById:    db.prepare('SELECT * FROM sets WHERE id = ?'),
   setIns:     db.prepare('INSERT INTO sets (gallery_id,name,album_id,position) VALUES (?,?,?,?)'),
@@ -1090,6 +1111,23 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     return json(res, 200, { setId: set.id, assets: list });
   }
 
+  if (rest === '/favourites') {
+    if (req.method === 'GET')
+      return json(res, 200, { ids: who.r ? q.favMine.all(who.r).map(x => x.asset_id) : [], named: !!who.r });
+
+    if (req.method === 'POST') {
+      /* a pick needs a name against it, so an open gallery asks who is choosing */
+      if (!who.r) return json(res, 401, { error: 'who', gate: 'email' });
+      const b = await readJson(req);
+      const id = String(b.assetId || '');
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return json(res, 400, { error: 'bad_asset' });
+      if (!(await galleryHas(gallery, id))) return json(res, 404, { error: 'not_found' });
+      if (b.on === false) q.favDel.run(who.r, id);
+      else { q.favAdd.run(gallery.id, who.r, id); log(gallery, who.r, 'favourite', id, req); }
+      return json(res, 200, { on: b.on !== false, count: q.favCount.get(who.r).n });
+    }
+  }
+
   const img = rest.match(/^\/img\/([0-9a-f-]{36})$/i);
   if (img) {
     if (!(await galleryHas(gallery, img[1]))) {
@@ -1109,7 +1147,16 @@ async function galleryRoutes(req, res, gallery, rest, url) {
   if (rest === '/zip' && req.method === 'POST') {
     if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
     const only = setsOf(gallery).find(x => x.id === Number(url.searchParams.get('set') || 0));
-    const list = only ? await albumAssets(only.album_id) : await allAssets(gallery);
+    let list = only ? await albumAssets(only.album_id) : await allAssets(gallery);
+    if (url.searchParams.get('picks') === '1' && who.r) {
+      const mine = new Set(q.favMine.all(who.r).map(x => x.asset_id));
+      list = (await allAssets(gallery)).filter(a => mine.has(a.id));
+    } else if (url.searchParams.get('ids')) {
+      /* a hand-picked batch: only ids this gallery actually holds */
+      const want = new Set(String(url.searchParams.get('ids')).split(',').filter(x => /^[0-9a-f-]{36}$/i.test(x)));
+      list = (await allAssets(gallery)).filter(a => want.has(a.id));
+    }
+    if (!list.length) return json(res, 400, { error: 'nothing_selected' });
     log(gallery, who.r, 'download_all', null, req);
     const up = await immich('/api/download/archive', {
       method: 'POST',
@@ -1669,6 +1716,18 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { sent, copySentTo: copy, failed });
   }
 
+
+  /* who picked what */
+  const favM = path.match(/^\/api\/admin\/galleries\/(\d+)\/favourites$/);
+  if (favM) {
+    const g = q.gallById.get(Number(favM[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+    const people = q.favWho.all(g.id).map(r => ({
+      id: r.id, email: r.email, name: r.name, count: r.n, last: r.last,
+      ids: q.favOf.all(r.id).map(x => x.asset_id),
+    }));
+    return json(res, 200, { people, distinct: q.favTotal.get(g.id).n });
+  }
 
   const st = path.match(/^\/api\/admin\/galleries\/(\d+)\/stats$/);
   if (st) {

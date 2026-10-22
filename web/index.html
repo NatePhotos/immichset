@@ -61,6 +61,19 @@ button{font-family:inherit;cursor:pointer}
 .cover-inner{position:relative;text-align:center;padding:0 24px;opacity:0;transform:translateY(14px);transition:opacity .9s .25s ease,transform .9s .25s ease}
 #cover.ready .cover-inner{opacity:1;transform:none}
 .cover-inner h1{margin:0;font-size:clamp(30px,6.2vw,62px);font-weight:700;letter-spacing:.085em;text-transform:uppercase;line-height:1.08;text-shadow:0 2px 26px rgba(0,0,0,.3)}
+.heart{position:absolute;top:7px;right:7px;z-index:2;width:30px;height:30px;border:0;padding:0;border-radius:50%;
+  background:rgba(0,0,0,.3);color:rgba(255,255,255,.92);display:grid;place-items:center;cursor:pointer;
+  opacity:0;transition:opacity .18s,transform .14s}
+.heart svg{fill:none;stroke:currentColor;stroke-width:1.7}
+.cell:hover .heart,.heart.on{opacity:1}
+.heart.on{color:#fff}
+.heart.on svg{fill:currentColor}
+.heart:active{transform:scale(.88)}
+@media(hover:none){.heart{opacity:.85}}
+#lbFav.on svg{fill:currentColor}
+.hbtn.on{opacity:1}
+.hbtn.on svg{fill:currentColor}
+
 .cover-date[hidden]{display:none}
 .cover-date{margin-top:20px;font-size:clamp(10px,1.2vw,12px);letter-spacing:.3em;text-transform:uppercase;opacity:.95}
 .cover-cta{margin-top:40px;display:inline-block;padding:15px 44px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;font-size:11px;font-weight:500;letter-spacing:.26em;text-transform:uppercase;transition:background .3s,color .3s}
@@ -195,6 +208,7 @@ footer a:hover{color:var(--page-fg)}
     <div class="hwrap">
       <div class="htitle" id="hTitle"></div>
       <div class="hcount" id="hCount"></div>
+      <button class="hbtn" id="btnFav" aria-label="Favourites" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg><span>Favourites</span></button>
       <button class="hbtn" id="btnSlides" aria-label="Slideshow"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5z"/></svg><span>Slideshow</span></button>
       <button class="hbtn" id="btnAll" aria-label="Download all"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg><span>Download All</span></button>
     </div>
@@ -213,6 +227,9 @@ footer a:hover{color:var(--page-fg)}
 <div id="lb">
   <div class="bar">
     <div class="idx" id="lbIdx"></div>
+    <button class="ibtn" id="lbFav" title="Favourite" aria-label="Favourite">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg>
+    </button>
     <button class="ibtn" id="lbDl" title="Download" aria-label="Download">
       <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>
     </button>
@@ -247,6 +264,9 @@ footer a:hover{color:var(--page-fg)}
 
 var API = "/api";
 var BRAND = {};   /* filled from the gallery descriptor */
+var HEART = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
+  + '<path d="M12 20.3l-1.3-1.2C6.1 15 3.2 12.4 3.2 9.2 3.2 6.7 5.2 4.8 7.7 4.8c1.4 0 2.8.7 3.6 1.8l.7.9.7-.9'
+  + 'c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg>';
 var MARK = '<span class="mark" aria-hidden="true"></span>';
 
 /* ---------- helpers ---------- */
@@ -463,6 +483,53 @@ $("gateForm").addEventListener("submit", function(e){
 
 /* ---------- load ---------- */
 var curSet = null;
+var favs = {}, favNamed = false, favOnly = false;
+
+function loadFavs(then){
+  getJSON("/favourites").then(function(r){
+    favs = {}; favNamed = !!(r.body && r.body.named);
+    ((r.body && r.body.ids) || []).forEach(function(id){ favs[id] = true; });
+    if (then) then();
+  }).catch(function(){ if (then) then(); });
+}
+function favCount(){ return Object.keys(favs).filter(function(k){ return favs[k]; }).length; }
+
+/* The heart is the only thing that needs to know who you are. A gallery with no gate
+   asks here rather than at the door, so browsing stays open. */
+var favPending = null;
+function toggleFav(id, el){
+  var on = !favs[id];
+  postJSON("/favourites", {assetId:id, on:on}).then(function(r){
+    if (r.status === 401 && r.body && r.body.error === "who"){
+      favPending = id;
+      showGate("email");
+      $("gateSub").textContent = "Enter your email so your picks are saved against your name";
+      return;
+    }
+    if (!r.ok) return toast("Couldn't save that pick");
+    favs[id] = on;
+    paintFavUi();
+    if (favOnly && !on) render();
+  }).catch(function(){ toast("Couldn't save that pick"); });
+}
+function paintHearts(){
+  Array.prototype.forEach.call(document.querySelectorAll(".cell .heart"), function(h){
+    h.classList.toggle("on", !!favs[h.dataset.id]);
+  });
+}
+function paintFavUi(){
+  paintHearts();
+  var n = favCount();
+  var b = $("btnFav");
+  if (b){
+    b.hidden = n === 0 && !favOnly;
+    b.classList.toggle("on", favOnly);
+    var lab = b.querySelector("span");
+    if (lab) lab.textContent = favOnly ? "All Photos" : ("Favourites \u00b7 " + n);
+  }
+  var h = $("lbFav");
+  if (h && view[cur]) h.classList.toggle("on", !!favs[view[cur].id]);
+}
 
 /* A gallery may be delivered in named parts. One part needs no name - it is just
    "the photos" - so the row only appears when there is a choice to make. */
@@ -489,7 +556,11 @@ function loadGallery(setId){
     if (!r.ok) return fail("Couldn't load photos","Something went wrong loading this gallery. Please try again shortly.");
     assets = (r.body && r.body.assets) || [];
     curSet = (r.body && r.body.setId) || null;
-    render();
+    loadFavs(function(){
+      render();
+      paintFavUi();
+      if (favPending){ var id = favPending; favPending = null; toggleFav(id, null); }
+    });
     drawSets();
     if (setId) window.scrollTo({ top: $("hdr").offsetTop, behavior: "smooth" });
   }).catch(function(){ fail("Couldn't load photos","Something went wrong loading this gallery. Please try again shortly."); });
@@ -497,6 +568,11 @@ function loadGallery(setId){
 
 /* ---------- render ---------- */
 
+var view = [];                      /* what is on screen: all photos, or only the picks */
+function shown(){
+  view = favOnly ? assets.filter(function(a){ return favs[a.id]; }) : assets.slice();
+  return view;
+}
 function render(){
   var title = album.albumName || "Gallery";
   document.title = title;
@@ -520,7 +596,7 @@ function render(){
   $("coverDate").textContent = desc;
   $("coverDate").hidden = !desc;
 
-  var n = assets.length;
+  var n = shown().length;
   $("hCount").textContent = n + (n===1 ? " Photo" : " Photos");
 
   var coverSrc = (link && link.cover) || (assets[0] ? imgUrl(assets[0].id, "preview") : null);
@@ -588,8 +664,10 @@ function layout(){
   var host = $("grid");
   pending = [];
   host.innerHTML = "";
-  if (!assets.length){
-    host.innerHTML = '<div class="msg" style="margin:90px auto"><h2>No photos yet</h2><p>This gallery is empty right now.</p></div>';
+  if (!shown().length){
+    host.innerHTML = favOnly
+      ? '<div class="msg" style="margin:90px auto"><h2>No favourites yet</h2><p>Tap the heart on a photo to build your list.</p></div>'
+      : '<div class="msg" style="margin:90px auto"><h2>No photos yet</h2><p>This gallery is empty right now.</p></div>';
     return;
   }
   var gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--gap")) || 10;
@@ -622,6 +700,13 @@ function layout(){
         var v = document.createElement("div"); v.className="vid";
         v.innerHTML = '<span>&#9654;</span>'; c.appendChild(v);
       }
+      var hb = document.createElement("button");
+      hb.dataset.id = a.id;
+      hb.className = "heart" + (favs[a.id] ? " on" : "");
+      hb.setAttribute("aria-label", "Favourite");
+      hb.innerHTML = HEART;
+      hb.addEventListener("click", function(ev){ ev.stopPropagation(); toggleFav(a.id, hb); });
+      c.appendChild(hb);
       c.addEventListener("click", function(){ open(Number(c.dataset.idx)); });
       el.appendChild(c);
     });
@@ -629,7 +714,7 @@ function layout(){
     row = []; sum = 0;
   }
 
-  assets.forEach(function(a,i){
+  view.forEach(function(a,i){
     a._i = i;
     row.push(a); sum += a.ratio;
     if (sum * target >= W) flush(false);
@@ -675,9 +760,10 @@ function close(){
   unlockScroll();
 }
 function show(){
-  var a = assets[cur]; if (!a) return;
+  var a = view[cur]; if (!a) return;
   lbZoomReset(false);
-  $("lbIdx").textContent = (cur+1) + " / " + assets.length;
+  $("lbIdx").textContent = (cur+1) + " / " + view.length;
+  $("lbFav").classList.toggle("on", !!favs[a.id]);
   var st = $("lbStage"); st.innerHTML = "";
   if (a.isImage){
     var im = document.createElement("img");
@@ -688,7 +774,7 @@ function show(){
     hi.src = imgUrl(a.id, "preview");
     // preload neighbours so arrowing through feels instant
     [cur+1, cur-1].forEach(function(j){
-      var b = assets[(j + assets.length) % assets.length];
+      var b = view[(j + view.length) % view.length];
       if (b && b.isImage) { var pf = new Image(); pf.src = imgUrl(b.id, "preview"); }
     });
   } else {
@@ -701,9 +787,12 @@ function show(){
     st.appendChild(v);
   }
 }
-function step(d){ cur = (cur + d + assets.length) % assets.length; show(); }
+function step(d){ if (!view.length) return; cur = (cur + d + view.length) % view.length; show(); }
 $("lbPrev").addEventListener("click", function(){ step(-1); });
 $("lbNext").addEventListener("click", function(){ step(1); });
+$("lbFav").addEventListener("click", function(){
+  var a = view[cur]; if (a) toggleFav(a.id, null);
+});
 $("lbClose").addEventListener("click", close);
 $("lb").addEventListener("click", function(e){
   if (window.lbZoomed && window.lbZoomed()) return;      /* a pan should not dismiss the photo */
@@ -846,6 +935,10 @@ function startSlides(){
   toast("Slideshow started");
 }
 function stopSlides(){ if (slideTimer){ clearInterval(slideTimer); slideTimer=null; } }
+$("btnFav").addEventListener("click", function(){
+  if (!favOnly && !favCount()) return toast("Tap the heart on a photo to start a list");
+  favOnly = !favOnly; render(); paintFavUi();
+});
 $("btnSlides").addEventListener("click", startSlides);
 
 /* ---------- downloads ---------- */
@@ -865,7 +958,7 @@ function saveBlob(b, name){
   setTimeout(function(){ URL.revokeObjectURL(u); }, 5000);
 }
 function dlOne(){
-  var a = assets[cur]; if (!a) return;
+  var a = view[cur]; if (!a) return;
   progOpen("Preparing your photo", "Full-size photos can take a moment on a mobile connection.",
            function(){ if (dlAbort) dlAbort.abort(); });
   fetchProgress(imgUrl(a.id, "original"), {}, progSet).then(function(o){
@@ -883,7 +976,7 @@ $("mDl").addEventListener("click", dlOne);
 
 /* mobile: Web Share API -> iOS share sheet -> Save Image */
 function shareOne(){
-  var a = assets[cur]; if (!a) return;
+  var a = view[cur]; if (!a) return;
   var cached = shareCache[a.id];
   if (cached && navigator.canShare && navigator.canShare({files:[cached]})) {
     navigator.share({files:[cached]}).catch(function(e){
@@ -917,12 +1010,14 @@ $("mSave").addEventListener("click", shareOne);
 
 /* whole gallery as a zip */
 $("btnAll").addEventListener("click", function(){
-  if (!assets.length || $("btnAll").hasAttribute("disabled")) return;
-  var ids = assets.map(function(a){ return a.id; });
-  /* with more than one part on offer, "download all" means the part being viewed */
+  if (!view.length || $("btnAll").hasAttribute("disabled")) return;
+  var ids = view.map(function(a){ return a.id; });
+  /* with more than one part on offer, "download all" means the part being viewed;
+     while the list is filtered to favourites, it means those */
   var sets = (link && link.sets) || [];
   var here = sets.filter(function(x){ return x.id === curSet; })[0];
-  var zipName = ((album.albumName || "gallery") + (sets.length > 1 && here ? " - " + here.name : ""))
+  var zipName = ((album.albumName || "gallery")
+                  + (favOnly ? " - Favourites" : (sets.length > 1 && here ? " - " + here.name : "")))
                   .replace(/[^\w\- ]+/g, "") + ".zip";
 
   progOpen("Preparing your download",
@@ -930,7 +1025,8 @@ $("btnAll").addEventListener("click", function(){
            function(){ if (dlAbort) dlAbort.abort(); });
 
   /* ask Immich how big it will be, so the bar is meaningful */
-  fetchProgress(BASE + "/zip" + (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : ""),
+  fetchProgress(BASE + "/zip" + (favOnly ? "?picks=1"
+                  : (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : "")),
                 {method:"POST"}, progSet)
    .then(function(o){
      progClose();
