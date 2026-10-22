@@ -577,6 +577,21 @@ function loadGallery(setId){
 /* ---------- render ---------- */
 
 var view = [];                      /* what is on screen: all photos, or only the picks */
+/* `cover` sizing leaves no slack when the photo and the screen are the same shape,
+   and with no slack the focal point has nothing to move. Hold it a little larger
+   than it needs to be so there is always somewhere to go. */
+var COVER_ZOOM = 1.12, coverNat = null;
+function fitCover(){
+  var bg = document.getElementById("coverBg"), host = document.getElementById("cover");
+  if (!bg || !host || !coverNat || !coverNat.w || !coverNat.h) return;
+  var cw = host.clientWidth, ch = host.clientHeight;
+  if (!cw || !ch) return;
+  var k = Math.max(cw / coverNat.w, ch / coverNat.h) * COVER_ZOOM;
+  bg.style.backgroundSize = Math.ceil(coverNat.w * k) + "px " + Math.ceil(coverNat.h * k) + "px";
+}
+window.addEventListener("resize", fitCover);
+window.addEventListener("orientationchange", function(){ setTimeout(fitCover, 250); });
+
 function shown(){
   view = favOnly ? assets.filter(function(a){ return favs[a.id]; }) : assets.slice();
   return view;
@@ -610,22 +625,27 @@ function render(){
   var coverSrc = (link && link.cover) || (assets[0] ? imgUrl(assets[0].id, "preview") : null);
   var coverLow = link && link.coverSmall;
   if (coverSrc){
+    /* where to hold the crop when the cover does not match the shape of the screen */
+    $("coverBg").style.backgroundPosition = ((link && link.coverFocus) || "50 50").replace(" ", "% ") + "%";
+
     /* the small one is a fifth of the bytes: show it the moment it lands, then let the
        full one replace it. The swap is invisible; the wait was not. */
     var full = new Image();
     full.onload = function(){
+      coverNat = { w: full.naturalWidth, h: full.naturalHeight };
       $("coverBg").style.backgroundImage = 'url("' + coverSrc + '")';
+      fitCover();
       $("cover").classList.add("ready");
     };
     full.onerror = function(){ $("cover").classList.add("ready"); };
-    /* where to hold the crop when the cover is taller or wider than the screen */
-    $("coverBg").style.backgroundPosition = ((link && link.coverFocus) || "50 50").replace(" ", "% ") + "%";
 
     if (coverLow){
       var low = new Image();
       low.onload = function(){
         if (!$("cover").classList.contains("ready")){
+          coverNat = { w: low.naturalWidth, h: low.naturalHeight };
           $("coverBg").style.backgroundImage = 'url("' + coverLow + '")';
+          fitCover();
           $("cover").classList.add("ready");
         }
       };

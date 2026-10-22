@@ -713,13 +713,22 @@ function paneCover(g){
   });
   $("saveCov").onclick = function(){ save({coverAssetId:cover}, "Cover updated").then(function(ok){ if(ok) renderShell(); }); };
 
-  /* the two frames show the same crop the client will get, live while dragging */
+  /* The two frames show the same crop the client will get, live while dragging —
+     including the slight zoom the gallery holds, or a photo the same shape as the
+     screen would sit there refusing to move. */
+  var COVER_ZOOM = 1.12;
   function paintFocus(){
     var url = coverOf(g);
+    var src = $("focPick") ? $("focPick").querySelector("img") : null;
+    var nw = src && src.naturalWidth, nh = src && src.naturalHeight;
     ["focWide","focTall"].forEach(function(id){
       var el = $(id); if (!el) return;
       el.style.backgroundImage = 'url("' + url + '")';
       el.style.backgroundPosition = focus[0] + "% " + focus[1] + "%";
+      if (nw && nh){
+        var k = Math.max(el.clientWidth / nw, el.clientHeight / nh) * COVER_ZOOM;
+        el.style.backgroundSize = Math.ceil(nw * k) + "px " + Math.ceil(nh * k) + "px";
+      }
     });
     if ($("focDot")){ $("focDot").style.left = focus[0] + "%"; $("focDot").style.top = focus[1] + "%"; }
   }
@@ -738,6 +747,8 @@ function paneCover(g){
     window.addEventListener("mouseup", function(){ dragging = false; });
     pick.addEventListener("touchstart", function(ev){ at(ev); ev.preventDefault(); }, {passive:false});
     pick.addEventListener("touchmove", function(ev){ at(ev); ev.preventDefault(); }, {passive:false});
+    var im = pick.querySelector("img");
+    if (im){ if (im.complete) paintFocus(); im.addEventListener("load", paintFocus); }
     paintFocus();
   })();
   $("saveFoc").onclick = function(){
