@@ -64,6 +64,18 @@ CREATE TABLE IF NOT EXISTS galleries (
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+/* A gallery delivers one or more named sets - Ceremony, Dancing - each backed by its own
+   Immich album. A gallery with a single set never shows its name to the client. */
+CREATE TABLE IF NOT EXISTS sets (
+  id          INTEGER PRIMARY KEY,
+  gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  album_id    TEXT NOT NULL,
+  position    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_sets ON sets(gallery_id, position);
+
 CREATE TABLE IF NOT EXISTS registrations (
   id          INTEGER PRIMARY KEY,
   gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
@@ -153,6 +165,16 @@ for (const [table, col, decl] of [['galleries', 'cover_file', 'TEXT']]) {
   if (!has) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); console.log(`migrated: ${table}.${col}`); }
 }
 
+/* Galleries predate sets: give each one a set holding the album it already pointed at. */
+{
+  const need = db.prepare(
+    'SELECT g.id, g.album_id FROM galleries g LEFT JOIN sets s ON s.gallery_id = g.id WHERE s.id IS NULL').all();
+  for (const g of need) {
+    db.prepare('INSERT INTO sets (gallery_id,name,album_id,position) VALUES (?,?,?,0)').run(g.id, 'Photos', g.album_id);
+    console.log(`migrated: gallery ${g.id} now has one set`);
+  }
+}
+
 /* a cover that is not one of the album's photos lives here, beside the database,
    so it is never part of the gallery and never lands in the Immich library */
 const COVERS_DIR = join(CFG.dataDir, 'covers');
@@ -177,6 +199,13 @@ const q = {
                  require_email=?, allow_download=?, expires_at=?, published_at=? WHERE id=?`),
   gallPw:     db.prepare('UPDATE galleries SET password_hash=?, password_salt=? WHERE id=?'),
   coverClear: db.prepare('UPDATE galleries SET cover_asset_id = NULL WHERE cover_asset_id = ?'),
+  setsFor:    db.prepare('SELECT * FROM sets WHERE gallery_id = ? ORDER BY position, id'),
+  setById:    db.prepare('SELECT * FROM sets WHERE id = ?'),
+  setIns:     db.prepare('INSERT INTO sets (gallery_id,name,album_id,position) VALUES (?,?,?,?)'),
+  setName:    db.prepare('UPDATE sets SET name = ? WHERE id = ?'),
+  setPos:     db.prepare('UPDATE sets SET position = ? WHERE id = ?'),
+  setDel:     db.prepare('DELETE FROM sets WHERE id = ?'),
+  setMax:     db.prepare('SELECT COALESCE(MAX(position), -1) n FROM sets WHERE gallery_id = ?'),
   coverFile:  db.prepare('UPDATE galleries SET cover_file = ? WHERE id = ?'),
   regCount:   db.prepare('SELECT COUNT(*) n FROM registrations WHERE gallery_id = ?'),
   evCount1:   db.prepare('SELECT COUNT(*) n FROM events WHERE gallery_id = ? AND type = ?'),
@@ -675,6 +704,32 @@ async function albumHas(albumId, assetId) {
   return false;
 }
 
+const setsOf = g => q.setsFor.all(g.id);
+
+/* A photo may be served only if it is in one of this gallery's sets, never because
+   it happens to live somewhere else in the library. */
+async function galleryHas(g, assetId) {
+  for (const st of setsOf(g)) if (await albumHas(st.album_id, assetId)) return true;
+  return false;
+}
+async function firstAsset(g) {
+  for (const st of setsOf(g)) {
+    try {
+      const l = await albumAssets(st.album_id);
+      const a = l.find(x => x.isImage) || l[0];
+      if (a) return a.id;
+    } catch (e) { console.error('set listing failed', st.id, e.message); }
+  }
+  return null;
+}
+async function allAssets(g) {
+  const out = [];
+  for (const st of setsOf(g)) {
+    try { out.push(...await albumAssets(st.album_id)); } catch (e) { console.error('set listing failed', st.id, e.message); }
+  }
+  return out;
+}
+
 async function albumAssets(albumId) {
   const buckets = await immichJson(`/api/timeline/buckets?albumId=${encodeURIComponent(albumId)}`);
   const out = [];
@@ -885,6 +940,8 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       cover: `/api/g/${gallery.slug}/cover`,
       allowDownload: !!gallery.allow_download,
       expiresAt: gallery.expires_at,
+      /* the client shows these as tabs only when there is more than one */
+      sets: setsOf(gallery).map(x => ({ id: x.id, name: x.name })),
       gate,
       unlocked: !gate,
       brand: {
@@ -907,11 +964,9 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       return res.end(req.method === 'HEAD' ? undefined : buf);
     }
     let id = gallery.cover_asset_id;
-    if (id && !(await albumHas(gallery.album_id, id))) id = null;   /* never serve outside the album */
-    if (!id) {
-      /* a video's thumbnail works as a cover too, so fall back to whatever is first */
-      try { const l = await albumAssets(gallery.album_id); id = (l.find(a => a.isImage) || l[0])?.id; } catch {}
-    }
+    if (id && !(await galleryHas(gallery, id))) id = null;   /* never serve something outside the gallery */
+    /* a video's thumbnail works as a cover too, so fall back to whatever comes first */
+    if (!id) id = await firstAsset(gallery);
     if (!id) { res.writeHead(404); return res.end(); }
     return proxyImage(req, res, id, 'preview');
   }
@@ -966,14 +1021,18 @@ async function galleryRoutes(req, res, gallery, rest, url) {
   if (!who) return json(res, 401, { error: 'gate', gate: gateFor(gallery, null) });
 
   if (rest === '/assets') {
-    const list = await albumAssets(gallery.album_id);
+    const sets = setsOf(gallery);
+    if (!sets.length) return json(res, 200, { setId: null, assets: [] });
+    const asked = Number(url.searchParams.get('set') || 0);
+    const set = sets.find(x => x.id === asked) || sets[0];
+    const list = await albumAssets(set.album_id);
     log(gallery, who.r, 'view', null, req);
-    return json(res, 200, { assets: list });
+    return json(res, 200, { setId: set.id, assets: list });
   }
 
   const img = rest.match(/^\/img\/([0-9a-f-]{36})$/i);
   if (img) {
-    if (!(await albumHas(gallery.album_id, img[1]))) {
+    if (!(await galleryHas(gallery, img[1]))) {
       log(gallery, who.r, 'asset_denied', img[1], req);
       return json(res, 404, { error: 'not_found' });
     }
@@ -989,7 +1048,8 @@ async function galleryRoutes(req, res, gallery, rest, url) {
 
   if (rest === '/zip' && req.method === 'POST') {
     if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
-    const list = await albumAssets(gallery.album_id);
+    const only = setsOf(gallery).find(x => x.id === Number(url.searchParams.get('set') || 0));
+    const list = only ? await albumAssets(only.album_id) : await allAssets(gallery);
     log(gallery, who.r, 'download_all', null, req);
     const up = await immich('/api/download/archive', {
       method: 'POST',
@@ -1047,10 +1107,21 @@ async function proxyImage(req, res, assetId, size) {
   if (!res.destroyed) res.end();
 }
 
+async function setsDto(g) {
+  const out = [];
+  for (const st of q.setsFor.all(g.id)) {
+    let n = 0;
+    try { n = (await albumAssets(st.album_id)).length; } catch {}
+    out.push({ id: st.id, name: st.name, albumId: st.album_id, count: n });
+  }
+  return out;
+}
+
 function gallDto(g) {
   return {
     id: g.id, slug: g.slug, title: g.title, subtitle: g.subtitle,
     albumId: g.album_id, coverAssetId: g.cover_asset_id, coverFile: g.cover_file || null,
+    sets: q.setsFor.all(g.id).map(x => ({ id: x.id, name: x.name, albumId: x.album_id })),
     requireEmail: !!g.require_email, hasPassword: !!g.password_hash,
     allowDownload: !!g.allow_download, expiresAt: g.expires_at,
     publishedAt: g.published_at, expired: isExpired(g),
@@ -1065,6 +1136,76 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
                             caps: await writeCaps() });
+
+  /* sets: the named parts of a gallery, each one an Immich album */
+  const setsM = path.match(/^\/api\/admin\/galleries\/(\d+)\/sets$/);
+  if (setsM) {
+    const g = q.gallById.get(Number(setsM[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+
+    if (req.method === 'GET') return json(res, 200, { sets: await setsDto(g) });
+
+    if (req.method === 'POST') {
+      const b = await readJson(req);
+      const name = String(b.name || '').trim().slice(0, 60);
+      if (!name) return json(res, 400, { error: 'Give the set a name' });
+      let albumId = String(b.albumId || '');
+      if (!albumId) {
+        /* no album chosen: make one, named so it is recognisable in Immich itself */
+        if (!canUpload()) return json(res, 400, { error: 'no_write_key' });
+        const r = await immich('/api/albums', {
+          write: true, method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ albumName: `${g.title} \u00b7 ${name}` }),
+        });
+        if (!r.ok) return json(res, 502, { error: `Immich refused the album (${r.status})` });
+        albumId = (await r.json()).id;
+      }
+      if (!/^[0-9a-f-]{36}$/i.test(albumId)) return json(res, 400, { error: 'bad album' });
+      q.setIns.run(g.id, name, albumId, q.setMax.get(g.id).n + 1);
+      console.log(`set "${name}" added to ${g.slug}`);
+      return json(res, 201, { sets: await setsDto(g) });
+    }
+  }
+
+  const setM = path.match(/^\/api\/admin\/galleries\/(\d+)\/sets\/(\d+)$/);
+  if (setM) {
+    const g = q.gallById.get(Number(setM[1]));
+    const st = q.setById.get(Number(setM[2]));
+    if (!g || !st || st.gallery_id !== g.id) return json(res, 404, { error: 'not_found' });
+    const all = q.setsFor.all(g.id);
+
+    if (req.method === 'PATCH') {
+      const b = await readJson(req);
+      if (b.name !== undefined) {
+        const name = String(b.name).trim().slice(0, 60);
+        if (!name) return json(res, 400, { error: 'Give the set a name' });
+        q.setName.run(name, st.id);
+      }
+      if (b.move === 'up' || b.move === 'down') {
+        const i = all.findIndex(x => x.id === st.id);
+        const j = b.move === 'up' ? i - 1 : i + 1;
+        if (j >= 0 && j < all.length) {
+          /* positions can be equal or stale, so renumber the whole gallery as we swap */
+          const order = all.slice();
+          order[i] = all[j]; order[j] = all[i];
+          order.forEach((x, k) => q.setPos.run(k, x.id));
+        }
+      }
+      return json(res, 200, { sets: await setsDto(g) });
+    }
+
+    if (req.method === 'DELETE') {
+      if (all.length < 2) return json(res, 400, { error: 'A gallery needs at least one set' });
+      q.setDel.run(st.id);
+      q.setsFor.all(g.id).forEach((x, k) => q.setPos.run(k, x.id));
+      /* the cover may have been one of its photos */
+      if (g.cover_asset_id && !(await galleryHas(q.gallById.get(g.id), g.cover_asset_id)))
+        q.coverClear.run(g.cover_asset_id);
+      console.log(`set "${st.name}" removed from ${g.slug} (its Immich album is untouched)`);
+      return json(res, 200, { sets: await setsDto(q.gallById.get(g.id)) });
+    }
+  }
 
   /* a cover of your own: stored beside the database, never added to the album
      and never pushed into the Immich library */
@@ -1259,6 +1400,7 @@ async function adminRoutes(req, res, path, url) {
         b.publish === false ? null : new Date().toISOString());
     } catch (e) { return json(res, 409, { error: 'That web address is already taken' }); }
     const created = q.gallBySlug.get(String(b.slug).toLowerCase());
+    q.setIns.run(created.id, String(b.setName || 'Photos').trim().slice(0, 60) || 'Photos', String(b.albumId), 0);
     applyDefaultReminders(created.id);
     return json(res, 201, gallDto(created));
   }

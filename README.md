@@ -14,6 +14,8 @@ everything client-facing — the gallery page, who may see it, and what they did
 ## What it does
 
 - **Branded gallery pages** — full-bleed cover, justified grid, fullscreen lightbox, slideshow
+- **Sets** — deliver a gallery in named parts (Ceremony, Dancing), reorderable; a gallery with
+  one set never shows its name
 - **Any image as the cover** — upload one, or pick from the album
 - **Two independent gates per gallery** — ask for an email, require a password, both, or neither
 - **Downloads** — single photos at full resolution, or the whole gallery as a zip, with progress
@@ -36,13 +38,17 @@ client ──▶ immichset ──▶ sessions, registrations, events, email   (S
                       ──▶ Immich, with a read-only key the client never sees
 ```
 
+A gallery is made of **sets** — named parts, each backed by its own Immich album. One set is the
+normal case and the client just sees the photos; add a second and a row of names appears for them
+to switch between, with Download All following whichever is open.
+
 A gallery lives at `https://your-domain/<slug>`. The older `/g/<slug>` form redirects there, so
 links already sent out keep working, and slugs that would collide with the app's own paths
 (`admin`, `api`, `healthz`, …) are refused.
 
-Galleries point at an Immich album. Add or remove photos in Immich and the gallery follows —
-or, with a write key set, drop them straight into the admin panel and immichset creates the
-album and uploads for you.
+Each set points at an Immich album. Add or remove photos in Immich and the set follows — or, with
+a write key set, drop them straight onto the set in the admin panel and immichset creates the album
+and uploads for you.
 
 ## Requirements
 

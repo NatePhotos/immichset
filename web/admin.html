@@ -69,6 +69,27 @@ a{color:inherit}
 .navitem .tag{margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   padding:3px 7px;border-radius:999px;background:var(--line);color:var(--muted)}
 .navitem.on .tag,.navitem .tag.on{background:var(--ok);color:#fff}
+/* ---------- sets in the side rail ---------- */
+.navset{display:flex;align-items:center}
+.navset .navitem{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.navset .sdots{border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;
+  padding:10px 14px 10px 4px;opacity:0}
+.navset:hover .sdots,.navset.on .sdots{opacity:1}
+.navset .sdots:hover{color:var(--fg)}
+.navset.on{background:var(--soft)}
+.addset{display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;color:var(--muted);
+  padding:12px 18px;font:inherit;font-size:12px;letter-spacing:.04em}
+.addset:hover{color:var(--fg);background:var(--soft)}
+
+/* ---------- a set's own screen ---------- */
+.sethead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin:0 0 18px}
+.sethead h2{margin:0 0 2px}
+.sethead .lede{margin:0}
+.setacts{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.setacts .btn.ghost{padding:8px 11px}
+.dropzone{min-height:120px;transition:background .15s,outline-color .15s;outline:2px dashed transparent;outline-offset:6px}
+.dropzone.over{outline-color:var(--fg);background:var(--soft)}
+
 .main{padding:28px 30px 90px;min-width:0}
 .main h2{margin:0 0 4px;font-size:17px;font-weight:600;letter-spacing:.02em}
 .main .lede{color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 24px}
@@ -80,6 +101,12 @@ a{color:inherit}
   .navhead{display:none}
   .navitem{width:auto;white-space:nowrap;padding:9px 14px;border:1px solid var(--line);font-size:12px}
   .navitem.on{border-color:var(--fg)}
+  .navset{flex:0 0 auto;border:1px solid var(--line)}
+  .navset.on{border-color:var(--fg)}
+  .navset .navitem{border:0}
+  .navset .sdots{opacity:1;padding:9px 10px 9px 0}
+  .addset{width:auto;white-space:nowrap;padding:9px 14px;border:1px dashed var(--line)}
+  .sethead{flex-wrap:wrap}
   .main{padding:22px 16px 90px}
 }
 @media(min-width:861px){.navrow{display:block}}
@@ -314,7 +341,9 @@ function coverOf(g){
   /* an uploaded cover wins, same as it does for clients; the filename busts the cache */
   if (g.coverFile) return "/api/g/" + encodeURIComponent(g.slug) + "/cover?v=" + encodeURIComponent(g.coverFile);
   if (g.coverAssetId) return imgSrc(g.coverAssetId,"preview");
-  var a = S.albums.filter(function(x){return x.id===g.albumId;})[0];
+  /* no cover chosen: borrow the first set's album thumbnail */
+  var first = (g.sets && g.sets[0]) ? g.sets[0].albumId : g.albumId;
+  var a = S.albums.filter(function(x){return x.id===first;})[0];
   return (a && a.thumb) ? imgSrc(a.thumb,"preview") : "";
 }
 function galleryUrl(g){ return (S.publicUrl || location.origin) + "/" + g.slug; }
@@ -440,27 +469,35 @@ function listView(){
   }
   $("root").innerHTML = h + '</div>';
   Array.prototype.forEach.call(document.querySelectorAll(".card"), function(c){
-    c.onclick = function(){ openGallery(Number(c.dataset.id), "settings", "general"); };
+    c.onclick = function(){ openGallery(Number(c.dataset.id)); };   /* photos first, like Pixieset */
   });
 }
 $("newBtn").addEventListener("click", function(){ editorView(null); });
 
 /* ---------- gallery detail shell ---------- */
 var NAV = {
+  photos:   { icon:"image", label:"Photos", sets:true },
   settings: { icon:"gear",  label:"Settings",
     panes:[["general","General"],["access","Access"],["cover","Cover photo"],["danger","Delete"]] },
-  photos:   { icon:"image", label:"Photos",
-    panes:[["upload","Add photos"],["browse","In this album"]] },
   email:    { icon:"mail",  label:"Email",
     panes:[["clients","Clients"],["compose","Compose"],["templates","Templates"],["reminders","Expiry reminders"]] },
   activity: { icon:"chart", label:"Activity",
     panes:[["overview","Overview"],["people","Who registered"],["log","Recent activity"],["mail","Emails sent"]] }
 };
 
+/* the sets stand in for fixed panes on the photos tab */
+function panesOf(tab){
+  if (!NAV[tab].sets) return NAV[tab].panes;
+  return ((S.g && S.g.sets) || []).map(function(x){ return ["set:" + x.id, x.name]; });
+}
+function firstPane(tab){
+  var p = panesOf(tab);
+  return p.length ? p[0][0] : null;
+}
 function openGallery(id, tab, pane){
   var g = S.galleries.filter(function(x){return x.id===id;})[0];
   if (!g) return listView();
-  S.g = g; S.tab = tab || "settings"; S.pane = pane || NAV[S.tab].panes[0][0];
+  S.g = g; S.tab = tab || "photos"; S.pane = pane || firstPane(S.tab);
   chrome({title:g.title, sub:g.subtitle || galleryUrl(g).replace(/^https?:\/\//,""), back:listView, gallery:g});
   renderShell();
 }
@@ -469,9 +506,15 @@ function renderShell(){
   var tabs = Object.keys(NAV).map(function(k){
     return '<button data-tab="'+k+'" class="'+(k===S.tab?"on":"")+'" aria-label="'+NAV[k].label+'">'+I[NAV[k].icon]+'</button>';
   }).join("");
-  var items = NAV[S.tab].panes.map(function(p){
-    return '<button class="navitem '+(p[0]===S.pane?"on":"")+'" data-pane="'+p[0]+'">'+esc(p[1])+'</button>';
+  var sets = NAV[S.tab].sets;
+  var items = panesOf(S.tab).map(function(p){
+    if (!sets) return '<button class="navitem '+(p[0]===S.pane?"on":"")+'" data-pane="'+p[0]+'">'+esc(p[1])+'</button>';
+    var st = (g.sets||[]).filter(function(x){ return "set:"+x.id===p[0]; })[0] || {};
+    return '<div class="navset'+(p[0]===S.pane?" on":"")+'">'
+         + '<button class="navitem'+(p[0]===S.pane?" on":"")+'" data-pane="'+p[0]+'">'+esc(p[1])+'</button>'
+         + '<button class="sdots" data-set="'+st.id+'" title="Set options">\u22ee</button></div>';
   }).join("");
+  if (sets) items += '<button class="addset" id="addSet">+ Add set</button>';
   $("root").innerHTML =
       '<div class="detail">'
     +   '<div class="side">'
@@ -483,11 +526,15 @@ function renderShell(){
     +   '<div class="main" id="pane"><div class="spin"></div></div>'
     + '</div>';
   Array.prototype.forEach.call(document.querySelectorAll(".tabs button"), function(b){
-    b.onclick = function(){ S.tab = b.dataset.tab; S.pane = NAV[S.tab].panes[0][0]; renderShell(); };
+    b.onclick = function(){ S.tab = b.dataset.tab; S.pane = firstPane(S.tab); renderShell(); };
   });
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"), function(b){
     b.onclick = function(){ S.pane = b.dataset.pane; renderShell(); };
   });
+  Array.prototype.forEach.call(document.querySelectorAll(".sdots"), function(b){
+    b.onclick = function(ev){ ev.stopPropagation(); setMenu(b, Number(b.dataset.set)); };
+  });
+  if ($("addSet")) $("addSet").onclick = addSet;
   renderPane();
 }
 function head(title, lede){
@@ -498,9 +545,10 @@ var OVERLAY = null;
 function renderPane(){
   if (OVERLAY) OVERLAY.close();
   var m = document.getElementById("pmenu"); if (m) m.remove();
+  if (S.pane && S.pane.indexOf("set:") === 0) return paneSet(S.g, Number(S.pane.slice(4)));
+  if (S.tab === "photos") return paneNoSets(S.g);
   var f = ({
     general: paneGeneral, access: paneAccess, cover: paneCover, danger: paneDanger,
-    upload: paneUpload, browse: paneBrowse,
     clients: paneClients, compose: paneCompose, templates: paneTemplates, reminders: paneReminders,
     overview: paneActivity, people: paneActivity, log: paneActivity, mail: paneActivity
   })[S.pane];
@@ -541,9 +589,6 @@ function paneGeneral(g){
     +   '<div class="field"><label>Expires on</label><input type="date" id="fExp" value="'+(g.expiresAt?esc(String(g.expiresAt).slice(0,10)):"")+'">'
     +     '<div class="hint">Leave empty to never expire.</div></div>'
     + '</div>'
-    + '<div class="field"><label>Immich album</label><select id="fAlbum">'
-    +   S.albums.map(function(a){ return '<option value="'+a.id+'"'+(a.id===g.albumId?" selected":"")+'>'+esc(a.name)+' — '+a.count+' photos</option>'; }).join("")
-    +   '</select><div class="hint">Add or remove photos in Immich and the gallery follows.</div></div>'
     + '<button class="btn" id="saveGen">Save changes</button>';
   function syncSlug(){
     var v = $("fSlug").value.trim().toLowerCase();
@@ -553,7 +598,7 @@ function paneGeneral(g){
   $("fSlug").addEventListener("input", syncSlug); syncSlug();
   $("saveGen").onclick = function(){
     save({ title:$("fTitle").value.trim(), subtitle:$("fSub").value.trim(),
-           slug:$("fSlug").value.trim().toLowerCase(), albumId:$("fAlbum").value,
+           slug:$("fSlug").value.trim().toLowerCase(),
            expiresAt: $("fExp").value ? new Date($("fExp").value+"T23:59:59").toISOString() : null });
   };
 }
@@ -674,44 +719,104 @@ function fitCover(file){
 var UP = { albumId:null, items:[], running:0 };
 var UP_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
 
-function paneUpload(g){
-  if (!S.canUpload){
-    $("pane").innerHTML = head("Add photos", "")
-      + '<p class="empty">Uploading needs an Immich key that may write. In Immich, make an API key with '
-      + '<b>asset.upload</b>, <b>album.create</b> and <b>albumAsset.create</b>, set it as '
-      + '<b>IMMICH_WRITE_KEY</b> on this container, and this page turns on.<br><br>'
-      + 'Until then, add photos in Immich itself — the gallery follows the album either way.</p>';
-    return;
-  }
-  var alb = S.albums.filter(function(x){ return x.id===g.albumId; })[0];
-  if (UP.albumId !== g.albumId){ UP.albumId = g.albumId; if (!UP.running) UP.items = []; }
-  $("pane").innerHTML = head("Add photos", "They go into the Immich album this gallery reads from, and show up for clients right away.")
-    + '<div class="drop" id="drop">' + I.up
-    + '<p><b>Drop photos here</b></p>'
-    + '<button type="button" class="btn" id="pick">Choose files</button>'
-    + '<div class="hint">JPEG, PNG, HEIC, WebP, TIFF or DNG, up to ' + S.uploadMaxMb + ' MB each.'
-    + (alb ? ' Going into <b>' + esc(alb.name) + '</b>.' : '') + '</div></div>'
-    + '<input type="file" id="file" multiple accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">'
-    + '<div class="queue" id="queue"></div>';
-
-  var drop = $("drop");
-  $("pick").onclick = function(){ $("file").click(); };
-  $("file").onchange = function(){ upAdd(g, $("file").files); $("file").value = ""; };
-  ["dragenter","dragover"].forEach(function(e){
-    drop.addEventListener(e, function(ev){ ev.preventDefault(); drop.classList.add("on"); });
+/* ---------- sets ---------- */
+function setMenu(anchor, setId){
+  var g = S.g, sets = g.sets || [];
+  var i = sets.findIndex(function(x){ return x.id === setId; });
+  if (i < 0) return;
+  var acts = [
+    { label:"Rename…", run:function(){ renameSet(sets[i]); } },
+    { label:"Move up",   dim:i === 0,             run:function(){ moveSet(setId, "up"); } },
+    { label:"Move down", dim:i === sets.length-1, run:function(){ moveSet(setId, "down"); } },
+    { label:"Delete set", danger:true, dim:sets.length < 2, run:function(){ deleteSet(sets[i]); } }
+  ].filter(function(a){ return !a.dim; });
+  popMenu(anchor, acts);
+}
+function renameSet(st){
+  var name = prompt("Rename this set", st.name);
+  if (name === null) return;
+  name = name.trim(); if (!name) return toast("Give the set a name");
+  post("/galleries/"+S.g.id+"/sets/"+st.id, {name:name}, "PATCH").then(function(r){
+    if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't rename it");
+    toast("Renamed"); refreshGalleries(function(){ renderShell(); });
   });
-  ["dragleave","dragend"].forEach(function(e){
-    drop.addEventListener(e, function(){ drop.classList.remove("on"); });
+}
+function moveSet(setId, dir){
+  post("/galleries/"+S.g.id+"/sets/"+setId, {move:dir}, "PATCH").then(function(r){
+    if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't move it");
+    refreshGalleries(function(){ renderShell(); });
   });
-  drop.addEventListener("drop", function(ev){
-    ev.preventDefault(); drop.classList.remove("on");
-    if (ev.dataTransfer && ev.dataTransfer.files) upAdd(g, ev.dataTransfer.files);
+}
+function deleteSet(st){
+  if (!confirm("Remove the set “"+st.name+"”?\n\nIts photos stay in Immich — only this part of the gallery goes.")) return;
+  api("/galleries/"+S.g.id+"/sets/"+st.id, {method:"DELETE"}).then(function(r){
+    if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't remove it");
+    toast("Set removed");
+    refreshGalleries(function(){ S.pane = firstPane("photos"); renderShell(); });
   });
-  upRender();
+}
+function addSet(){
+  var name = prompt("Name the new set", "");
+  if (name === null) return;
+  name = name.trim(); if (!name) return toast("Give the set a name");
+  if (!S.caps || !S.caps.albumCreate)
+    return toast("Your Immich key cannot create albums, so a new set has nowhere to live");
+  toast("Creating…");
+  post("/galleries/"+S.g.id+"/sets", {name:name}).then(function(r){
+    if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't add the set");
+    toast("Set added");
+    refreshAlbums();
+    refreshGalleries(function(){
+      var sets = S.g.sets || [];
+      S.pane = sets.length ? "set:" + sets[sets.length-1].id : null;
+      renderShell();
+    });
+  });
 }
 
-function upAdd(g, files){
-  UP.albumId = g.albumId;
+/* a popup list of actions, used by sets, photos and the lightbox */
+function popMenu(anchor, acts, fromLb){
+  closePop();
+  if (!acts.length) return;
+  var m = document.createElement("div");
+  m.className = "menu"; m.id = "pmenu";
+  m.innerHTML = acts.map(function(a, i){
+    return '<button data-i="'+i+'"'+(a.danger?' class="danger"':'')+'>'+esc(a.label)+'</button>';
+  }).join("");
+  document.body.appendChild(m);
+  var r = anchor.getBoundingClientRect();
+  var top = r.bottom + 6;
+  if (top + m.offsetHeight > window.innerHeight - 8) top = r.top - m.offsetHeight - 6;   /* flip above */
+  m.style.top  = Math.max(8, top) + "px";
+  m.style.left = Math.max(8, Math.min(window.innerWidth - m.offsetWidth - 8, r.right - m.offsetWidth)) + "px";
+  m.onclick = function(ev){
+    var b = ev.target.closest("button"); if (!b) return;
+    var a = acts[Number(b.dataset.i)];
+    closePop();
+    if (fromLb && !a.keep) fromLb();
+    a.run();
+  };
+  setTimeout(function(){ document.addEventListener("click", popAway, true); }, 0);
+}
+function popAway(ev){ if (!ev.target.closest("#pmenu")) closePop(); }
+function closePop(){
+  var m = document.getElementById("pmenu"); if (m) m.remove();
+  document.removeEventListener("click", popAway, true);
+}
+
+function paneNoSets(g){
+  $("pane").innerHTML = head("Photos", "This gallery has no sets yet.")
+    + '<p class="empty">A set is a named part of the gallery — Ceremony, Dancing, Portraits. '
+    + 'Add one from the left and drop photos into it.</p>';
+}
+
+/* ---------- uploads ---------- */
+var UP = { albumId:null, items:[], running:0 };
+var UP_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+
+function upAdd(albumId, files){
+  if (UP.albumId !== albumId && !UP.running) UP.items = [];
+  UP.albumId = albumId;
   Array.prototype.forEach.call(files, function(f){
     var it = { name:f.name, file:f, pct:0, state:"wait", err:null };
     if (!UP_OK.test(f.name)) { it.state = "fail"; it.err = "Not a photo file"; }
@@ -719,12 +824,10 @@ function upAdd(g, files){
     else if (!f.size) { it.state = "fail"; it.err = "Empty file"; }
     UP.items.push(it);
   });
-  upRender();
-  upPump();
+  upRender(); upPump();
 }
-
 function upRender(){
-  var q = $("queue"); if (!q) return;
+  var q = document.getElementById("queue"); if (!q) return;
   if (!UP.items.length){ q.innerHTML = ""; return; }
   var done = UP.items.filter(function(i){ return i.state==="done" || i.state==="dupe"; }).length;
   var fail = UP.items.filter(function(i){ return i.state==="fail"; }).length;
@@ -741,9 +844,9 @@ function upRender(){
              + '<span class="qbar"><i style="width:' + pct + '%"></i></span>'
              + '<span class="qs">' + label + '</span></div>';
       }).join("");
-  if ($("qclear")) $("qclear").onclick = function(){ UP.items = []; upRender(); };
+  if (document.getElementById("qclear"))
+    document.getElementById("qclear").onclick = function(){ UP.items = []; upRender(); };
 }
-
 function upPump(){
   while (UP.running < 3){
     var next = UP.items.filter(function(i){ return i.state==="wait"; })[0];
@@ -776,7 +879,6 @@ function uploadFile(file, albumId, onProgress){
     x.send(file);
   });
 }
-
 function upSend(it){
   uploadFile(it.file, UP.albumId, function(p){ it.pct = p; upRender(); }).then(function(res){
     if (res.ok){ it.pct = 1; it.state = res.status === "duplicate" ? "dupe" : "done"; }
@@ -786,54 +888,71 @@ function upSend(it){
     else { upRender(); if (!UP.running) upDone(); }
   });
 }
-
 function upDone(){
   var added = UP.items.filter(function(i){ return i.state==="done"; }).length;
   var fail  = UP.items.filter(function(i){ return i.state==="fail"; }).length;
   toast(added ? (added + " photo" + (added===1?"":"s") + " added")
       : fail  ? "Nothing uploaded" : "Those were already in Immich");
-  refreshAlbums(function(){ refreshGalleries(function(){ if (S.pane === "upload") upRender(); }); });
+  if (UP.reload) UP.reload();
 }
 
-function paneBrowse(g){
-  var alb  = S.albums.filter(function(x){ return x.id===g.albumId; })[0];
-  var list = [], sel = {}, busy = false, replFor = null;
+/* ---------- one set: its photos, and everything you can do to them ---------- */
+function paneSet(g, setId){
+  var set = (g.sets || []).filter(function(x){ return x.id === setId; })[0];
+  if (!set) return paneNoSets(g);
+  var list = [], sel = {}, busy = false, replFor = null, lastTick = null;
 
-  $("pane").innerHTML = head("In this album",
-      "Click a photo to open it" + (alb ? ", from <b>" + esc(alb.name) + "</b>" : "")
-      + ". Tick the corner to select — hold shift for a run. Trash keeps for 30 days in Immich.")
+  $("pane").innerHTML =
+      '<div class="sethead"><div><h2>' + esc(set.name) + '</h2><p class="lede" id="setN"> </p></div>'
+    +   '<div class="setacts">'
+    +     (S.caps && S.caps.upload ? '<button class="btn sm" id="addMedia">Add media</button>' : '')
+    +     '<button class="btn sm ghost" id="setOpts">⋮</button>'
+    +   '</div></div>'
     + '<div class="bar" id="bar"></div>'
-    + '<div class="grid" id="grid"><div class="spin"></div></div>'
-    + '<div class="hint" id="gridN"></div>'
+    + '<div class="grid dropzone" id="grid"><div class="spin"></div></div>'
+    + '<div class="queue" id="queue"></div>'
+    + '<input type="file" id="pick" multiple accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">'
     + '<input type="file" id="repl" accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">';
 
+  $("setOpts").onclick = function(ev){ ev.stopPropagation(); setMenu($("setOpts"), setId); };
+  if ($("addMedia")) $("addMedia").onclick = function(){ $("pick").click(); };
+  $("pick").onchange = function(){ upAdd(set.albumId, $("pick").files); $("pick").value = ""; };
+  UP.reload = function(){ refreshAlbums(); refreshGalleries(function(){ load(); }); };
+
+  var gridEl = $("grid");
+  ["dragenter","dragover"].forEach(function(e){
+    gridEl.addEventListener(e, function(ev){ ev.preventDefault(); gridEl.classList.add("over"); });
+  });
+  ["dragleave","dragend"].forEach(function(e){
+    gridEl.addEventListener(e, function(){ gridEl.classList.remove("over"); });
+  });
+  gridEl.addEventListener("drop", function(ev){
+    ev.preventDefault(); gridEl.classList.remove("over");
+    if (!S.caps || !S.caps.upload) return toast("Your Immich key cannot upload");
+    if (ev.dataTransfer && ev.dataTransfer.files) upAdd(set.albumId, ev.dataTransfer.files);
+  });
+
   function chosen(){ return Object.keys(sel).filter(function(k){ return sel[k]; }); }
+  function idxOf(id){ for (var i=0;i<list.length;i++) if (list[i].id===id) return i; return -1; }
 
   function drawBar(){
     var n = chosen().length, c = S.caps || {};
-    var h = '<span class="count">' + (n ? n + " selected" : list.length + " photo" + (list.length===1?"":"s")) + '</span>';
-    if (!n){
-      if (list.length) h += '<button class="btn sm ghost" id="selAll">Select all</button>';
-    } else {
+    var h = "";
+    if (n){
+      h = '<span class="count">' + n + ' selected</span>';
       if (c.trash)       h += '<button class="btn sm danger" id="doTrash">Move to trash</button>';
-      if (c.albumRemove) h += '<button class="btn sm ghost" id="doRemove">Remove from gallery</button>';
-      /* replacing means putting the new one in and taking the old one out, so it needs both */
-      if (n === 1 && c.upload && (c.trash || c.albumRemove)) h += '<button class="btn sm ghost" id="doRepl">Replace…</button>';
-      if (n === 1)       h += '<button class="btn sm ghost" id="doCover">Make cover</button>';
+      if (c.albumRemove) h += '<button class="btn sm ghost" id="doRemove">Remove from set</button>';
       h += '<button class="btn sm ghost" id="selNone">Clear</button>';
+    } else if (list.length) {
+      h = '<button class="btn sm ghost" id="selAll">Select all</button>';
     }
     $("bar").innerHTML = h;
-    if ($("selAll"))  $("selAll").onclick  = function(){ list.forEach(function(a){ sel[a.id]=true; }); draw(); };
-    if ($("selNone")) $("selNone").onclick = function(){ sel = {}; draw(); };
+    if ($("selAll"))   $("selAll").onclick   = function(){ list.forEach(function(a){ sel[a.id]=true; }); draw(); };
+    if ($("selNone"))  $("selNone").onclick  = function(){ sel = {}; draw(); };
     if ($("doTrash"))  $("doTrash").onclick  = function(){ act("trash"); };
     if ($("doRemove")) $("doRemove").onclick = function(){ act("remove"); };
-    if ($("doCover"))  $("doCover").onclick  = function(){
-      save({coverAssetId: chosen()[0]}, "Cover updated").then(function(ok){ if (ok){ sel={}; draw(); } });
-    };
-    if ($("doRepl")) $("doRepl").onclick = function(){ $("repl").click(); };
   }
 
-  var lastTick = null;
   function toggle(id, range){
     var i = idxOf(id);
     if (range && lastTick != null && lastTick !== i){
@@ -843,12 +962,7 @@ function paneBrowse(g){
     lastTick = i;
     draw();
   }
-  function idxOf(id){
-    for (var i = 0; i < list.length; i++) if (list[i].id === id) return i;
-    return -1;
-  }
 
-  /* one set of actions, shown both in a photo's menu and under the lightbox */
   function actionsFor(id){
     var c = S.caps || {}, out = [];
     if (id !== S.g.coverAssetId)
@@ -856,67 +970,83 @@ function paneBrowse(g){
         save({coverAssetId:id}, "Cover updated").then(function(ok){ if (ok){ draw(); if (lbEl) showLb(); } });
       } });
     if (c.upload && (c.trash || c.albumRemove))
-      out.push({ label:"Replace\u2026", run:function(){ replFor = id; $("repl").click(); } });
+      out.push({ label:"Replace…", run:function(){ replFor = id; $("repl").click(); } });
     if (c.albumRemove)
-      out.push({ label:"Remove from gallery", run:function(){ act("remove", [id]); } });
+      out.push({ label:"Remove from set", run:function(){ act("remove", [id]); } });
     if (c.trash)
       out.push({ label:"Move to trash", danger:true, run:function(){ act("trash", [id]); } });
     return out;
   }
 
-  function openMenu(anchor, id, fromLb){
-    closeMenu();
-    if (!id) return;
-    var acts = actionsFor(id);
-    if (!acts.length) return;
-    var m = document.createElement("div");
-    m.className = "menu"; m.id = "pmenu";
-    m.innerHTML = acts.map(function(a, i){
-      return '<button data-i="' + i + '"' + (a.danger ? ' class="danger"' : '') + '>' + esc(a.label) + '</button>';
-    }).join("");
-    document.body.appendChild(m);
-    var r = anchor.getBoundingClientRect();
-    var top = r.bottom + 6;
-    if (top + m.offsetHeight > window.innerHeight - 8) top = r.top - m.offsetHeight - 6;   /* flip above */
-    m.style.top  = Math.max(8, top) + "px";
-    m.style.left = Math.max(8, Math.min(window.innerWidth - m.offsetWidth - 8, r.right - m.offsetWidth)) + "px";
-    m.onclick = function(ev){
-      var b = ev.target.closest("button"); if (!b) return;
-      var a = acts[Number(b.dataset.i)];
-      closeMenu();
-      /* anything that moves the photo out closes the viewer first; a cover change does not */
-      if (fromLb && !a.keep) closeLb();
-      a.run();
-    };
-    setTimeout(function(){ document.addEventListener("click", menuAway, true); }, 0);
-  }
-  function menuAway(ev){ if (!ev.target.closest("#pmenu")) closeMenu(); }
-  function closeMenu(){
-    var m = document.getElementById("pmenu"); if (m) m.remove();
-    document.removeEventListener("click", menuAway, true);
-  }
-
   function draw(){
-    $("grid").className = "grid" + (chosen().length ? " picking" : "");
-    $("grid").innerHTML = list.map(function(a){
+    gridEl.className = "grid dropzone" + (chosen().length ? " picking" : "");
+    gridEl.innerHTML = list.map(function(a){
       return '<div class="p' + (sel[a.id] ? " on" : "") + (a.id===S.g.coverAssetId ? " cov" : "") + '" data-id="' + a.id
            + '" style="background-image:url(\'' + imgSrc(a.id) + '\')">'
            + '<span class="tick" data-act="sel" title="Select"></span>'
-           + '<button class="dots" data-act="menu" title="More">\u22ee</button>'
-           + (a.isImage ? '' : '<span class="vbadge">\u25b6</span>')
+           + '<button class="dots" data-act="menu" title="More">⋮</button>'
+           + (a.isImage ? '' : '<span class="vbadge">▶</span>')
            + '</div>';
-    }).join("") || '<p class="empty" style="padding:8px">No photos yet. Add some from the previous tab.</p>';
-    $("grid").onclick = function(ev){
+    }).join("") || '<p class="empty" style="padding:14px">Nothing here yet. Drop photos in, or use Add media.</p>';
+    gridEl.onclick = function(ev){
       if (busy) return;
       var el = ev.target.closest(".p"); if (!el) return;
       var id = el.dataset.id, what = ev.target.dataset.act;
       if (what === "sel")  return toggle(id, ev.shiftKey);
-      if (what === "menu") return openMenu(ev.target, id);
+      if (what === "menu") return popMenu(ev.target, actionsFor(id));
       openLb(idxOf(id));
     };
-    $("gridN").textContent = list.length >= 400 ? "Showing the first 400." : "";
+    $("setN").textContent = list.length + " photo" + (list.length===1?"":"s")
+      + (list.length >= 400 ? " · showing the first 400" : "");
     drawBar();
   }
+
+  function load(then){
+    api("/albums/" + set.albumId + "/assets").then(function(r){
+      list = (r.body && r.body.assets) || [];
+      Object.keys(sel).forEach(function(k){
+        if (!list.some(function(a){ return a.id===k; })) delete sel[k];
+      });
+      draw(); if (then) then();
+    });
+  }
+
+  function act(kind, ids, quiet){
+    ids = ids || chosen();
+    if (!ids.length) return;
+    if (kind === "remove" && !quiet &&
+        !confirm("Take " + ids.length + " photo" + (ids.length===1?"":"s") + " out of this set?\n\nThey stay in Immich.")) return;
+    busy = true;
+    return post("/photos/" + kind, {albumId: set.albumId, ids: ids}).then(function(r){
+      busy = false;
+      if (!r.ok){ toast((r.body && r.body.error) || "That didn't work"); return false; }
+      var n = r.body.n;
+      sel = {};
+      load(function(){ refreshAlbums(); refreshGalleries(draw); });
+      if (kind === "trash")
+        toast(n + " photo" + (n===1?"":"s") + " moved to trash", { label:"Undo", run:function(){ act("restore", r.body.ids, true); } });
+      else if (kind === "restore") toast("Brought back");
+      else toast(n + " photo" + (n===1?"":"s") + " removed from the set");
+      return true;
+    });
+  }
+
+  $("repl").onchange = function(){
+    var f = $("repl").files[0], old = replFor || chosen()[0];
+    $("repl").value = ""; replFor = null;
+    if (!f || !old) return;
+    var wasCover = old === S.g.coverAssetId;
+    busy = true; toast("Uploading the replacement…");
+    uploadFile(f, set.albumId).then(function(res){
+      busy = false;
+      if (!res.ok) return toast(res.error || "Couldn't upload that one");
+      /* only drop the old one once the new one is safely in */
+      act((S.caps && S.caps.trash) ? "trash" : "remove", [old], true).then(function(){
+        if (wasCover && res.id) save({coverAssetId: res.id}, "Replaced, and it's the new cover");
+        else toast("Replaced");
+      });
+    });
+  };
 
   /* ---- lightbox ---- */
   var lbIdx = -1, lbEl = null;
@@ -926,15 +1056,18 @@ function paneBrowse(g){
     if (!lbEl){
       lbEl = document.createElement("div");
       lbEl.className = "lbx"; lbEl.id = "lbx";
-      lbEl.innerHTML = '<button class="x" data-lb="close" title="Close">\u00d7</button>'
-        + '<button class="nav prev" data-lb="prev" title="Previous">\u2039</button>'
-        + '<button class="nav next" data-lb="next" title="Next">\u203a</button>'
+      lbEl.innerHTML = '<button class="x" data-lb="close" title="Close">×</button>'
+        + '<button class="nav prev" data-lb="prev" title="Previous">‹</button>'
+        + '<button class="nav next" data-lb="next" title="Next">›</button>'
         + '<div class="stage" id="lbxStage"></div>'
         + '<div class="lbxbar"><span class="n" id="lbxN"></span><span id="lbxActs"></span></div>';
       document.body.appendChild(lbEl);
       lbEl.onclick = function(ev){
         var k = ev.target.dataset.lb;
-        if (k === "menu") return openMenu(ev.target, list[lbIdx] && list[lbIdx].id, true);
+        if (k === "menu"){
+          var a = list[lbIdx];
+          return popMenu(ev.target, a ? actionsFor(a.id) : [], closeLb);
+        }
         if (k === "close" || ev.target === lbEl || ev.target.id === "lbxStage") closeLb();
         else if (k === "prev") stepLb(-1);
         else if (k === "next") stepLb(1);
@@ -953,7 +1086,7 @@ function paneBrowse(g){
   function stepLb(d){ if (list.length){ lbIdx = (lbIdx + d + list.length) % list.length; showLb(); } }
   function showLb(){
     var a = list[lbIdx]; if (!a) return closeLb();
-    var st = $("lbxStage"); st.innerHTML = "";
+    var st = document.getElementById("lbxStage"); st.innerHTML = "";
     if (a.isImage){
       var im = document.createElement("img"); im.src = imgSrc(a.id, "preview"); st.appendChild(im);
     } else {
@@ -963,9 +1096,10 @@ function paneBrowse(g){
       v.controls = true; v.playsInline = true; v.preload = "metadata";
       st.appendChild(v);
     }
-    $("lbxN").textContent = (lbIdx + 1) + " / " + list.length + (a.id === S.g.coverAssetId ? "  \u00b7  cover" : "");
-    $("lbxActs").innerHTML = actionsFor(a.id).length
-      ? '<button class="lbdots" data-lb="menu" title="More">\u22ee</button>' : '';
+    document.getElementById("lbxN").textContent =
+      (lbIdx + 1) + " / " + list.length + (a.id === S.g.coverAssetId ? "  ·  cover" : "");
+    document.getElementById("lbxActs").innerHTML = actionsFor(a.id).length
+      ? '<button class="lbdots" data-lb="menu" title="More">⋮</button>' : '';
   }
   function closeLb(){
     document.removeEventListener("keydown", lbKeys);
@@ -973,55 +1107,9 @@ function paneBrowse(g){
     lbEl = null; lbIdx = -1; OVERLAY = null;
   }
 
-  function load(then){
-    api("/albums/" + g.albumId + "/assets").then(function(r){
-      list = (r.body && r.body.assets) || [];
-      Object.keys(sel).forEach(function(k){
-        if (!list.some(function(a){ return a.id===k; })) delete sel[k];
-      });
-      draw(); if (then) then();
-    });
-  }
-
-  function act(kind, ids, quiet){
-    ids = ids || chosen();
-    if (!ids.length) return;
-    if (kind === "remove" && !quiet &&
-        !confirm("Take " + ids.length + " photo" + (ids.length===1?"":"s") + " out of this gallery?\n\nThey stay in Immich.")) return;
-    busy = true;
-    return post("/photos/" + kind, {albumId: g.albumId, ids: ids}).then(function(r){
-      busy = false;
-      if (!r.ok){ toast((r.body && r.body.error) || "That didn't work"); return false; }
-      var n = r.body.n;
-      sel = {};
-      load(function(){ refreshAlbums(); refreshGalleries(draw); });
-      if (kind === "trash")
-        toast(n + " photo" + (n===1?"":"s") + " moved to trash", { label: "Undo", run: function(){ act("restore", r.body.ids, true); } });
-      else if (kind === "restore") toast("Brought back");
-      else toast(n + " photo" + (n===1?"":"s") + " removed from the gallery");
-      return true;
-    });
-  }
-
-  $("repl").onchange = function(){
-    var f = $("repl").files[0], old = replFor || chosen()[0];
-    $("repl").value = ""; replFor = null;
-    if (!f || !old) return;
-    var wasCover = old === S.g.coverAssetId;
-    busy = true; toast("Uploading the replacement…");
-    uploadFile(f, g.albumId).then(function(res){
-      busy = false;
-      if (!res.ok) return toast(res.error || "Couldn't upload that one");
-      /* only drop the old one once the new one is safely in */
-      act((S.caps && S.caps.trash) ? "trash" : "remove", [old], true).then(function(){
-        if (wasCover && res.id) save({coverAssetId: res.id}, "Replaced, and it's the new cover");
-        else toast("Replaced");
-      });
-    });
-  };
-
   load();
 }
+
 
 function paneDanger(g){
   $("pane").innerHTML = head("Delete this gallery", "The link stops working and the activity log is removed. Your photos in Immich are not touched.")
@@ -1272,7 +1360,7 @@ function paneActivity(g){
 /* ---------- create / edit ---------- */
 function editorView(g){
   var isNew = !g;
-  chrome({title:isNew?"New gallery":"Edit", back:function(){ isNew ? listView() : openGallery(g.id,"settings","general"); }});
+  chrome({title:isNew?"New gallery":"Edit", back:function(){ isNew ? listView() : openGallery(g.id); }});
   $("root").innerHTML = '<div class="wrap" style="padding-top:26px">'
     + '<div class="field"><label>Photos</label><select id="fAlbum">'
     +   (S.canUpload ? '<option value="__new__">Start a new album and upload</option>' : '')
@@ -1328,7 +1416,7 @@ function editorView(g){
         toast("Gallery created");
         api("/galleries").then(function(rr){
           S.galleries = rr.body||[];
-          openGallery(r.body.id, fresh ? "photos" : "settings", fresh ? "upload" : "cover");
+          openGallery(r.body.id);
         });
       });
     }

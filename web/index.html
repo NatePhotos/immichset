@@ -69,6 +69,16 @@ button{font-family:inherit;cursor:pointer}
 
 /* ---------- header ---------- */
 body.lb-open header{visibility:hidden}
+.sets{display:flex;gap:26px;overflow-x:auto;padding:0 28px 11px;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none}
+.sets::-webkit-scrollbar{display:none}
+.sets button{background:none;border:0;padding:3px 0 7px;cursor:pointer;white-space:nowrap;color:var(--page-fg);
+  opacity:.5;font-size:10.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;
+  border-bottom:1.5px solid transparent;transition:opacity .2s,border-color .2s;font-family:inherit}
+.sets button:hover{opacity:.85}
+.sets button.on{opacity:1;border-bottom-color:currentColor}
+@media(max-width:700px){.sets{gap:20px;padding:0 16px 10px}}
+
 header{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.93);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
 .hwrap{max-width:var(--maxw);margin:0 auto;padding:0 20px;height:62px;display:flex;align-items:center;gap:16px}
 .htitle{flex:1 1 auto;min-width:0;font-size:12px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -176,6 +186,7 @@ footer a:hover{color:var(--page-fg)}
       <button class="hbtn" id="btnSlides" aria-label="Slideshow"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5z"/></svg><span>Slideshow</span></button>
       <button class="hbtn" id="btnAll" aria-label="Download all"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg><span>Download All</span></button>
     </div>
+    <nav class="sets" id="setRow" hidden></nav>
   </header>
 
   <div id="grid"></div>
@@ -439,12 +450,36 @@ $("gateForm").addEventListener("submit", function(e){
 });
 
 /* ---------- load ---------- */
-function loadGallery(){
-  getJSON("/assets").then(function(r){
+var curSet = null;
+
+/* A gallery may be delivered in named parts. One part needs no name - it is just
+   "the photos" - so the row only appears when there is a choice to make. */
+function drawSets(){
+  var sets = (link && link.sets) || [];
+  var row = $("setRow");
+  if (sets.length < 2){ row.hidden = true; row.innerHTML = ""; return; }
+  row.hidden = false;
+  row.innerHTML = sets.map(function(s){
+    return '<button data-set="' + s.id + '"' + (s.id === curSet ? ' class="on"' : '') + '>' + esc(s.name) + '</button>';
+  }).join("");
+  row.onclick = function(ev){
+    var b = ev.target.closest("button"); if (!b) return;
+    var id = Number(b.dataset.set);
+    if (id === curSet) return;
+    loadGallery(id);
+  };
+}
+
+function loadGallery(setId){
+  var q = setId ? "/assets?set=" + encodeURIComponent(setId) : "/assets";
+  getJSON(q).then(function(r){
     if (r.status === 401) { var g = r.body && r.body.gate; return showGate(g || "email"); }
     if (!r.ok) return fail("Couldn't load photos","Something went wrong loading this gallery. Please try again shortly.");
     assets = (r.body && r.body.assets) || [];
+    curSet = (r.body && r.body.setId) || null;
     render();
+    drawSets();
+    if (setId) window.scrollTo({ top: $("hdr").offsetTop, behavior: "smooth" });
   }).catch(function(){ fail("Couldn't load photos","Something went wrong loading this gallery. Please try again shortly."); });
 }
 
@@ -767,14 +802,19 @@ $("mSave").addEventListener("click", shareOne);
 $("btnAll").addEventListener("click", function(){
   if (!assets.length || $("btnAll").hasAttribute("disabled")) return;
   var ids = assets.map(function(a){ return a.id; });
-  var zipName = (album.albumName || "gallery").replace(/[^\w\- ]+/g, "") + ".zip";
+  /* with more than one part on offer, "download all" means the part being viewed */
+  var sets = (link && link.sets) || [];
+  var here = sets.filter(function(x){ return x.id === curSet; })[0];
+  var zipName = ((album.albumName || "gallery") + (sets.length > 1 && here ? " - " + here.name : ""))
+                  .replace(/[^\w\- ]+/g, "") + ".zip";
 
   progOpen("Preparing your download",
            "We're packaging " + ids.length + " photos. Large galleries can take a few minutes \u2014 please keep this page open.",
            function(){ if (dlAbort) dlAbort.abort(); });
 
   /* ask Immich how big it will be, so the bar is meaningful */
-  fetchProgress(BASE + "/zip", {method:"POST"}, progSet)
+  fetchProgress(BASE + "/zip" + (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : ""),
+                {method:"POST"}, progSet)
    .then(function(o){
      progClose();
      saveBlob(o.blob, zipName);
