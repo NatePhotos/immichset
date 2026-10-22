@@ -129,6 +129,15 @@ CREATE TABLE IF NOT EXISTS login_codes (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS email_templates (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT UNIQUE NOT NULL,
+  subject    TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  built_in   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -166,6 +175,12 @@ const q = {
   remIns:     db.prepare('INSERT OR IGNORE INTO reminders (gallery_id,days_before,audience,email) VALUES (?,?,?,?)'),
   remDel:     db.prepare('DELETE FROM reminders WHERE id = ? AND gallery_id = ?'),
   setGet:     db.prepare('SELECT value FROM settings WHERE key = ?'),
+  tplAll:     db.prepare('SELECT * FROM email_templates ORDER BY built_in DESC, name'),
+  tplGet:     db.prepare('SELECT * FROM email_templates WHERE id = ?'),
+  tplIns:     db.prepare('INSERT INTO email_templates (name,subject,body,built_in) VALUES (?,?,?,?)'),
+  tplUpd:     db.prepare('UPDATE email_templates SET name=?, subject=?, body=? WHERE id=?'),
+  tplDel:     db.prepare('DELETE FROM email_templates WHERE id = ? AND built_in = 0'),
+  tplCount:   db.prepare('SELECT COUNT(*) n FROM email_templates'),
   setPut:     db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
   admGet:     db.prepare('SELECT * FROM admin_users WHERE email = ?'),
   admAny:     db.prepare('SELECT COUNT(*) n FROM admin_users'),
@@ -180,6 +195,18 @@ const q = {
 
 /* The admin account comes from the environment, so there is no setup wizard
    sitting on the public internet waiting to be found. */
+function seedTemplates() {
+  if (q.tplCount.get().n) return;
+  q.tplIns.run('Default',
+    'Your photos are ready \u2014 {{title}}',
+    "Hi,\n\nYour photos from {{title}} are ready to view and download.\n\nTake your time looking through them, and let me know if you have any questions.",
+    1);
+  q.tplIns.run('Short and warm',
+    '{{title}} \u2014 your gallery is live',
+    "Hi,\n\nHere are your photos. I hope you love them as much as I enjoyed taking them.",
+    0);
+}
+
 function syncAdminUser() {
   if (!CFG.adminEmail || !CFG.adminPass) return;
   const salt = randomBytes(16).toString('hex');
@@ -315,59 +342,93 @@ function applyDefaultReminders(galleryId) {
 
 const mailReady = () => !!(CFG.resendKey && CFG.mailFrom && CFG.publicUrl);
 
-function galleryUrl(g) { return `${CFG.publicUrl}/g/${g.slug}`; }
-
-function tmpl(kind, g, extra) {
+function fillVars(text, g) {
   const url = galleryUrl(g);
-  const title = g.title;
-  const when = g.expires_at ? new Date(g.expires_at).toLocaleDateString('en-US',
-                 { year:'numeric', month:'long', day:'numeric' }) : '';
-  const btn = `<a href="${url}" style="display:inline-block;padding:14px 32px;background:#1a1a1a;color:#fff;
-    text-decoration:none;font-size:12px;letter-spacing:.18em;text-transform:uppercase">View Gallery</a>`;
-  const shell = inner => `<div style="font-family:Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:36px 24px;color:#1a1a1a">
-    ${inner}
-    <p style="margin:34px 0 0;font-size:12px;color:#8a8a8a;line-height:1.7">
-      Or paste this into your browser:<br><a href="${url}" style="color:#8a8a8a">${url}</a></p>
-    <p style="margin:26px 0 0;font-size:11px;color:#b0b0b0;letter-spacing:.1em">NATE PHOTOS</p></div>`;
-
-  if (kind === 'ready') return {
-    subject: `Your photos are ready \u2014 ${title}`,
-    html: shell(`<h1 style="font-size:19px;letter-spacing:.06em;margin:0 0 14px">Your photos are ready</h1>
-      <p style="font-size:15px;line-height:1.7;margin:0 0 28px">${extra?.message
-        ? String(extra.message).replace(/[<>]/g, '')
-        : `<strong>${title}</strong> is ready to view and download.`}</p>${btn}
-      ${when ? `<p style="font-size:13px;color:#8a8a8a;margin:26px 0 0">Available until ${when}.</p>` : ''}`),
-  };
-
-  const days = extra?.days;
-  const lead = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
-  return {
-    subject: `Reminder: ${title} expires ${lead}`,
-    html: shell(`<h1 style="font-size:19px;letter-spacing:.06em;margin:0 0 14px">Your gallery expires soon</h1>
-      <p style="font-size:15px;line-height:1.7;margin:0 0 28px"><strong>${title}</strong> expires ${lead}
-      and will no longer be available after <strong>${when}</strong>. Please download anything you'd like
-      to keep.</p>${btn}`),
-  };
+  const when = g.expires_at
+    ? new Date(g.expires_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
+    : '';
+  return String(text || '')
+    .replace(/\{\{\s*title\s*\}\}/gi, g.title || '')
+    .replace(/\{\{\s*subtitle\s*\}\}/gi, g.subtitle || '')
+    .replace(/\{\{\s*link\s*\}\}/gi, url)
+    .replace(/\{\{\s*expiry\s*\}\}/gi, when)
+    .replace(/\{\{\s*brand\s*\}\}/gi, CFG.brandName || '');
 }
 
-const sendMail = (g, email, kind, extra) => sendMailKind(g, email, kind, kind, extra);
-async function sendLoginCode(email, code) {
-  if (!mailReady()) throw new Error('email is not configured');
-  const html = `<div style="font-family:Helvetica,Arial,sans-serif;max-width:460px;margin:0 auto;padding:36px 24px;color:#1a1a1a">
-    <h1 style="font-size:17px;letter-spacing:.06em;margin:0 0 12px">Your sign-in code</h1>
-    <p style="font-size:14px;line-height:1.7;margin:0 0 24px">Use this code to finish signing in to your gallery admin.</p>
-    <div style="font-size:34px;font-weight:700;letter-spacing:.32em;padding:18px 0;border-top:1px solid #e6e6e6;border-bottom:1px solid #e6e6e6">${code}</div>
-    <p style="font-size:12.5px;color:#8a8a8a;line-height:1.7;margin:22px 0 0">
-      It expires in 10 minutes. If you didn't try to sign in, someone has your password \u2014 change it.</p></div>`;
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'authorization': `Bearer ${CFG.resendKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      from: CFG.mailFrom, to: [email], subject: `${code} is your sign-in code`, html,
-      ...(CFG.mailReplyTo ? { reply_to: CFG.mailReplyTo } : {}),
-    }),
-  });
-  if (!r.ok) throw new Error(`resend ${r.status}: ${(await r.text()).slice(0, 160)}`);
+function galleryUrl(g) { return `${CFG.publicUrl}/g/${g.slug}`; }
+
+function esc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+
+/* The layout clients see: mark, title, cover photo, your words, one button. */
+function emailHtml(g, bodyText, opts = {}) {
+  const url    = galleryUrl(g);
+  const cover  = opts.coverUrl || `${CFG.publicUrl}/api/g/${encodeURIComponent(g.slug)}/cover`;
+  const logo   = `${CFG.publicUrl}/brand/logo`;
+  const brand  = CFG.brandName || '';
+  const site   = CFG.brandUrl || '';
+  const when   = g.expires_at
+    ? new Date(g.expires_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
+    : '';
+  const paras = esc(fillVars(bodyText, g)).split(/\n{2,}/).filter(Boolean)
+    .map(t => `<p style="margin:0 0 16px;font-size:15px;line-height:1.75;color:#333">${t.replace(/\n/g,'<br>')}</p>`)
+    .join('');
+
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f4">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:28px 12px">
+<tr><td align="center">
+  <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#fff">
+    <tr><td align="center" style="padding:40px 32px 22px">
+      <img src="${logo}" width="64" height="64" alt="${esc(brand)}" style="display:block;border:0">
+    </td></tr>
+    <tr><td align="center" style="padding:0 32px 26px">
+      <div style="font-family:Helvetica,Arial,sans-serif;font-size:19px;font-weight:600;
+        letter-spacing:.16em;text-transform:uppercase;color:#1a1a1a">${esc(g.title)}</div>
+      ${g.subtitle ? `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:.22em;
+        text-transform:uppercase;color:#8a8a8a;margin-top:9px">${esc(g.subtitle)}</div>` : ''}
+    </td></tr>
+    <tr><td style="padding:0">
+      <a href="${url}"><img src="${cover}" width="560" alt="" style="display:block;width:100%;height:auto;border:0"></a>
+    </td></tr>
+    <tr><td style="padding:30px 36px 6px;font-family:Helvetica,Arial,sans-serif">${paras}</td></tr>
+    <tr><td align="center" style="padding:14px 32px 38px">
+      <a href="${url}" style="display:inline-block;padding:15px 44px;background:#1a1a1a;color:#fff;
+        text-decoration:none;font-family:Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;
+        letter-spacing:.24em;text-transform:uppercase">View Gallery</a>
+      ${opts.showExpiry && when ? `<div style="font-family:Helvetica,Arial,sans-serif;font-size:12px;
+        color:#8a8a8a;margin-top:20px">Available until ${esc(when)}</div>` : ''}
+    </td></tr>
+    <tr><td align="center" style="padding:0 32px 34px;border-top:1px solid #eee">
+      <div style="font-family:Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:.2em;
+        text-transform:uppercase;color:#aaa;padding-top:24px">
+        ${site ? `<a href="${site}" style="color:#888;text-decoration:none">${esc(brand || site)}</a>` : esc(brand)}
+      </div>
+      <div style="font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#bbb;margin-top:12px">
+        <a href="${url}" style="color:#bbb">${esc(url)}</a></div>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>`;
+}
+
+function tmpl(kind, g, extra) {
+  if (kind === 'ready') {
+    return {
+      subject: fillVars(extra?.subject || 'Your photos are ready \u2014 {{title}}', g),
+      html: emailHtml(g, extra?.body || 'Your photos are ready to view and download.',
+                      { showExpiry: extra?.showExpiry !== false, coverUrl: extra?.coverUrl }),
+    };
+  }
+  const days = extra?.days;
+  const lead = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
+  const when = g.expires_at
+    ? new Date(g.expires_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
+  return {
+    subject: `Reminder: ${g.title} expires ${lead}`,
+    html: emailHtml(g,
+      `Your gallery expires ${lead}.\n\nAfter ${when} it will no longer be available, so please download anything you would like to keep.`,
+      { showExpiry: true }),
+  };
 }
 
 async function sendMailKind(g, email, kind, logKind, extra) {
@@ -1000,6 +1061,54 @@ async function adminRoutes(req, res, path, url) {
     }
   }
 
+  if (path === '/api/admin/templates') {
+    if (req.method === 'GET') {
+      const row = q.setGet.get('last_template');
+      return json(res, 200, { templates: q.tplAll.all(), lastUsed: row ? Number(row.value) : null });
+    }
+    if (req.method === 'POST') {
+      const b = await readJson(req);
+      const name = String(b.name || '').trim();
+      if (!name) return json(res, 400, { error: 'Give the template a name' });
+      try { q.tplIns.run(name, String(b.subject || ''), String(b.body || ''), 0); }
+      catch { return json(res, 409, { error: 'A template with that name already exists' }); }
+      return json(res, 201, { templates: q.tplAll.all() });
+    }
+  }
+
+  const tplM = path.match(/^\/api\/admin\/templates\/(\d+)$/);
+  if (tplM) {
+    const t = q.tplGet.get(Number(tplM[1]));
+    if (!t) return json(res, 404, { error: 'not_found' });
+    if (req.method === 'PATCH') {
+      const b = await readJson(req);
+      try {
+        q.tplUpd.run(String(b.name ?? t.name).trim(), String(b.subject ?? t.subject),
+                     String(b.body ?? t.body), t.id);
+      } catch { return json(res, 409, { error: 'A template with that name already exists' }); }
+      return json(res, 200, { templates: q.tplAll.all() });
+    }
+    if (req.method === 'DELETE') {
+      if (t.built_in) return json(res, 400, { error: 'The built-in template cannot be deleted' });
+      q.tplDel.run(t.id);
+      return json(res, 200, { templates: q.tplAll.all() });
+    }
+  }
+
+  const prevM = path.match(/^\/api\/admin\/galleries\/(\d+)\/preview$/);
+  if (prevM && req.method === 'POST') {
+    const g = q.gallById.get(Number(prevM[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+    const b = await readJson(req);
+    let coverId = g.cover_asset_id;
+    if (!coverId) {
+      try { coverId = (await albumAssets(g.album_id)).find(a => a.isImage)?.id || null; } catch {}
+    }
+    const coverUrl = coverId ? `/api/admin/img/${coverId}?size=preview` : null;
+    const t = tmpl('ready', g, { subject: b.subject, body: b.body, showExpiry: b.showExpiry, coverUrl });
+    return json(res, 200, { subject: t.subject, html: t.html });
+  }
+
   const snd = path.match(/^\/api\/admin\/galleries\/(\d+)\/send$/);
   if (snd && req.method === 'POST') {
     const g = q.gallById.get(Number(snd[1]));
@@ -1007,16 +1116,35 @@ async function adminRoutes(req, res, path, url) {
     if (!mailReady()) return json(res, 400, { error: 'Email is not configured yet' });
     if (!g.published_at) return json(res, 400, { error: 'Publish the gallery before sending' });
     const b = await readJson(req);
-    const only = Array.isArray(b.to) && b.to.length ? b.to.map(x => String(x).toLowerCase()) : null;
+    const extra = { subject: b.subject, body: b.body, showExpiry: b.showExpiry !== false };
+    if (b.templateId) q.setPut.run('last_template', String(Number(b.templateId)));
+
+    /* a test goes only to the admin, so a template can be checked before any client sees it */
+    if (b.testOnly) {
+      if (!CFG.adminEmail) return json(res, 400, { error: 'No admin email configured' });
+      try { await sendMailKind(g, CFG.adminEmail, 'ready', 'test', extra); }
+      catch (e) { return json(res, 502, { error: String(e.message).slice(0, 200) }); }
+      return json(res, 200, { sent: 0, testSentTo: CFG.adminEmail, failed: [] });
+    }
+
+    const only = Array.isArray(b.to) && b.to.length
+      ? b.to.map(x => String(x).trim().toLowerCase()).filter(Boolean) : null;
     const list = (only || q.invList.all(g.id).map(r => r.email)).filter(Boolean);
     if (!list.length) return json(res, 400, { error: 'Add at least one email address first' });
+
     let sent = 0; const failed = [];
     for (const email of list) {
-      try { await sendMail(g, email, 'ready', { message: b.message }); sent++; }
+      try { await sendMail(g, email, 'ready', extra); sent++; }
       catch (e) { failed.push({ email, error: String(e.message).slice(0, 160) }); }
     }
-    return json(res, 200, { sent, failed });
+    let copy = null;
+    if (b.sendCopy && CFG.adminEmail) {
+      try { await sendMailKind(g, CFG.adminEmail, 'ready', 'copy', extra); copy = CFG.adminEmail; }
+      catch (e) { failed.push({ email: CFG.adminEmail, error: String(e.message).slice(0, 160) }); }
+    }
+    return json(res, 200, { sent, copySentTo: copy, failed });
   }
+
 
   const st = path.match(/^\/api\/admin\/galleries\/(\d+)\/stats$/);
   if (st) {
@@ -1041,6 +1169,7 @@ process.on('unhandledRejection', e => console.error('unhandledRejection:', e?.me
 process.on('uncaughtException',  e => console.error('uncaughtException:',  e?.stack || e));
 
 syncAdminUser();
+seedTemplates();
 if (!q.admAny.get().n) console.warn('WARNING: no admin account. Set ADMIN_EMAIL and ADMIN_PASSWORD.');
 
 server.listen(CFG.port, '0.0.0.0', () => {
