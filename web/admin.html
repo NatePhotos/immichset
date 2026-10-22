@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Galleries</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--muted:#8a8a8a;--line:#e6e6e6;--soft:#f6f6f6;--ok:#1f7a3f;--warn:#9a6b00;--bad:#b3261e;
+  --font:'Montserrat',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-font-smoothing:antialiased}
+img{display:block;max-width:100%}
+button,input,select,textarea{font-family:inherit;font-size:16px}
+a{color:inherit}
+
+.wrap{max-width:1100px;margin:0 auto;padding:0 18px 90px}
+header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.hrow{max-width:1100px;margin:0 auto;padding:0 18px;height:60px;display:flex;align-items:center;gap:12px}
+.brand{font-size:12px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;flex:1 1 auto;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 16px;border:1px solid var(--fg);
+  background:var(--fg);color:#fff;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  white-space:nowrap;cursor:pointer;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn.ghost{background:transparent;color:var(--fg)}
+.btn.sm{padding:8px 12px;font-size:10px}
+.btn.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+.btn[disabled]{opacity:.4;cursor:default}
+.btn[hidden],[hidden]{display:none !important}
+.link{background:none;border:none;color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;padding:8px}
+.link:hover{color:var(--fg)}
+
+h2{font-size:12px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;margin:30px 0 14px}
+.muted{color:var(--muted)}
+
+/* cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;margin-top:20px}
+.card{border:1px solid var(--line);cursor:pointer;transition:border-color .2s}
+.card:hover{border-color:var(--fg)}
+.card .ph{aspect-ratio:3/2;background:var(--soft) center/cover no-repeat}
+.card .body{padding:14px 15px 16px}
+.card h3{margin:0 0 3px;font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .sub{font-size:11.5px;color:var(--muted);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
+.tag{font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:4px 8px;border:1px solid var(--line);color:var(--muted)}
+.tag.live{border-color:var(--ok);color:var(--ok)}
+.tag.draft{border-color:var(--warn);color:var(--warn)}
+.tag.exp{border-color:var(--bad);color:var(--bad)}
+.stats{display:flex;gap:16px;font-size:11px;color:var(--muted)}
+.stats b{display:block;font-size:16px;font-weight:600;color:var(--fg);letter-spacing:0}
+
+/* form */
+.field{margin-bottom:18px}
+.field label{display:block;font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;margin-bottom:7px}
+.field input[type=text],.field input[type=date],.field input[type=password],.field select,.field textarea{resize:vertical;
+  width:100%;padding:12px 13px;border:1px solid var(--line);background:#fff;outline:none}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--fg)}
+.hint{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:620px){.row2{grid-template-columns:1fr}}
+.toggle{display:flex;align-items:flex-start;gap:12px;padding:14px 0;border-top:1px solid var(--line)}
+.toggle:last-of-type{border-bottom:1px solid var(--line)}
+.toggle input{width:20px;height:20px;margin:2px 0 0;flex:0 0 auto;accent-color:var(--fg)}
+.toggle .t{font-size:13px;font-weight:600}
+.toggle .d{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+
+/* cover picker */
+.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:7px;max-height:300px;overflow:auto;
+  border:1px solid var(--line);padding:7px}
+.picker .p{aspect-ratio:1;background:var(--soft) center/cover no-repeat;cursor:pointer;border:2px solid transparent}
+.picker .p.on{border-color:var(--fg)}
+
+/* activity */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin:18px 0 26px}
+.kpi{border:1px solid var(--line);padding:16px 14px}
+.kpi b{display:block;font-size:24px;font-weight:600}
+.kpi span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  padding:9px 10px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:11px 10px;border-bottom:1px solid var(--line)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* login */
+#login{min-height:100svh;display:none;place-items:center;padding:24px}
+#login.on{display:grid}
+.lbox{width:min(360px,100%);text-align:center}
+.lbox h1{font-size:13px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;margin:0 0 26px}
+.lbox input{width:100%;padding:14px;border:1px solid var(--line);text-align:center;outline:none;letter-spacing:.05em}
+.lbox .btn{width:100%;margin-top:12px}
+.err{color:var(--bad);font-size:12px;margin-top:14px;min-height:18px}
+
+#toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);background:#111;color:#fff;padding:13px 22px;
+  font-size:12px;letter-spacing:.08em;z-index:60;opacity:0;pointer-events:none;transition:.26s;max-width:88vw;text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+.spin{width:24px;height:24px;border:2px solid var(--line);border-top-color:var(--fg);border-radius:50%;animation:sp .8s linear infinite;margin:60px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form class="lbox" id="loginForm">
+    <h1>Gallery Admin</h1>
+    <input id="aEmail" type="email" placeholder="Email" autocomplete="username" style="margin-bottom:10px">
+    <input id="aPass" type="password" placeholder="Password" autocomplete="current-password">
+    <input id="aCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" hidden
+           style="margin-top:10px;letter-spacing:.4em;font-size:19px">
+    <button class="btn" type="submit" id="aBtn">Sign in</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="hrow">
+      <div class="brand" id="crumb">Galleries</div>
+      <button class="btn sm ghost" id="backBtn" hidden>Back</button>
+      <button class="btn sm" id="newBtn">New</button>
+      <button class="link" id="outBtn">Sign out</button>
+    </div>
+  </header>
+  <div class="wrap" id="view"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var $ = function(id){ return document.getElementById(id); };
+var state = { galleries: [], albums: [], publicUrl: null };
+
+function toast(t){ var e=$("toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(function(){e.classList.remove("on");},2600); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+function api(path, opts){
+  return fetch("/api/admin" + path, Object.assign({credentials:"same-origin"}, opts||{}))
+    .then(function(r){ return r.json().catch(function(){return null;}).then(function(j){ return {ok:r.ok,status:r.status,body:j}; }); });
+}
+function post(path, data, method){
+  return api(path, {method:method||"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data||{})});
+}
+function fmtDate(iso){ if(!iso) return ""; var d=new Date(iso); return isNaN(d)?"":d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}); }
+function fmtWhen(s){ if(!s) return ""; var d=new Date(s.replace(" ","T")+"Z"); return isNaN(d)?s:d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
+function imgSrc(id, size){ return id ? "/api/admin/img/" + id + "?size=" + (size||"thumbnail") : ""; }
+function coverOf(g){
+  if (g.coverAssetId) return imgSrc(g.coverAssetId, "preview");
+  var a = state.albums.filter(function(x){ return x.id === g.albumId; })[0];
+  return (a && a.thumb) ? imgSrc(a.thumb, "preview") : "";
+}
+
+/* ---------------- auth ---------------- */
+api("/me").then(function(r){ if (r.ok){ state.publicUrl = r.body && r.body.publicUrl; boot(); } else $("login").classList.add("on"); });
+var challenge = null;
+$("loginForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  $("loginErr").textContent = "";
+  $("aBtn").disabled = true;
+
+  var body = challenge
+    ? { challenge: challenge, code: $("aCode").value.trim() }
+    : { email: $("aEmail").value.trim(), password: $("aPass").value };
+
+  post("/login", body).then(function(r){
+    $("aBtn").disabled = false;
+
+    if (!r.ok){
+      var m = r.body && r.body.error;
+      if (r.status === 429)            $("loginErr").textContent = "Too many attempts. Wait a few minutes.";
+      else if (m === "bad_code")       { $("loginErr").textContent = "That code isn't right."; $("aCode").value=""; $("aCode").focus(); }
+      else if (m === "code_expired")   { $("loginErr").textContent = "That code expired. Start again."; resetLogin(); }
+      else if (r.status === 502)       $("loginErr").textContent = m || "Couldn't send your code.";
+      else                             { $("loginErr").textContent = "Email or password is incorrect."; $("aPass").value=""; $("aPass").focus(); }
+      return;
+    }
+
+    /* password accepted, now the emailed code */
+    if (r.body && r.body.step === "code"){
+      challenge = r.body.challenge;
+      $("aEmail").hidden = true; $("aPass").hidden = true;
+      $("aCode").hidden = false; $("aCode").focus();
+      $("aBtn").textContent = "Verify";
+      $("loginErr").style.color = "var(--muted)";
+      $("loginErr").textContent = "We sent a code to " + (r.body.sentTo || "your email") + ".";
+      return;
+    }
+
+    $("login").classList.remove("on");
+    api("/me").then(function(m){ state.publicUrl = m.body && m.body.publicUrl; boot(); });
+  });
+});
+function resetLogin(){
+  challenge = null;
+  $("aEmail").hidden = false; $("aPass").hidden = false;
+  $("aCode").hidden = true; $("aCode").value = "";
+  $("aBtn").textContent = "Sign in";
+  $("loginErr").style.color = "";
+}
+$("outBtn").addEventListener("click", function(){ post("/logout").then(function(){ location.reload(); }); });
+
+function boot(){
+  $("app").hidden = false;
+  Promise.all([api("/galleries"), api("/albums")]).then(function(rs){
+    state.galleries = rs[0].body || [];
+    state.albums    = rs[1].body || [];
+    listView();
+  });
+}
+
+/* ---------------- list ---------------- */
+function setNav(title, back){
+  $("crumb").textContent = title;
+  $("backBtn").hidden = !back;
+  $("newBtn").hidden = !!back;
+  $("backBtn").onclick = back || null;
+}
+function listView(){
+  setNav("Galleries", null);
+  var v = $("view");
+  if (!state.galleries.length){
+    v.innerHTML = '<h2>No galleries yet</h2><p class="muted" style="font-size:13px;max-width:460px;line-height:1.6">'
+      + 'Create one from an Immich album. You choose the cover, the web address, whether visitors register with '
+      + 'their email, and whether it needs a password.</p>';
+    return;
+  }
+  var h = '<div class="cards">';
+  state.galleries.forEach(function(g){
+    var tags = [];
+    tags.push(g.expired ? '<span class="tag exp">Expired</span>'
+            : g.publishedAt ? '<span class="tag live">Live</span>' : '<span class="tag draft">Draft</span>');
+    if (g.hasPassword)   tags.push('<span class="tag">Password</span>');
+    if (g.requireEmail)  tags.push('<span class="tag">Email</span>');
+    if (!g.allowDownload)tags.push('<span class="tag">No downloads</span>');
+    h += '<div class="card" data-id="'+g.id+'">'
+      +    '<div class="ph" style="background-image:url(\''+ coverOf(g) +'\')"></div>'
+      +    '<div class="body">'
+      +      '<h3>'+esc(g.title)+'</h3>'
+      +      '<div class="sub">'+esc(g.subtitle || ("/g/"+g.slug))+'</div>'
+      +      '<div class="tags">'+tags.join("")+'</div>'
+      +      '<div class="stats">'
+      +        '<div><b>'+g.views+'</b>Views</div>'
+      +        '<div><b>'+g.registrations+'</b>Signups</div>'
+      +        '<div><b>'+g.downloads+'</b>Downloads</div>'
+      +      '</div></div></div>';
+  });
+  v.innerHTML = h + '</div>';
+  Array.prototype.forEach.call(v.querySelectorAll(".card"), function(c){
+    c.onclick = function(){ detailView(Number(c.dataset.id)); };
+  });
+}
+$("newBtn").addEventListener("click", function(){ editView(null); });
+
+/* ---------------- detail ---------------- */
+function detailView(id){
+  var g = state.galleries.filter(function(x){return x.id===id;})[0];
+  if (!g) return listView();
+  setNav(g.title, listView);
+  var base = state.publicUrl || location.origin;
+  var url = base + "/g/" + g.slug;
+  $("view").innerHTML =
+      '<h2>Share link</h2>'
+    + '<div class="field"><input type="text" id="shareUrl" readonly value="'+esc(url)+'"><div class="hint">'
+    + 'Send this to your client. ' + (g.publishedAt ? '' : 'This gallery is a draft \u2014 publish it in Settings before sharing.') + '</div></div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+    +   '<button class="btn sm" id="copyBtn">Copy link</button>'
+    +   '<a class="btn sm ghost" href="'+esc(url)+'" target="_blank" rel="noopener">Open</a>'
+    +   '<button class="btn sm ghost" id="editBtn">Settings</button>'
+    + '</div>'
+    + '<h2>Clients</h2><div id="clients"><div class="spin"></div></div>'
+    + '<h2>Expiry reminders</h2><div id="rems"><div class="spin"></div></div>'
+    + '<h2>Activity</h2><div id="act"><div class="spin"></div></div>';
+  $("copyBtn").onclick = function(){
+    navigator.clipboard.writeText(url).then(function(){ toast("Link copied"); },
+      function(){ $("shareUrl").select(); toast("Press \u2318C to copy"); });
+  };
+  $("editBtn").onclick = function(){ editView(g); };
+  renderClients(g);
+  renderReminders(g);
+  api("/galleries/"+id+"/stats").then(function(r){
+    if (!r.ok) { $("act").innerHTML = '<p class="muted">Couldn\'t load activity.</p>'; return; }
+    renderActivity(r.body);
+  });
+}
+function renderClients(g){
+  var box = $("clients");
+  Promise.all([api("/galleries/"+g.id+"/invites"), api("/mail-status")]).then(function(rs){
+    var invites = (rs[0].body && rs[0].body.invites) || [];
+    var mail = rs[1].body || {};
+    var h = '';
+    if (!mail.configured){
+      h += '<p class="muted" style="font-size:12.5px;line-height:1.6;margin:0 0 16px">'
+         + 'Email isn\'t set up yet, so you can add addresses but not send. '
+         + 'Once it is, reminders go out automatically ' + (mail.remindDays||7) + ' days before a gallery expires.</p>';
+    }
+    h += '<div class="field"><label>Add client emails</label>'
+       + '<textarea id="invBox" rows="2" placeholder="anna@example.com, mark@example.com"></textarea>'
+       + '<div class="hint">Separate with commas, spaces or new lines.</div></div>'
+       + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">'
+       +   '<button class="btn sm" id="addInv">Add</button>'
+       +   '<button class="btn sm ghost" id="sendInv"'+(mail.configured && invites.length ? '' : ' disabled')+'>Send \u201Cgallery is ready\u201D</button>'
+       + '</div>';
+    h += invites.length
+      ? '<div class="scroll"><table><tr><th>Email</th><th>Added</th><th></th></tr>'
+        + invites.map(function(i){
+            return '<tr><td>'+esc(i.email)+'</td><td class="muted">'+fmtWhen(i.created_at)+'</td>'
+                 + '<td style="text-align:right"><button class="link rm" data-e="'+esc(i.email)+'" style="padding:2px 6px">Remove</button></td></tr>';
+          }).join("") + '</table></div>'
+      : '<p class="muted" style="font-size:13px">No client addresses yet.</p>';
+    box.innerHTML = h;
+
+    $("addInv").onclick = function(){
+      var v = $("invBox").value.trim(); if (!v) return;
+      $("addInv").disabled = true;
+      api("/galleries/"+g.id+"/invites", {method:"POST",headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({emails: v})}).then(function(r){
+        $("addInv").disabled = false;
+        if (!r.ok) return toast("Couldn't add those");
+        var inv = r.body.invalid || [];
+        toast(r.body.added + " added" + (inv.length ? ", " + inv.length + " not valid" : ""));
+        renderClients(g);
+  renderReminders(g);
+      });
+    };
+    $("sendInv").onclick = function(){
+      if (!confirm("Email all " + invites.length + " client" + (invites.length===1?"":"s") + " that the gallery is ready?")) return;
+      $("sendInv").disabled = true; $("sendInv").textContent = "Sending\u2026";
+      api("/galleries/"+g.id+"/send", {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+        .then(function(r){
+          if (!r.ok) { toast((r.body && r.body.error) || "Couldn't send"); renderClients(g); return; }
+          var f = (r.body.failed||[]).length;
+          toast("Sent to " + r.body.sent + (f ? ", " + f + " failed" : ""));
+          renderClients(g);
+  renderReminders(g);
+        });
+    };
+    Array.prototype.forEach.call(box.querySelectorAll(".rm"), function(b){
+      b.onclick = function(){
+        api("/galleries/"+g.id+"/invites", {method:"DELETE",headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({email: b.dataset.e})}).then(function(){ renderClients(g); });
+      };
+    });
+  });
+}
+
+function renderReminders(g){
+  var box = $("rems");
+  api("/galleries/"+g.id+"/reminders").then(function(r){
+    var list = (r.body && r.body.reminders) || [];
+    var h = '';
+    if (!g.expiresAt){
+      h += '<p class="muted" style="font-size:12.5px;line-height:1.6;margin:0 0 16px">'
+         + 'This gallery has no expiry date, so reminders won\'t fire. Set one in Settings.</p>';
+    }
+    h += list.length
+      ? '<div class="scroll"><table><tr><th>When</th><th>Who</th><th></th></tr>'
+        + list.map(function(x){
+            var who = x.audience === "email" ? esc(x.email) : "Everyone who registers";
+            var when = x.days_before === 0 ? "On the expiry date"
+                     : x.days_before === 1 ? "1 day before expiry"
+                     : x.days_before + " days before expiry";
+            return '<tr><td>'+when+'</td><td>'+who+'</td>'
+                 + '<td style="text-align:right"><button class="link rmR" data-id="'+x.id+'" style="padding:2px 6px">Remove</button></td></tr>';
+          }).join("") + '</table></div>'
+      : '<p class="muted" style="font-size:13px;margin-bottom:16px">No reminders yet.</p>';
+
+    h += '<div style="border-top:1px solid var(--line);margin-top:18px;padding-top:18px">'
+      +  '<div class="row2">'
+      +    '<div class="field" style="margin-bottom:12px"><label>Days before expiry</label>'
+      +      '<input type="text" id="rDays" inputmode="numeric" value="7"></div>'
+      +    '<div class="field" style="margin-bottom:12px"><label>Send to</label>'
+      +      '<select id="rAud"><option value="all">Everyone who registers</option>'
+      +      '<option value="email">A specific address</option></select></div>'
+      +  '</div>'
+      +  '<div class="field" id="rEmailWrap" style="display:none"><label>Email address</label>'
+      +    '<input type="text" id="rEmail" placeholder="someone@example.com"></div>'
+      +  '<label class="toggle" style="border:none;padding:4px 0 14px">'
+      +    '<input type="checkbox" id="rDefault" checked>'
+      +    '<span><span class="t">Use this on new galleries</span>'
+      +    '<span class="d">Saved as a default so you don\'t set it up each time.</span></span></label>'
+      +  '<button class="btn sm" id="rAdd">Add reminder</button></div>';
+    box.innerHTML = h;
+
+    $("rAud").onchange = function(){
+      $("rEmailWrap").style.display = this.value === "email" ? "" : "none";
+    };
+    $("rAdd").onclick = function(){
+      var body = {
+        daysBefore: parseInt($("rDays").value, 10),
+        audience: $("rAud").value,
+        email: $("rEmail") ? $("rEmail").value.trim() : "",
+        saveAsDefault: $("rDefault").checked,
+      };
+      if (!(body.daysBefore >= 0)) return toast("Enter a number of days");
+      $("rAdd").disabled = true;
+      api("/galleries/"+g.id+"/reminders", {method:"POST",headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(body)}).then(function(rr){
+        $("rAdd").disabled = false;
+        if (!rr.ok) return toast((rr.body && rr.body.error) || "Couldn't add that");
+        toast("Reminder added");
+        renderReminders(g);
+      });
+    };
+    Array.prototype.forEach.call(box.querySelectorAll(".rmR"), function(b){
+      b.onclick = function(){
+        api("/galleries/"+g.id+"/reminders", {method:"DELETE",headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({id: Number(b.dataset.id)})}).then(function(){ renderReminders(g); });
+      };
+    });
+  });
+}
+
+function renderActivity(d){
+  var c = d.counts || {};
+  var kpi = [["Landings",c.landing||0],["Signups",c.register||0],["Views",c.view||0],
+             ["Returns",c.return||0],["Downloads",(c.download||0)+(c.download_all||0)]];
+  var h = '<div class="kpis">' + kpi.map(function(k){
+    return '<div class="kpi"><b>'+k[1]+'</b><span>'+k[0]+'</span></div>'; }).join("") + '</div>';
+
+  h += '<h2>Who registered</h2>';
+  h += d.registrations.length
+    ? '<div class="scroll"><table><tr><th>Email</th><th>Name</th><th>When</th></tr>'
+      + d.registrations.map(function(r){
+          return '<tr><td>'+esc(r.email)+'</td><td>'+esc(r.name||"\u2014")+'</td><td class="muted">'+fmtWhen(r.created_at)+'</td></tr>';
+        }).join("") + '</table></div>'
+    : '<p class="muted" style="font-size:13px">Nobody has registered yet.</p>';
+
+  var LABEL = {landing:"Opened the link",register:"Registered",return:"Returned",view:"Viewed the gallery",
+               download:"Downloaded a photo",download_all:"Downloaded everything",
+               password_ok:"Entered the password",password_fail:"Wrong password",unlock:"Unlocked"};
+  h += '<h2>Recent</h2>';
+  h += d.recent.length
+    ? '<div class="scroll"><table><tr><th>What</th><th>When</th><th>IP</th></tr>'
+      + d.recent.slice(0,60).map(function(e){
+          return '<tr><td>'+esc(LABEL[e.type]||e.type)+'</td><td class="muted">'+fmtWhen(e.created_at)+'</td><td class="muted">'+esc(e.ip||"")+'</td></tr>';
+        }).join("") + '</table></div>'
+    : '<p class="muted" style="font-size:13px">No activity yet.</p>';
+  if (d.mail && d.mail.length){
+    h += '<h2>Emails sent</h2><div class="scroll"><table><tr><th>To</th><th>Type</th><th>Status</th><th>When</th></tr>'
+      + d.mail.map(function(m){
+          var k = m.kind === "ready" ? "Gallery ready"
+                : /^expiring-(\d+)$/.test(m.kind) ? (RegExp.$1 + "-day reminder")
+                : "Expiring soon";
+          var ok = m.status === "sent";
+          return '<tr><td>'+esc(m.email)+'</td><td>'+k+'</td>'
+               + '<td style="color:'+(ok?"var(--ok)":"var(--bad)")+'">'+(ok?"Sent":"Failed")+'</td>'
+               + '<td class="muted">'+fmtWhen(m.created_at)+'</td></tr>';
+        }).join("") + '</table></div>';
+  }
+  $("act").innerHTML = h;
+}
+
+/* ---------------- create / edit ---------------- */
+function editView(g){
+  var isNew = !g;
+  setNav(isNew ? "New gallery" : "Settings", function(){ isNew ? listView() : detailView(g.id); });
+  var opts = state.albums.map(function(a){
+    return '<option value="'+a.id+'"'+(g && g.albumId===a.id?" selected":"")+'>'+esc(a.name)+' \u2014 '+a.count+' photos</option>';
+  }).join("");
+  $("view").innerHTML =
+      '<div class="field"><label>Immich album</label><select id="fAlbum">'+opts+'</select>'
+    + '<div class="hint">The photos come from here. Add or remove photos in Immich and the gallery follows.</div></div>'
+    + '<div class="row2">'
+    +   '<div class="field"><label>Title</label><input type="text" id="fTitle" value="'+esc(g?g.title:"")+'" placeholder="Autumn Wedding"></div>'
+    +   '<div class="field"><label>Subtitle</label><input type="text" id="fSub" value="'+esc(g&&g.subtitle?g.subtitle:"")+'" placeholder="October 9th, 2026"></div>'
+    + '</div>'
+    + '<div class="row2">'
+    +   '<div class="field"><label>Web address</label><input type="text" id="fSlug" value="'+esc(g?g.slug:"")+'" placeholder="autumn-wedding">'
+    +     '<div class="hint" id="slugHint"></div></div>'
+    +   '<div class="field"><label>Expires on</label><input type="date" id="fExp" value="'+(g&&g.expiresAt?esc(String(g.expiresAt).slice(0,10)):"")+'">'
+    +     '<div class="hint">Leave empty to never expire.</div></div>'
+    + '</div>'
+    + '<div class="field"><label>Cover photo</label><div class="picker" id="picker"><div class="spin"></div></div>'
+    +   '<div class="hint">Tap a photo to use it as the cover. Defaults to the first photo.</div></div>'
+    + '<h2>Access</h2>'
+    + toggleHtml("fEmail","Ask visitors for their email","Anyone with the link can register. You see who opened it.",g?g.requireEmail:false)
+    + '<div class="field" style="margin-top:16px"><label>Password</label><input type="password" id="fPw" placeholder="'+(g&&g.hasPassword?"\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (unchanged)":"No password")+'">'
+    +   '<div class="hint">'+(g&&g.hasPassword?'Type a new password to change it, or <button type="button" class="link" id="clearPw" style="padding:0;letter-spacing:.06em">remove it</button>.':'Leave empty for no password.')+'</div></div>'
+    + toggleHtml("fDl","Allow downloads","Clients can save full-size originals.",g?g.allowDownload:true)
+    + toggleHtml("fPub","Published","Draft galleries return \u201Cnot found\u201D to anyone with the link.",g?!!g.publishedAt:true)
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:26px">'
+    +   '<button class="btn" id="saveBtn">'+(isNew?"Create gallery":"Save changes")+'</button>'
+    +   (isNew?"":'<button class="btn ghost danger" id="delBtn">Delete</button>')
+    + '</div>';
+
+  var pwCleared = false;
+  if ($("clearPw")) $("clearPw").onclick = function(){ pwCleared = true; $("fPw").value=""; toast("Password will be removed on save"); };
+
+  function syncSlug(){
+    var s = $("fSlug").value.trim().toLowerCase();
+    var host = (state.publicUrl || location.origin).replace(/^https?:\/\//, "");
+    $("slugHint").innerHTML = s ? "Clients will visit <b>" + esc(host + "/g/" + s) + "</b>" : "Letters, numbers and dashes.";
+  }
+  $("fSlug").addEventListener("input", syncSlug); syncSlug();
+  if (isNew) $("fTitle").addEventListener("input", function(){
+    if (!$("fSlug").dataset.touched)
+      $("fSlug").value = $("fTitle").value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40), syncSlug();
+  });
+  $("fSlug").addEventListener("input", function(){ $("fSlug").dataset.touched = "1"; });
+
+  var cover = g ? g.coverAssetId : null;
+  function loadPicker(){
+    var id = $("fAlbum").value;
+    $("picker").innerHTML = '<div class="spin"></div>';
+    api("/albums/"+id+"/assets").then(function(r){
+      var list = (r.body && r.body.assets) || [];
+      $("picker").innerHTML = list.map(function(a){
+        return '<div class="p'+(a.id===cover?" on":"")+'" data-id="'+a.id+'" style="background-image:url(\''+imgSrc(a.id)+'\')"></div>';
+      }).join("") || '<p class="muted" style="font-size:12px;padding:8px">This album has no photos.</p>';
+      Array.prototype.forEach.call($("picker").querySelectorAll(".p"), function(el){
+        el.onclick = function(){
+          cover = el.dataset.id;
+          Array.prototype.forEach.call($("picker").querySelectorAll(".p"), function(x){ x.classList.toggle("on", x===el); });
+        };
+      });
+    });
+  }
+  $("fAlbum").addEventListener("change", function(){ cover = null; loadPicker(); });
+  loadPicker();
+
+  $("saveBtn").onclick = function(){
+    var body = {
+      albumId: $("fAlbum").value,
+      title: $("fTitle").value.trim(),
+      subtitle: $("fSub").value.trim(),
+      slug: $("fSlug").value.trim().toLowerCase(),
+      coverAssetId: cover,
+      requireEmail: $("fEmail").checked,
+      allowDownload: $("fDl").checked,
+      expiresAt: $("fExp").value ? new Date($("fExp").value + "T23:59:59").toISOString() : null,
+    };
+    if (!body.title) return toast("Give the gallery a title");
+    if (!body.slug)  return toast("Give the gallery a web address");
+    if (isNew) { body.publish = $("fPub").checked; if ($("fPw").value) body.password = $("fPw").value; }
+    else {
+      body.published = $("fPub").checked;
+      if ($("fPw").value) body.password = $("fPw").value;
+      else if (pwCleared)  body.password = "";
+    }
+    $("saveBtn").disabled = true;
+    var p = isNew ? post("/galleries", body) : post("/galleries/"+g.id, body, "PATCH");
+    p.then(function(r){
+      $("saveBtn").disabled = false;
+      if (!r.ok) return toast((r.body && r.body.error) || "Couldn't save");
+      toast(isNew ? "Gallery created" : "Saved");
+      api("/galleries").then(function(rr){ state.galleries = rr.body || []; detailView(r.body.id); });
+    });
+  };
+  if ($("delBtn")) $("delBtn").onclick = function(){
+    if (!confirm("Delete \u201C"+g.title+"\u201D?\n\nThe gallery link stops working and its activity log is removed. Your photos in Immich are not touched.")) return;
+    api("/galleries/"+g.id, {method:"DELETE"}).then(function(){
+      toast("Gallery deleted");
+      api("/galleries").then(function(rr){ state.galleries = rr.body || []; listView(); });
+    });
+  };
+}
+function toggleHtml(id,title,desc,on){
+  return '<label class="toggle"><input type="checkbox" id="'+id+'"'+(on?" checked":"")+'>'
+       + '<span><span class="t">'+esc(title)+'</span><span class="d">'+esc(desc)+'</span></span></label>';
+}
+})();
+</script>
+</body>
+</html>

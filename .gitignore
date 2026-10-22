@@ -1,0 +1,17 @@
+# never commit real configuration - it holds API keys and passwords
+docker-compose.yml
+.env
+*.env
+
+# operator's own branding
+web/brand-logo.png
+
+# data
+*.db
+*.db-wal
+*.db-shm
+backups/
+data/
+
+.DS_Store
+node_modules/

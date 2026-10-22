@@ -1,0 +1,58 @@
+# Copy to docker-compose.yml and fill in. Never commit the filled-in file.
+name: immichset
+
+services:
+  app:
+    container_name: immichset
+    image: node:26-alpine
+    working_dir: /app
+    command: node server.mjs
+    volumes:
+      - /path/to/immichset:/app:ro          # this repo
+      - immichset-data:/data                # sqlite lives here
+      - /path/to/backups:/backups           # nightly database copies
+    environment:
+      # --- core ---
+      PORT: "3000"
+      DATA_DIR: "/data"
+      WEB_DIR: "/app/web"
+      TZ: "America/New_York"
+      PUBLIC_URL: "https://galleries.example.com"   # what clients see; links are built from it
+
+      # --- Immich ---
+      IMMICH_URL: "http://immich-server:2283"
+      IMMICH_API_KEY: ""      # create a READ-ONLY key: asset/album/timeline read + download
+
+      # --- secrets (generate your own long random values) ---
+      APP_SECRET: ""          # signs session cookies; rotating it logs everyone out
+      ADMIN_TOKEN: ""         # API header for scripting; bypasses 2FA, treat as a password
+
+      # --- admin sign-in ---
+      ADMIN_EMAIL: "you@example.com"
+      ADMIN_PASSWORD: ""      # seeds/updates the account on boot
+      ADMIN_2FA: "on"         # "off" is your lockout escape hatch if email breaks
+
+      # --- email (optional; without it, invites and reminders are disabled) ---
+      RESEND_API_KEY: ""
+      MAIL_FROM: "Your Studio <hello@example.com>"
+      MAIL_REPLY_TO: "you@example.com"
+      REMIND_DAYS: "7"
+
+      # --- branding (optional) ---
+      BRAND_NAME: "Your Studio"
+      BRAND_URL: "https://example.com"
+      BRAND_SOCIAL: "https://instagram.com/yourstudio"
+      BRAND_SOCIAL_LABEL: "@yourstudio"
+
+      # --- backups ---
+      BACKUP_DIR: "/backups"
+      BACKUP_KEEP: "14"
+
+      # --- client sessions ---
+      SESSION_DAYS: "30"
+    ports:
+      - '3100:3000'
+    restart: always
+
+volumes:
+  immichset-data:
