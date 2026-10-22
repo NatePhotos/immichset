@@ -657,7 +657,7 @@ const server = createServer(async (req, res) => {
     /* ---- the app shell for every /g/... path ---- */
     /* Drop a brand-logo.png (black artwork on transparent) into the web folder to
        use your own mark; otherwise a neutral aperture is served. */
-    if (path === '/brand/logo') {
+    if (path === '/favicon.ico' || path === '/brand/logo') {
       const own = join(CFG.webDir, 'brand-logo.png');
       if (existsSync(own)) {
         res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' });
