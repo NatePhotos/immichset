@@ -118,20 +118,31 @@ footer a:hover{color:var(--page-fg)}
 .cover-mark a:hover{opacity:.7}
 
 /* ---------- lightbox ---------- */
-#lb{position:fixed;inset:0;z-index:50;overscroll-behavior:contain;touch-action:none;background:#0d0d0d;display:none;opacity:0;transition:opacity .28s}
+/* A phone browser's toolbars overlap a fixed, full-height overlay, which used to hide the
+   close and download buttons. --lbh follows the visible viewport; svh is the fallback. */
+#lb{position:fixed;left:0;right:0;top:0;height:100vh;height:100svh;height:var(--lbh,100svh);
+  z-index:50;overscroll-behavior:contain;touch-action:none;background:#0d0d0d;display:none;opacity:0;transition:opacity .28s}
 #lb.on{display:block}
 #lb.vis{opacity:1}
-#lb .stage{position:absolute;inset:0;display:grid;place-items:center;padding:62px 70px;touch-action:pan-y pinch-zoom}
+#lb .stage{position:absolute;inset:0;display:grid;place-items:center;padding:62px 70px;touch-action:none;overflow:hidden}
 #lb img,#lb video{max-width:100%;max-height:100%;object-fit:contain;width:auto;height:auto}
-#lb .bar{position:absolute;top:0;left:0;right:0;height:60px;display:flex;align-items:center;gap:8px;padding:0 14px;color:#fff}
+#lb img{transform-origin:50% 50%;will-change:transform}
+#lb .bar{position:absolute;top:0;left:0;right:0;min-height:60px;display:flex;align-items:center;gap:8px;z-index:2;
+  padding:env(safe-area-inset-top) calc(14px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));color:#fff;
+  background:linear-gradient(rgba(0,0,0,.58),rgba(0,0,0,0));pointer-events:none}
+#lb .bar .ibtn{pointer-events:auto}
 #lb .bar .idx{font-size:11px;letter-spacing:.18em;opacity:.75;margin-right:auto}
 .ibtn{width:42px;height:42px;display:grid;place-items:center;background:transparent;border:none;color:#fff;opacity:.8;border-radius:50%}
 .ibtn:hover{opacity:1;background:rgba(255,255,255,.12)}
 .nav{position:absolute;top:50%;transform:translateY(-50%);width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.08);border:none;color:#fff;display:grid;place-items:center}
 .nav:hover{background:rgba(255,255,255,.2)}
 .nav.prev{left:14px}.nav.next{right:14px}
-@media(max-width:700px){#lb .stage{padding:58px 8px 86px}.nav{display:none}}
-#lb .mbar{position:absolute;left:0;right:0;bottom:0;height:74px;display:none;align-items:center;justify-content:center;gap:10px}
+@media(max-width:700px){
+  #lb .stage{padding:calc(60px + env(safe-area-inset-top)) 8px calc(86px + env(safe-area-inset-bottom))}
+  .nav{display:none}
+}
+#lb .mbar{position:absolute;left:0;right:0;bottom:0;min-height:74px;display:none;align-items:center;justify-content:center;gap:10px;z-index:2;
+  padding-bottom:env(safe-area-inset-bottom);background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.6))}
 @media(max-width:700px){#lb .mbar{display:flex}}
 .mbtn{padding:12px 20px;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;font-size:11px;letter-spacing:.16em;text-transform:uppercase;border-radius:2px}
 
@@ -665,6 +676,7 @@ function close(){
 }
 function show(){
   var a = assets[cur]; if (!a) return;
+  lbZoomReset(false);
   $("lbIdx").textContent = (cur+1) + " / " + assets.length;
   var st = $("lbStage"); st.innerHTML = "";
   if (a.isImage){
@@ -693,26 +705,137 @@ function step(d){ cur = (cur + d + assets.length) % assets.length; show(); }
 $("lbPrev").addEventListener("click", function(){ step(-1); });
 $("lbNext").addEventListener("click", function(){ step(1); });
 $("lbClose").addEventListener("click", close);
-$("lb").addEventListener("click", function(e){ if (e.target.id==="lbStage" || e.target.id==="lb") close(); });
+$("lb").addEventListener("click", function(e){
+  if (window.lbZoomed && window.lbZoomed()) return;      /* a pan should not dismiss the photo */
+  if (e.target.id==="lbStage" || e.target.id==="lb") close();
+});
 document.addEventListener("keydown", function(e){
   if (!$("lb").classList.contains("on")) return;
   if (e.key==="Escape") close();
   else if (e.key==="ArrowRight") step(1);
   else if (e.key==="ArrowLeft") step(-1);
 });
-/* swipe */
+/* ---------- touch: swipe between photos, pinch to zoom, drag once zoomed ----------
+   The zoom works on the preview already on screen - a sharper file is a slow download
+   on the phone where this gesture lives, and at these sizes it does not show. */
+var lbZoomReset = function(){};
 (function(){
-  var x0=null,y0=null;
-  $("lbStage").addEventListener("touchstart", function(e){ x0=e.touches[0].clientX; y0=e.touches[0].clientY; }, {passive:true});
-  $("lb").addEventListener("touchmove", function(e){
-    if (e.cancelable) e.preventDefault();
-  }, {passive:false});
-  $("lbStage").addEventListener("touchend", function(e){
-    if (x0===null) return;
-    var dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) step(dx < 0 ? 1 : -1);
-    x0=null;
+  var stage = $("lbStage"), MAX = 5;
+  var sc = 1, tx = 0, ty = 0;
+  var mode = null, x0 = 0, y0 = 0, tx0 = 0, ty0 = 0, d0 = 0, s0 = 1, fx = 0, fy = 0;
+  var lastTap = 0, moved = false;
+
+  function img(){ return stage.querySelector("img"); }
+  function paint(anim){
+    var im = img(); if (!im) return;
+    im.style.transition = anim ? "transform .2s" : "";
+    im.style.transform = sc === 1 ? "" : "translate(" + tx + "px," + ty + "px) scale(" + sc + ")";
+  }
+  function bound(){
+    var im = img(); if (!im) return;
+    var ex = Math.max(0, (im.clientWidth  * sc - stage.clientWidth)  / 2);
+    var ey = Math.max(0, (im.clientHeight * sc - stage.clientHeight) / 2);
+    tx = Math.max(-ex, Math.min(ex, tx));
+    ty = Math.max(-ey, Math.min(ey, ty));
+  }
+  function reset(anim){ sc = 1; tx = ty = 0; paint(anim); }
+  lbZoomReset = reset;
+  window.lbZoomed = function(){ return sc > 1; };
+
+  function centre(){ var r = stage.getBoundingClientRect(); return { x:r.left + r.width/2, y:r.top + r.height/2 }; }
+  function gap(e){
+    var dx = e.touches[0].clientX - e.touches[1].clientX, dy = e.touches[0].clientY - e.touches[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+  /* keep the point under the fingers where it is while the scale changes */
+  function zoomAbout(next, px, py){
+    var c = centre(), f = { x: px - c.x, y: py - c.y };
+    tx = f.x - (f.x - tx) * (next / sc);
+    ty = f.y - (f.y - ty) * (next / sc);
+    sc = next;
+    bound();
+  }
+
+  stage.addEventListener("touchstart", function(e){
+    if (!img()) return;                                  /* video keeps its own controls */
+    if (e.touches.length === 2){
+      mode = "pinch"; moved = true;
+      d0 = gap(e); s0 = sc;
+      var c = centre();
+      fx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      fy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      tx0 = tx; ty0 = ty;
+      return;
+    }
+    if (e.touches.length === 1){
+      moved = false;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+      tx0 = tx; ty0 = ty;
+      mode = sc > 1 ? "pan" : "swipe";
+    }
   }, {passive:true});
+
+  stage.addEventListener("touchmove", function(e){
+    if (!img()) return;
+    if (mode === "pinch" && e.touches.length === 2){
+      var k = gap(e) / (d0 || 1);
+      var next = Math.max(1, Math.min(MAX, s0 * k));
+      var c = centre(), f = { x: fx - c.x, y: fy - c.y };
+      tx = f.x - (f.x - tx0) * (next / s0);
+      ty = f.y - (f.y - ty0) * (next / s0);
+      sc = next; bound(); paint();
+      return;
+    }
+    if (mode === "pan" && e.touches.length === 1){
+      tx = tx0 + (e.touches[0].clientX - x0);
+      ty = ty0 + (e.touches[0].clientY - y0);
+      moved = true; bound(); paint();
+      return;
+    }
+    if (mode === "swipe" && e.touches.length === 1){
+      if (Math.abs(e.touches[0].clientX - x0) > 8 || Math.abs(e.touches[0].clientY - y0) > 8) moved = true;
+    }
+  }, {passive:true});
+
+  /* the overlay itself never scrolls or page-zooms; every gesture above is ours */
+  $("lb").addEventListener("touchmove", function(e){ if (e.cancelable) e.preventDefault(); }, {passive:false});
+
+  stage.addEventListener("touchend", function(e){
+    if (!img()){ mode = null; return; }
+    if (mode === "pinch"){
+      if (sc <= 1.03) reset(true); else paint();
+      mode = e.touches.length ? "pan" : null;
+      return;
+    }
+    if (mode === "swipe" && e.changedTouches.length){
+      var dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { mode = null; return step(dx < 0 ? 1 : -1); }
+    }
+    /* double tap toggles a close look, centred where the finger landed */
+    if (!moved && e.changedTouches.length){
+      var now = Date.now();
+      if (now - lastTap < 300){
+        if (sc > 1) reset(true);
+        else { zoomAbout(2.5, e.changedTouches[0].clientX, e.changedTouches[0].clientY); paint(true); }
+        lastTap = 0;
+      } else lastTap = now;
+    }
+    mode = null;
+  }, {passive:true});
+})();
+
+/* The toolbars on a phone browser slide in and out; visualViewport is the only thing
+   that reports what is actually on screen while they do. */
+(function(){
+  var vv = window.visualViewport;
+  function sync(){
+    var h = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty("--lbh", Math.round(h) + "px");
+  }
+  sync();
+  if (vv){ vv.addEventListener("resize", sync); vv.addEventListener("scroll", sync); }
+  window.addEventListener("orientationchange", function(){ setTimeout(sync, 250); });
+  window.addEventListener("resize", sync);
 })();
 
 /* ---------- slideshow ---------- */
