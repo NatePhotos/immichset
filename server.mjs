@@ -323,6 +323,23 @@ function adminOk(req) {
 }
 const isExpired = g => !!g.expires_at && new Date(g.expires_at).getTime() < Date.now();
 
+/* The line under a gallery's title is a date. It is stored as YYYY-MM-DD and written out
+   long form; anything else is text from before dates were dates, and is passed through. */
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function prettyDate(v) {
+  const t = String(v || '').trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (!m) return t;
+  /* build from parts: `new Date("2026-10-18")` is UTC and can land on the 17th */
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (isNaN(d)) return t;
+  const day = d.getDate();
+  const suf = (day % 10 === 1 && day !== 11) ? 'st'
+            : (day % 10 === 2 && day !== 12) ? 'nd'
+            : (day % 10 === 3 && day !== 13) ? 'rd' : 'th';
+  return `${MONTHS[d.getMonth()]} ${day}${suf}, ${d.getFullYear()}`;
+}
+
 /* Galleries live at the root, so a slug may not be a path the app already answers. */
 const RESERVED = new Set(['g', 's', 'share', 'api', 'admin', 'healthz', 'brand', 'static', 'assets',
                           'favicon.ico', 'robots.txt', 'sitemap.xml', 'index.html', 'admin.html',
@@ -412,7 +429,7 @@ function fillVars(text, g) {
     : '';
   return String(text || '')
     .replace(/\{\{\s*title\s*\}\}/gi, g.title || '')
-    .replace(/\{\{\s*subtitle\s*\}\}/gi, g.subtitle || '')
+    .replace(/\{\{\s*subtitle\s*\}\}/gi, prettyDate(g.subtitle))
     .replace(/\{\{\s*link\s*\}\}/gi, url)
     .replace(/\{\{\s*expiry\s*\}\}/gi, when)
     .replace(/\{\{\s*brand\s*\}\}/gi, CFG.brandName || '');
@@ -449,7 +466,7 @@ function emailHtml(g, bodyText, opts = {}) {
       <div style="font-family:Helvetica,Arial,sans-serif;font-size:19px;font-weight:600;
         letter-spacing:.16em;text-transform:uppercase;color:#1a1a1a">${esc(g.title)}</div>
       ${g.subtitle ? `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:.22em;
-        text-transform:uppercase;color:#8a8a8a;margin-top:9px">${esc(g.subtitle)}</div>` : ''}
+        text-transform:uppercase;color:#8a8a8a;margin-top:9px">${esc(prettyDate(g.subtitle))}</div>` : ''}
     </td></tr>
     <tr><td style="padding:0">
       <a href="${url}"><img src="${cover}" width="560" alt="" style="display:block;width:100%;height:auto;border:0"></a>
@@ -936,7 +953,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     return json(res, 200, {
       slug: gallery.slug,
       title: gallery.title,
-      subtitle: gallery.subtitle,
+      subtitle: prettyDate(gallery.subtitle),   /* the client prints it as sent */
       cover: `/api/g/${gallery.slug}/cover`,
       allowDownload: !!gallery.allow_download,
       expiresAt: gallery.expires_at,
@@ -1119,7 +1136,7 @@ async function setsDto(g) {
 
 function gallDto(g) {
   return {
-    id: g.id, slug: g.slug, title: g.title, subtitle: g.subtitle,
+    id: g.id, slug: g.slug, title: g.title, subtitle: g.subtitle, subtitleText: prettyDate(g.subtitle),
     albumId: g.album_id, coverAssetId: g.cover_asset_id, coverFile: g.cover_file || null,
     sets: q.setsFor.all(g.id).map(x => ({ id: x.id, name: x.name, albumId: x.album_id })),
     requireEmail: !!g.require_email, hasPassword: !!g.password_hash,

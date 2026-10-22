@@ -461,7 +461,7 @@ function listView(){
       return '<div class="card" data-id="'+g.id+'">'
         + '<div class="ph" style="background-image:url(\'' + coverOf(g) + '\')"></div>'
         + '<div class="body"><h3>'+esc(g.title)+'</h3>'
-        + '<div class="sub">'+esc(g.subtitle || ("/"+g.slug))+'</div>'
+        + '<div class="sub">'+esc(g.subtitleText || ("/"+g.slug))+'</div>'
         + '<div class="tags">'+tags.join("")+'</div>'
         + '<div class="stats"><div><b>'+g.views+'</b>Views</div><div><b>'+g.registrations+'</b>Signups</div>'
         + '<div><b>'+g.downloads+'</b>Downloads</div></div></div></div>';
@@ -498,7 +498,7 @@ function openGallery(id, tab, pane){
   var g = S.galleries.filter(function(x){return x.id===id;})[0];
   if (!g) return listView();
   S.g = g; S.tab = tab || "photos"; S.pane = pane || firstPane(S.tab);
-  chrome({title:g.title, sub:g.subtitle || galleryUrl(g).replace(/^https?:\/\//,""), back:listView, gallery:g});
+  chrome({title:g.title, sub:g.subtitleText || galleryUrl(g).replace(/^https?:\/\//,""), back:listView, gallery:g});
   renderShell();
 }
 function renderShell(){
@@ -570,7 +570,7 @@ function save(patch, msg){
     if (!r.ok) { toast((r.body&&r.body.error)||"Couldn't save"); return false; }
     toast(msg || "Saved");
     return new Promise(function(res){ refreshGalleries(function(){
-      chrome({title:S.g.title, sub:S.g.subtitle || galleryUrl(S.g).replace(/^https?:\/\//,""), back:listView, gallery:S.g});
+      chrome({title:S.g.title, sub:S.g.subtitleText || galleryUrl(S.g).replace(/^https?:\/\//,""), back:listView, gallery:S.g});
       res(true);
     }); });
   });
@@ -581,7 +581,10 @@ function paneGeneral(g){
   $("pane").innerHTML = head("General", "What clients see at the top of the gallery, and where it lives.")
     + '<div class="row2">'
     +   '<div class="field"><label>Title</label><input type="text" id="fTitle" value="'+esc(g.title)+'"></div>'
-    +   '<div class="field"><label>Subtitle</label><input type="text" id="fSub" value="'+esc(g.subtitle||"")+'" placeholder="October 9th, 2026"></div>'
+    +   '<div class="field"><label>Date</label><input type="date" id="fSub" value="'+esc(isoDate(g.subtitle))+'">'
+    +     '<div class="hint">' + (g.subtitle && !isoDate(g.subtitle)
+          ? 'This gallery still shows the words <b>'+esc(g.subtitle)+'</b>. Saving replaces them with the date you pick, or removes them if you leave this empty.'
+          : 'Shown under the title on the cover. Leave it empty for no date at all.') + '</div></div>'
     + '</div>'
     + '<div class="row2">'
     +   '<div class="field"><label>Web address</label><input type="text" id="fSlug" value="'+esc(g.slug)+'">'
@@ -597,11 +600,14 @@ function paneGeneral(g){
   }
   $("fSlug").addEventListener("input", syncSlug); syncSlug();
   $("saveGen").onclick = function(){
-    save({ title:$("fTitle").value.trim(), subtitle:$("fSub").value.trim(),
+    var patch = { title:$("fTitle").value.trim(), subtitle:$("fSub").value,
            slug:$("fSlug").value.trim().toLowerCase(),
-           expiresAt: $("fExp").value ? new Date($("fExp").value+"T23:59:59").toISOString() : null });
+           expiresAt: $("fExp").value ? new Date($("fExp").value+"T23:59:59").toISOString() : null };
+    save(patch);
   };
 }
+/* YYYY-MM-DD if that is what is stored, otherwise nothing a date input can hold */
+function isoDate(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v||"")) ? v : ""; }
 function tog(id,t,d,on,dis){
   return '<label class="toggle"><input type="checkbox" id="'+id+'"'+(on?" checked":"")+(dis?" disabled":"")+'>'
        + '<span><span class="t">'+esc(t)+'</span><span class="d">'+esc(d)+'</span></span></label>';
@@ -1368,7 +1374,8 @@ function editorView(g){
     +   '</select><div class="hint" id="albHint"></div></div>'
     + '<div class="row2">'
     +   '<div class="field"><label>Title</label><input type="text" id="fTitle" placeholder="Autumn Wedding"></div>'
-    +   '<div class="field"><label>Subtitle</label><input type="text" id="fSub" placeholder="October 9th, 2026"></div></div>'
+    +   '<div class="field"><label>Date</label><input type="date" id="fSub">'
+    +     '<div class="hint">Optional \u2014 leave it empty for no date.</div></div></div>'
     + '<div class="row2">'
     +   '<div class="field"><label>Web address</label><input type="text" id="fSlug" placeholder="autumn-wedding"><div class="hint" id="slugHint"></div></div>'
     +   '<div class="field"><label>Expires on</label><input type="date" id="fExp"><div class="hint">Leave empty to never expire.</div></div></div>'

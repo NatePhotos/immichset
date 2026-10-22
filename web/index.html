@@ -61,6 +61,7 @@ button{font-family:inherit;cursor:pointer}
 .cover-inner{position:relative;text-align:center;padding:0 24px;opacity:0;transform:translateY(14px);transition:opacity .9s .25s ease,transform .9s .25s ease}
 #cover.ready .cover-inner{opacity:1;transform:none}
 .cover-inner h1{margin:0;font-size:clamp(30px,6.2vw,62px);font-weight:700;letter-spacing:.085em;text-transform:uppercase;line-height:1.08;text-shadow:0 2px 26px rgba(0,0,0,.3)}
+.cover-date[hidden]{display:none}
 .cover-date{margin-top:20px;font-size:clamp(10px,1.2vw,12px);letter-spacing:.3em;text-transform:uppercase;opacity:.95}
 .cover-cta{margin-top:40px;display:inline-block;padding:15px 44px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;font-size:11px;font-weight:500;letter-spacing:.26em;text-transform:uppercase;transition:background .3s,color .3s}
 .cover-cta:hover{background:#fff;color:#111}
@@ -484,14 +485,6 @@ function loadGallery(setId){
 }
 
 /* ---------- render ---------- */
-function fmtDate(iso){
-  if (!iso) return "";
-  var d = new Date(iso); if (isNaN(d)) return "";
-  var mo = ["January","February","March","April","May","June","July","August","September","October","November","December"][d.getMonth()];
-  var day = d.getDate();
-  var suf = (day%10==1&&day!=11)?"st":(day%10==2&&day!=12)?"nd":(day%10==3&&day!=13)?"rd":"th";
-  return mo + " " + day + suf + ", " + d.getFullYear();
-}
 
 function render(){
   var title = album.albumName || "Gallery";
@@ -510,10 +503,11 @@ function render(){
                          + esc(BRAND.socialLabel || BRAND.social.replace(/^https?:\/\//,"")) + '</a>');
   $("flinks").innerHTML = fl.join('<span class="fdot">&middot;</span>');
 
-  /* date: album description if it looks like a label, else derived from photos */
-  var desc = (album.description||"").trim();
-  var dateText = desc ? desc : fmtDate(assets.length ? assets[0].created : null);
-  $("coverDate").textContent = dateText;
+  /* the line under the title is whatever the photographer typed. Left blank it stays
+     blank - guessing a date from the first photo was wrong as often as it was right. */
+  var desc = (album.description || "").trim();
+  $("coverDate").textContent = desc;
+  $("coverDate").hidden = !desc;
 
   var n = assets.length;
   $("hCount").textContent = n + (n===1 ? " Photo" : " Photos");
