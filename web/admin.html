@@ -364,6 +364,12 @@ function post(p,d,m){ return api(p,{method:m||"POST",headers:{"Content-Type":"ap
 function fmtDate(iso){ if(!iso) return ""; var d=new Date(iso); return isNaN(d)?"":d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}); }
 function fmtWhen(s){ if(!s) return ""; var d=new Date(String(s).replace(" ","T")+"Z"); return isNaN(d)?s:d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
 function imgSrc(id,size){ return id ? "/api/admin/img/"+id+"?size="+(size||"thumbnail") : ""; }
+/* every cover in the panel is cropped the same way the client's is, or the focal
+   point is something you set blind and only see on the gallery itself */
+function coverCss(g){
+  return "background-image:url('" + coverOf(g) + "');background-position:"
+       + (g.coverFocus || "50 50").replace(" ", "% ") + "%";
+}
 function coverOf(g){
   /* an uploaded cover wins, same as it does for clients; the filename busts the cache */
   if (g.coverFile) return "/api/g/" + encodeURIComponent(g.slug) + "/cover?v=" + encodeURIComponent(g.coverFile);
@@ -487,7 +493,7 @@ function listView(){
       if (g.requireEmail) tags.push('<span class="tag2">Email</span>');
       if (!g.allowDownload) tags.push('<span class="tag2">No downloads</span>');
       return '<div class="card" data-id="'+g.id+'">'
-        + '<div class="ph" style="background-image:url(\'' + coverOf(g) + '\')"></div>'
+        + '<div class="ph" style="' + coverCss(g) + '"></div>'
         + '<div class="body"><h3>'+esc(g.title)+'</h3>'
         + '<div class="sub">'+esc(g.subtitleText || ("/"+g.slug))+'</div>'
         + '<div class="tags">'+tags.join("")+'</div>'
@@ -547,7 +553,7 @@ function renderShell(){
   $("root").innerHTML =
       '<div class="detail">'
     +   '<div class="side">'
-    +     '<div class="cov" style="background-image:url(\'' + coverOf(g) + '\')"></div>'
+    +     '<div class="cov" style="' + coverCss(g) + '"></div>'
     +     '<div class="tabs">'+tabs+'</div>'
     +     '<div class="navhead">'+esc(NAV[S.tab].label)+'</div>'
     +     '<div class="navrow">'+items+'</div>'
@@ -667,7 +673,7 @@ function paneCover(g){
   var own = !!g.coverFile;
   var focus = (g.coverFocus || "50 50").split(" ").map(Number);
   $("pane").innerHTML = head("Cover photo", "Shown on the gallery cover and at the top of every email.")
-    + '<div class="covnow"><div class="shot" style="background-image:url(\'' + coverOf(g) + '\')"></div>'
+    + '<div class="covnow"><div class="shot" style="' + coverCss(g) + '"></div>'
     +   '<div class="covside"><div class="covwhat">' + (own ? "Your own image" : g.coverAssetId ? "A photo from the album" : "No cover yet — the first photo stands in") + '</div>'
     +     '<button class="btn sm" id="pickCov">' + (own ? "Choose a different one" : "Upload an image") + '</button>'
     +     (own ? '<button class="btn sm ghost" id="dropCov">Remove it</button>' : '')
@@ -735,7 +741,8 @@ function paneCover(g){
     paintFocus();
   })();
   $("saveFoc").onclick = function(){
-    save({coverFocus: focus[0] + " " + focus[1]}, "Focal point saved");
+    save({coverFocus: focus[0] + " " + focus[1]}, "Focal point saved")
+      .then(function(ok){ if (ok) renderShell(); });   /* the strip and the card follow it */
   };
 
   $("pickCov").onclick = function(){ $("covFile").click(); };
