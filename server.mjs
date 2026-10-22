@@ -14,6 +14,8 @@ const CFG = {
   port:       Number(process.env.PORT || 3000),
   immichUrl:  (process.env.IMMICH_URL || '').replace(/\/+$/, ''),
   immichKey:   process.env.IMMICH_API_KEY || '',
+  immichWriteKey: process.env.IMMICH_WRITE_KEY || '',
+  uploadMaxMb: Number(process.env.UPLOAD_MAX_MB || 250),
   secret:      process.env.APP_SECRET || '',
   adminToken:  process.env.ADMIN_TOKEN || '',
   dataDir:     process.env.DATA_DIR || '/data',
@@ -313,6 +315,17 @@ async function readJson(req, limit = 64 * 1024) {
   return JSON.parse(Buffer.concat(chunks).toString());
 }
 
+async function readBuffer(req, limit) {
+  const chunks = []; let n = 0;
+  for await (const c of req) {
+    n += c.length;
+    if (n > limit) throw new Error('body too large');   /* the caller answers, then closes */
+    chunks.push(c);
+  }
+  return Buffer.concat(chunks);
+}
+function isoOrNow(v) { const d = new Date(v || ''); return isNaN(d) ? new Date().toISOString() : d.toISOString(); }
+
 /* simple per-IP throttle for the password gate */
 const attempts = new Map();
 function tooManyAttempts(key, limit = 12) {
@@ -529,12 +542,18 @@ function backupList() {
 
 /* ------------------------------------------------------------------- immich */
 async function immich(path, init = {}) {
+  /* `write: true` picks the key allowed to create things; the default key is read-only
+     so a bug in the client path can never add or change anything in Immich. */
+  const { write, ...rest } = init;
   const r = await fetch(CFG.immichUrl + path, {
-    ...init,
-    headers: { 'x-api-key': CFG.immichKey, ...(init.headers || {}) },
+    ...rest,
+    headers: { 'x-api-key': write && CFG.immichWriteKey ? CFG.immichWriteKey : CFG.immichKey,
+               ...(rest.headers || {}) },
   });
   return r;
 }
+const canUpload = () => !!CFG.immichWriteKey;
+const UPLOAD_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
 async function immichJson(path, init) {
   const r = await immich(path, init);
   if (!r.ok) throw new Error(`immich ${path} -> ${r.status}`);
@@ -902,7 +921,80 @@ function gallDto(g) {
 }
 
 async function adminRoutes(req, res, path, url) {
-  if (path === '/api/admin/me') return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null });
+  if (path === '/api/admin/me')
+    return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
+                            canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb });
+
+  if (path === '/api/admin/albums' && req.method === 'POST') {
+    if (!canUpload()) return json(res, 400, { error: 'no_write_key' });
+    const b = await readJson(req);
+    const name = String(b.name || '').trim().slice(0, 120);
+    if (!name) return json(res, 400, { error: 'Give the album a name' });
+    const r = await immich('/api/albums', {
+      write: true, method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ albumName: name, description: String(b.description || '') }),
+    });
+    if (!r.ok) {
+      console.error('album create failed', r.status, (await r.text().catch(() => '')).slice(0, 200));
+      return json(res, 502, { error: `Immich refused the album (${r.status})` });
+    }
+    const a = await r.json();
+    console.log(`created immich album ${a.albumName} (${a.id})`);
+    return json(res, 201, { id: a.id, name: a.albumName, count: a.assetCount || 0, thumb: null });
+  }
+
+  /* One photo per request, raw body - no multipart to parse on this side, and the
+     browser gets a real progress bar per file. */
+  if (path === '/api/admin/upload' && req.method === 'POST') {
+    if (!canUpload()) return json(res, 400, { error: 'no_write_key' });
+    const albumId = url.searchParams.get('albumId') || '';
+    if (!/^[0-9a-f-]{36}$/i.test(albumId)) return json(res, 400, { error: 'albumId is required' });
+    const name = (url.searchParams.get('name') || 'photo.jpg').replace(/[\\/\u0000]/g, '_').slice(0, 200);
+    if (!UPLOAD_OK.test(name)) return json(res, 415, { error: 'Photos only: jpg, png, heic, webp, tiff or dng' });
+
+    const cap = CFG.uploadMaxMb * 1024 * 1024;
+    const tooBig = () => {
+      /* answer before closing, or the browser only sees a dropped connection */
+      json(res, 413, { error: `Each file must be under ${CFG.uploadMaxMb} MB` }, { connection: 'close' });
+      req.destroy();
+    };
+    if (Number(req.headers['content-length'] || 0) > cap) return tooBig();
+
+    let buf;
+    try { buf = await readBuffer(req, cap); }
+    catch { return tooBig(); }
+    if (!buf.length) return json(res, 400, { error: 'that file was empty' });
+
+    const when = isoOrNow(url.searchParams.get('created'));
+    const fd = new FormData();
+    fd.set('assetData', new Blob([buf]), name);
+    fd.set('filename', name);
+    fd.set('fileCreatedAt', when);
+    fd.set('fileModifiedAt', when);
+
+    const up = await immich('/api/assets', { write: true, method: 'POST', body: fd });
+    if (!up.ok) {
+      console.error('upload failed', up.status, (await up.text().catch(() => '')).slice(0, 200));
+      return json(res, 502, { error: `Immich refused the upload (${up.status})` });
+    }
+    const a = await up.json();                      /* { id, status: created | duplicate } */
+    let added = false;
+    if (a.id) {
+      const r2 = await immich(`/api/albums/${albumId}/assets`, {
+        write: true, method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: [a.id] }),
+      });
+      if (r2.ok) {
+        const rr = await r2.json().catch(() => null);
+        added = Array.isArray(rr) ? rr.some(x => x && x.success) : true;
+      } else console.error('album add failed', r2.status);
+      albumSets.delete(albumId);                    /* a photo added now must be servable now */
+    }
+    console.log(`upload ${name} ${(buf.length / 1048576).toFixed(1)}MB -> ${a.status || 'ok'}${added ? ' + album' : ''}`);
+    return json(res, 200, { id: a.id || null, status: a.status || 'created', added });
+  }
 
   if (path === '/api/admin/albums') {
     const albums = await immichJson('/api/albums');

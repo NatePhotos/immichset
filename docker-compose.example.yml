@@ -23,6 +23,12 @@ services:
       IMMICH_URL: "http://immich-server:2283"
       IMMICH_API_KEY: ""      # create a READ-ONLY key: asset/album/timeline read + download
 
+      # Optional. Only set this if you want to upload photos from the admin panel.
+      # A SECOND key, allowed to write: asset.upload, album.create, albumAsset.create.
+      # Leave it empty and the upload tab stays off; everything else works read-only.
+      IMMICH_WRITE_KEY: ""
+      UPLOAD_MAX_MB: "250"
+
       # --- secrets (generate your own long random values) ---
       APP_SECRET: ""          # signs session cookies; rotating it logs everyone out
       ADMIN_TOKEN: ""         # API header for scripting; bypasses 2FA, treat as a password

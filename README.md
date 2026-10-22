@@ -20,6 +20,8 @@ everything client-facing — the gallery page, who may see it, and what they did
 - **Save to Photos on iOS** — via the share sheet, not a file dumped into Downloads
 - **Activity** — who registered, who opened it, what was downloaded
 - **Email** — "your gallery is ready", plus expiry reminders you schedule per gallery
+- **Upload from the admin panel** — drag photos in, or start a fresh Immich album with the
+  gallery; optional, and off unless you give it a key that may write
 - **Mobile admin** — create and manage galleries from a phone
 - **Nightly database backups** that are consistent while running
 
@@ -33,7 +35,9 @@ client ──▶ immichset ──▶ sessions, registrations, events, email   (S
                       ──▶ Immich, with a read-only key the client never sees
 ```
 
-Galleries point at an Immich album. Add or remove photos in Immich and the gallery follows.
+Galleries point at an Immich album. Add or remove photos in Immich and the gallery follows —
+or, with a write key set, drop them straight into the admin panel and immichset creates the
+album and uploads for you.
 
 ## Requirements
 
@@ -47,6 +51,9 @@ Galleries point at an Immich album. Add or remove photos in Immich and the galle
 2. `cp docker-compose.example.yml docker-compose.yml` and fill it in.
 3. In Immich, create a **read-only** API key: `asset.read`, `asset.view`, `asset.download`,
    `album.read`, `album.download`, `timeline.read`, `timeline.download`.
+   To upload from the admin panel, create a **second** key with `asset.upload`, `album.create`
+   and `albumAsset.create`, and set it as `IMMICH_WRITE_KEY`. Keeping them apart means the
+   client-facing path cannot change anything in Immich even if it is compromised.
 4. Generate long random values for `APP_SECRET` and `ADMIN_TOKEN`.
 5. `docker compose up -d`
 6. Point your proxy at the container and open `/admin`.

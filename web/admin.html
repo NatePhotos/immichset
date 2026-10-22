@@ -123,6 +123,27 @@ h3.sec:first-child{margin-top:0}
 .picker .p{aspect-ratio:1;background:var(--soft) center/cover no-repeat;cursor:pointer;border:2px solid transparent}
 .picker .p.on{border-color:var(--fg)}
 
+/* ---------- uploads ---------- */
+.drop{border:1.5px dashed var(--line);background:var(--soft);padding:32px 20px;text-align:center;max-width:620px}
+.drop.on{border-color:var(--fg);background:var(--bg)}
+.drop svg{color:var(--muted)}
+.drop p{margin:9px 0 14px;font-size:14px}
+.drop .hint{margin-top:13px}
+.queue{margin-top:22px;max-width:620px}
+.qhead{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+.qhead .link{margin-left:8px}
+.qfail{color:var(--bad)}
+.qrow{display:grid;grid-template-columns:minmax(0,1fr) 110px 104px;gap:12px;align-items:center;
+  padding:8px 0;border-top:1px solid var(--line);font-size:12.5px}
+.qn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qbar{height:3px;background:var(--line);position:relative;overflow:hidden}
+.qbar i{position:absolute;top:0;bottom:0;left:0;background:var(--fg);transition:width .2s}
+.qs{color:var(--muted);text-align:right}
+.qrow.done .qs{color:var(--ok)}
+.qrow.fail .qs{color:var(--bad)}
+.qrow.fail .qbar i{background:var(--bad)}
+@media(max-width:700px){.qrow{grid-template-columns:minmax(0,1fr) 96px}.qbar{display:none}}
+
 /* ---------- compose ---------- */
 .compose{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start}
 @media(max-width:1100px){.compose{grid-template-columns:1fr}}
@@ -204,13 +225,16 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 (function(){
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
-var S = { galleries: [], albums: [], publicUrl: null, g: null, tab: "settings", pane: "general" };
+var S = { galleries: [], albums: [], publicUrl: null, g: null, tab: "settings", pane: "general",
+          canUpload: false, uploadMaxMb: 250 };
 
 /* ---------- icons ---------- */
 var I = {
   gear: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
   mail: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
-  chart:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>'
+  chart:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>',
+  image:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.6" cy="10" r="1.6"/><path d="M3.5 17l5-4.6 4 3.4 3.2-2.6 4.8 4"/></svg>',
+  up:   '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>'
 };
 
 function toast(t){ var e=$("toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(function(){e.classList.remove("on");},2600); }
@@ -231,7 +255,12 @@ function coverOf(g){
 function galleryUrl(g){ return (S.publicUrl || location.origin) + "/g/" + g.slug; }
 
 /* ---------- auth ---------- */
-api("/me").then(function(r){ if(r.ok){ S.publicUrl = r.body && r.body.publicUrl; boot(); } else $("login").classList.add("on"); });
+function takeMe(b){
+  S.publicUrl   = b && b.publicUrl;
+  S.canUpload   = !!(b && b.canUpload);
+  S.uploadMaxMb = (b && b.uploadMaxMb) || 250;
+}
+api("/me").then(function(r){ if (r.ok){ takeMe(r.body); boot(); } else $("login").classList.add("on"); });
 var challenge = null;
 $("loginForm").addEventListener("submit", function(e){
   e.preventDefault(); $("loginErr").textContent=""; $("aBtn").disabled=true;
@@ -257,7 +286,7 @@ $("loginForm").addEventListener("submit", function(e){
       return;
     }
     $("login").classList.remove("on");
-    api("/me").then(function(m){ S.publicUrl = m.body && m.body.publicUrl; boot(); });
+    api("/me").then(function(m){ takeMe(m.body); boot(); });
   });
 });
 function resetLogin(){ challenge=null; $("aEmail").hidden=false; $("aPass").hidden=false;
@@ -330,6 +359,8 @@ $("newBtn").addEventListener("click", function(){ editorView(null); });
 var NAV = {
   settings: { icon:"gear",  label:"Settings",
     panes:[["general","General"],["access","Access"],["cover","Cover photo"],["danger","Delete"]] },
+  photos:   { icon:"image", label:"Photos",
+    panes:[["upload","Add photos"],["browse","In this album"]] },
   email:    { icon:"mail",  label:"Email",
     panes:[["clients","Clients"],["compose","Compose"],["templates","Templates"],["reminders","Expiry reminders"]] },
   activity: { icon:"chart", label:"Activity",
@@ -375,6 +406,7 @@ function head(title, lede){
 function renderPane(){
   var f = ({
     general: paneGeneral, access: paneAccess, cover: paneCover, danger: paneDanger,
+    upload: paneUpload, browse: paneBrowse,
     clients: paneClients, compose: paneCompose, templates: paneTemplates, reminders: paneReminders,
     overview: paneActivity, people: paneActivity, log: paneActivity, mail: paneActivity
   })[S.pane];
@@ -387,6 +419,9 @@ function refreshGalleries(then){
     if (g) S.g = g;
     if (then) then();
   });
+}
+function refreshAlbums(then){
+  api("/albums").then(function(r){ if (r.ok) S.albums = r.body || []; if (then) then(); });
 }
 function save(patch, msg){
   return post("/galleries/"+S.g.id, patch, "PATCH").then(function(r){
@@ -466,6 +501,141 @@ function paneCover(g){
   });
   $("saveCov").onclick = function(){ save({coverAssetId:cover}, "Cover updated").then(function(ok){ if(ok) renderShell(); }); };
 }
+/* ---------- photos ---------- */
+var UP = { albumId:null, items:[], running:0 };
+var UP_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+
+function paneUpload(g){
+  if (!S.canUpload){
+    $("pane").innerHTML = head("Add photos", "")
+      + '<p class="empty">Uploading needs an Immich key that may write. In Immich, make an API key with '
+      + '<b>asset.upload</b>, <b>album.create</b> and <b>albumAsset.create</b>, set it as '
+      + '<b>IMMICH_WRITE_KEY</b> on this container, and this page turns on.<br><br>'
+      + 'Until then, add photos in Immich itself — the gallery follows the album either way.</p>';
+    return;
+  }
+  var alb = S.albums.filter(function(x){ return x.id===g.albumId; })[0];
+  if (UP.albumId !== g.albumId){ UP.albumId = g.albumId; if (!UP.running) UP.items = []; }
+  $("pane").innerHTML = head("Add photos", "They go into the Immich album this gallery reads from, and show up for clients right away.")
+    + '<div class="drop" id="drop">' + I.up
+    + '<p><b>Drop photos here</b></p>'
+    + '<button type="button" class="btn" id="pick">Choose files</button>'
+    + '<div class="hint">JPEG, PNG, HEIC, WebP, TIFF or DNG, up to ' + S.uploadMaxMb + ' MB each.'
+    + (alb ? ' Going into <b>' + esc(alb.name) + '</b>.' : '') + '</div></div>'
+    + '<input type="file" id="file" multiple accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">'
+    + '<div class="queue" id="queue"></div>';
+
+  var drop = $("drop");
+  $("pick").onclick = function(){ $("file").click(); };
+  $("file").onchange = function(){ upAdd(g, $("file").files); $("file").value = ""; };
+  ["dragenter","dragover"].forEach(function(e){
+    drop.addEventListener(e, function(ev){ ev.preventDefault(); drop.classList.add("on"); });
+  });
+  ["dragleave","dragend"].forEach(function(e){
+    drop.addEventListener(e, function(){ drop.classList.remove("on"); });
+  });
+  drop.addEventListener("drop", function(ev){
+    ev.preventDefault(); drop.classList.remove("on");
+    if (ev.dataTransfer && ev.dataTransfer.files) upAdd(g, ev.dataTransfer.files);
+  });
+  upRender();
+}
+
+function upAdd(g, files){
+  UP.albumId = g.albumId;
+  Array.prototype.forEach.call(files, function(f){
+    var it = { name:f.name, file:f, pct:0, state:"wait", err:null };
+    if (!UP_OK.test(f.name)) { it.state = "fail"; it.err = "Not a photo file"; }
+    else if (f.size > S.uploadMaxMb * 1048576) { it.state = "fail"; it.err = "Over " + S.uploadMaxMb + " MB"; }
+    else if (!f.size) { it.state = "fail"; it.err = "Empty file"; }
+    UP.items.push(it);
+  });
+  upRender();
+  upPump();
+}
+
+function upRender(){
+  var q = $("queue"); if (!q) return;
+  if (!UP.items.length){ q.innerHTML = ""; return; }
+  var done = UP.items.filter(function(i){ return i.state==="done" || i.state==="dupe"; }).length;
+  var fail = UP.items.filter(function(i){ return i.state==="fail"; }).length;
+  q.innerHTML = '<div class="qhead">' + done + ' of ' + UP.items.length + ' finished'
+    + (fail ? ' <span class="qfail">— ' + fail + ' failed</span>' : '')
+    + (UP.running ? '' : ' <button type="button" class="link" id="qclear">Clear</button>') + '</div>'
+    + UP.items.map(function(i){
+        var pct = Math.round(i.pct * 100);
+        var label = i.state==="done" ? "Added"
+                  : i.state==="dupe" ? "Already in Immich"
+                  : i.state==="fail" ? esc(i.err || "Failed")
+                  : i.state==="up"   ? pct + "%" : "Waiting";
+        return '<div class="qrow ' + i.state + '"><span class="qn">' + esc(i.name) + '</span>'
+             + '<span class="qbar"><i style="width:' + pct + '%"></i></span>'
+             + '<span class="qs">' + label + '</span></div>';
+      }).join("");
+  if ($("qclear")) $("qclear").onclick = function(){ UP.items = []; upRender(); };
+}
+
+function upPump(){
+  while (UP.running < 3){
+    var next = UP.items.filter(function(i){ return i.state==="wait"; })[0];
+    if (!next) break;
+    UP.running++; next.state = "up";
+    upSend(next);
+  }
+  upRender();
+  if (!UP.running && UP.items.length) upDone();
+}
+
+function upSend(it){
+  var x = new XMLHttpRequest();
+  var qs = "?albumId=" + encodeURIComponent(UP.albumId)
+         + "&name="    + encodeURIComponent(it.name)
+         + "&created=" + encodeURIComponent(new Date(it.file.lastModified || Date.now()).toISOString());
+  function finish(){
+    UP.running--;
+    if (UP.items.filter(function(i){ return i.state==="wait"; }).length) upPump();
+    else { upRender(); if (!UP.running) upDone(); }
+  }
+  x.open("POST", "/api/admin/upload" + qs);
+  x.withCredentials = true;
+  x.setRequestHeader("Content-Type", it.file.type || "application/octet-stream");
+  x.upload.onprogress = function(e){ if (e.lengthComputable){ it.pct = e.loaded / e.total; upRender(); } };
+  x.onload = function(){
+    var b = null; try { b = JSON.parse(x.responseText); } catch(e){}
+    if (x.status >= 200 && x.status < 300){ it.pct = 1; it.state = (b && b.status === "duplicate") ? "dupe" : "done"; }
+    else { it.state = "fail"; it.err = (b && b.error) || ("HTTP " + x.status); }
+    finish();
+  };
+  x.onerror   = function(){ it.state = "fail"; it.err = "Network error"; finish(); };
+  x.onabort   = function(){ it.state = "fail"; it.err = "Cancelled";     finish(); };
+  x.send(it.file);
+}
+
+function upDone(){
+  var added = UP.items.filter(function(i){ return i.state==="done"; }).length;
+  var fail  = UP.items.filter(function(i){ return i.state==="fail"; }).length;
+  toast(added ? (added + " photo" + (added===1?"":"s") + " added")
+      : fail  ? "Nothing uploaded" : "Those were already in Immich");
+  refreshAlbums(function(){ refreshGalleries(function(){ if (S.pane === "upload") upRender(); }); });
+}
+
+function paneBrowse(g){
+  var alb = S.albums.filter(function(x){ return x.id===g.albumId; })[0];
+  $("pane").innerHTML = head("In this album",
+      "Everything the gallery is showing" + (alb ? ", from <b>" + esc(alb.name) + "</b>" : "") + ".")
+    + '<div class="picker" id="grid" style="max-height:440px"><div class="spin"></div></div>'
+    + '<div class="hint" id="gridN"></div>';
+  api("/albums/" + g.albumId + "/assets").then(function(r){
+    var list = (r.body && r.body.assets) || [];
+    $("grid").innerHTML = list.map(function(a){
+      return '<div class="p" style="background-image:url(\'' + imgSrc(a.id) + '\')"></div>';
+    }).join("") || '<p class="empty" style="padding:8px">No photos yet. Add some from the previous tab.</p>';
+    $("gridN").textContent = list.length
+      ? list.length + " photo" + (list.length===1?"":"s") + (list.length >= 400 ? " (showing the first 400)" : "")
+      : "";
+  });
+}
+
 function paneDanger(g){
   $("pane").innerHTML = head("Delete this gallery", "The link stops working and the activity log is removed. Your photos in Immich are not touched.")
     + '<button class="btn danger" id="del">Delete gallery</button>';
@@ -717,9 +887,10 @@ function editorView(g){
   var isNew = !g;
   chrome({title:isNew?"New gallery":"Edit", back:function(){ isNew ? listView() : openGallery(g.id,"settings","general"); }});
   $("root").innerHTML = '<div class="wrap" style="padding-top:26px">'
-    + '<div class="field"><label>Immich album</label><select id="fAlbum">'
+    + '<div class="field"><label>Photos</label><select id="fAlbum">'
+    +   (S.canUpload ? '<option value="__new__">Start a new album and upload</option>' : '')
     +   S.albums.map(function(a){ return '<option value="'+a.id+'">'+esc(a.name)+' — '+a.count+' photos</option>'; }).join("")
-    +   '</select><div class="hint">The photos come from here.</div></div>'
+    +   '</select><div class="hint" id="albHint"></div></div>'
     + '<div class="row2">'
     +   '<div class="field"><label>Title</label><input type="text" id="fTitle" placeholder="Autumn Wedding"></div>'
     +   '<div class="field"><label>Subtitle</label><input type="text" id="fSub" placeholder="October 9th, 2026"></div></div>'
@@ -737,6 +908,12 @@ function editorView(g){
     var host = (S.publicUrl || location.origin).replace(/^https?:\/\//,"");
     $("slugHint").innerHTML = v ? "Clients visit <b>"+esc(host+"/g/"+v)+"</b>" : "Letters, numbers and dashes.";
   }
+  function syncAlbum(){
+    $("albHint").textContent = $("fAlbum").value === "__new__"
+      ? "A new Immich album named after the title. You upload the photos on the next screen."
+      : "The photos come from this album. Add or remove them in Immich and the gallery follows.";
+  }
+  $("fAlbum").addEventListener("change", syncAlbum); syncAlbum();
   $("fSlug").addEventListener("input", function(){ $("fSlug").dataset.touched="1"; syncSlug(); });
   $("fTitle").addEventListener("input", function(){
     if (!$("fSlug").dataset.touched){
@@ -746,19 +923,36 @@ function editorView(g){
   });
   syncSlug();
   $("create").onclick = function(){
+    var fresh = $("fAlbum").value === "__new__";
     var body = { albumId:$("fAlbum").value, title:$("fTitle").value.trim(), subtitle:$("fSub").value.trim(),
       slug:$("fSlug").value.trim().toLowerCase(), requireEmail:$("fEmail").checked, allowDownload:$("fDl").checked,
       publish:$("fPub").checked,
       expiresAt: $("fExp").value ? new Date($("fExp").value+"T23:59:59").toISOString() : null };
     if (!body.title) return toast("Give the gallery a title");
     if (!body.slug) return toast("Give the gallery a web address");
+    if (!body.albumId || (fresh && !S.canUpload)) return toast("Choose an album");
     if ($("fPw").value) body.password = $("fPw").value;
     $("create").disabled = true;
-    post("/galleries", body).then(function(r){
-      $("create").disabled = false;
-      if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't create");
-      toast("Gallery created");
-      api("/galleries").then(function(rr){ S.galleries = rr.body||[]; openGallery(r.body.id,"settings","cover"); });
+
+    function go(){
+      post("/galleries", body).then(function(r){
+        $("create").disabled = false;
+        if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't create");
+        toast("Gallery created");
+        api("/galleries").then(function(rr){
+          S.galleries = rr.body||[];
+          openGallery(r.body.id, fresh ? "photos" : "settings", fresh ? "upload" : "cover");
+        });
+      });
+    }
+    if (!fresh) return go();
+    post("/albums", { name: body.title }).then(function(r){
+      if (!r.ok || !r.body || !r.body.id){
+        $("create").disabled = false;
+        return toast((r.body&&r.body.error)||"Couldn't create the album in Immich");
+      }
+      body.albumId = r.body.id;
+      refreshAlbums(go);
     });
   };
 }
