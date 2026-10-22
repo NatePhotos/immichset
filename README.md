@@ -68,6 +68,17 @@ It also becomes the favicon and iOS home-screen icon. Optionally add
 **`web/brand-logo-dark.png`** — the same mark in white — and browsers in dark mode will use it,
 so the icon stays visible on a dark tab strip.
 
+### Uploads
+
+Optional, and off unless `IMMICH_WRITE_KEY` is set. With it, a gallery's **Photos** tab takes a
+drag-and-drop batch straight into the Immich album it reads from, and the new-gallery form can
+create that album for you first.
+
+`UPLOAD_MAX_MB` caps each file (default 250). Photo formats only: JPEG, PNG, HEIC, WebP, AVIF,
+GIF, TIFF and DNG. One file per request, so each gets its own progress bar and one failure does
+not take the batch down. Immich deduplicates by checksum, so re-dropping a folder is safe — the
+photos already there come back as duplicates rather than second copies.
+
 ### Email
 
 Verify your domain in Resend and add the DNS records it gives you, including DMARC. Mail sent from
@@ -83,6 +94,9 @@ a residential IP without SPF and DKIM will land in spam.
   works. The password is the access control; registration is to know your audience
 - Image requests are checked against the gallery's album, so a session for one gallery cannot
   read another's photos
+- The upload key is separate from the read key and needs only `asset.upload`, `album.create` and
+  `albumAsset.create` — it can add to Immich, never delete or modify. The client-facing path never
+  touches it
 
 ## Backups
 
