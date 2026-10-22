@@ -200,6 +200,13 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
   color:#fff;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;text-align:center;padding:3px 0}
 .bar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:0 0 16px;min-height:38px}
 .bar .count{font-size:12px;color:var(--muted);margin-right:4px}
+
+/* ---------- cover ---------- */
+.covnow{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;max-width:620px}
+.covnow .shot{width:260px;aspect-ratio:3/2;background:var(--soft) center/cover no-repeat;border:1px solid var(--line);flex:0 0 auto}
+.covside{flex:1 1 220px;display:flex;flex-direction:column;align-items:flex-start;gap:9px}
+.covwhat{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+@media(max-width:620px){.covnow .shot{width:100%}}
 .spin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--fg);border-radius:50%;
   animation:sp .8s linear infinite;margin:50px auto}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -275,6 +282,8 @@ function fmtDate(iso){ if(!iso) return ""; var d=new Date(iso); return isNaN(d)?
 function fmtWhen(s){ if(!s) return ""; var d=new Date(String(s).replace(" ","T")+"Z"); return isNaN(d)?s:d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
 function imgSrc(id,size){ return id ? "/api/admin/img/"+id+"?size="+(size||"thumbnail") : ""; }
 function coverOf(g){
+  /* an uploaded cover wins, same as it does for clients; the filename busts the cache */
+  if (g.coverFile) return "/api/g/" + encodeURIComponent(g.slug) + "/cover?v=" + encodeURIComponent(g.coverFile);
   if (g.coverAssetId) return imgSrc(g.coverAssetId,"preview");
   var a = S.albums.filter(function(x){return x.id===g.albumId;})[0];
   return (a && a.thumb) ? imgSrc(a.thumb,"preview") : "";
@@ -537,9 +546,22 @@ function paneAccess(g){
   };
 }
 function paneCover(g){
-  $("pane").innerHTML = head("Cover photo", "Shown on the gallery cover and in emails.")
+  var own = !!g.coverFile;
+  $("pane").innerHTML = head("Cover photo", "Shown on the gallery cover and at the top of every email.")
+    + '<div class="covnow"><div class="shot" style="background-image:url(\'' + coverOf(g) + '\')"></div>'
+    +   '<div class="covside"><div class="covwhat">' + (own ? "Your own image" : g.coverAssetId ? "A photo from the album" : "No cover yet — the first photo stands in") + '</div>'
+    +     '<button class="btn sm" id="pickCov">' + (own ? "Choose a different one" : "Upload an image") + '</button>'
+    +     (own ? '<button class="btn sm ghost" id="dropCov">Remove it</button>' : '')
+    +     '<div class="hint">JPEG, PNG, WebP, AVIF or GIF, under 12 MB. It is stored with the gallery, '
+    +       'not added to the album, so clients never see it in the grid.<br>'
+    +       'Export it web-sized — it is sent as-is, so a full-resolution file makes clients wait.</div>'
+    +   '</div></div>'
+    + '<input type="file" id="covFile" accept=".jpg,.jpeg,.png,.webp,.avif,.gif" style="display:none">'
+    + '<h3 class="sec" style="margin-top:30px">Or pick one from the album</h3>'
+    + (own ? '<p class="hint" style="margin:0 0 12px">Your uploaded image is being used. Remove it to go back to a photo from the album.</p>' : '')
     + '<div class="picker" id="picker"><div class="spin"></div></div>'
-    + '<div style="height:18px"></div><button class="btn" id="saveCov">Save cover</button>';
+    + '<div style="height:18px"></div><button class="btn" id="saveCov">Use this photo</button>';
+
   var cover = g.coverAssetId;
   api("/albums/"+g.albumId+"/assets").then(function(r){
     var list = (r.body && r.body.assets) || [];
@@ -552,6 +574,35 @@ function paneCover(g){
     });
   });
   $("saveCov").onclick = function(){ save({coverAssetId:cover}, "Cover updated").then(function(ok){ if(ok) renderShell(); }); };
+
+  $("pickCov").onclick = function(){ $("covFile").click(); };
+  if ($("dropCov")) $("dropCov").onclick = function(){
+    if (!confirm("Remove your uploaded cover?\n\nThe gallery goes back to using a photo from the album.")) return;
+    api("/galleries/"+g.id+"/cover-upload", {method:"DELETE"}).then(function(r){
+      if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't remove it");
+      toast("Cover removed");
+      refreshGalleries(function(){ renderShell(); });
+    });
+  };
+  $("covFile").onchange = function(){
+    var f = $("covFile").files[0]; $("covFile").value = "";
+    if (!f) return;
+    if (f.size > 12*1048576) return toast("That one is over 12 MB — export it smaller");
+    if (f.size > 3*1048576) toast("That is " + Math.round(f.size/1048576) + " MB; a web-sized export would load faster");
+    var x = new XMLHttpRequest();
+    x.open("POST", "/api/admin/galleries/"+g.id+"/cover-upload?name="+encodeURIComponent(f.name));
+    x.withCredentials = true;
+    x.setRequestHeader("Content-Type", f.type || "application/octet-stream");
+    x.onload = function(){
+      var b=null; try { b = JSON.parse(x.responseText); } catch(e){}
+      if (x.status >= 200 && x.status < 300){
+        toast("Cover updated");
+        refreshGalleries(function(){ renderShell(); });
+      } else toast((b && b.error) || ("Couldn't upload that (HTTP " + x.status + ")"));
+    };
+    x.onerror = function(){ toast("Network error"); };
+    x.send(f);
+  };
 }
 /* ---------- photos ---------- */
 var UP = { albumId:null, items:[], running:0 };

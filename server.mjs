@@ -5,7 +5,7 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createHmac, timingSafeEqual, scryptSync } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { readdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS galleries (
   subtitle        TEXT,
   album_id        TEXT NOT NULL,
   cover_asset_id  TEXT,
+  cover_file      TEXT,
   require_email   INTEGER NOT NULL DEFAULT 0,
   password_hash   TEXT,
   password_salt   TEXT,
@@ -146,6 +147,17 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
+/* forward-only migrations, for databases created before a column existed */
+for (const [table, col, decl] of [['galleries', 'cover_file', 'TEXT']]) {
+  const has = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
+  if (!has) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); console.log(`migrated: ${table}.${col}`); }
+}
+
+/* a cover that is not one of the album's photos lives here, beside the database,
+   so it is never part of the gallery and never lands in the Immich library */
+const COVERS_DIR = join(CFG.dataDir, 'covers');
+if (!existsSync(COVERS_DIR)) mkdirSync(COVERS_DIR, { recursive: true });
+
 const q = {
   gallBySlug: db.prepare('SELECT * FROM galleries WHERE slug = ?'),
   gallById:   db.prepare('SELECT * FROM galleries WHERE id = ?'),
@@ -165,6 +177,7 @@ const q = {
                  require_email=?, allow_download=?, expires_at=?, published_at=? WHERE id=?`),
   gallPw:     db.prepare('UPDATE galleries SET password_hash=?, password_salt=? WHERE id=?'),
   coverClear: db.prepare('UPDATE galleries SET cover_asset_id = NULL WHERE cover_asset_id = ?'),
+  coverFile:  db.prepare('UPDATE galleries SET cover_file = ? WHERE id = ?'),
   regCount:   db.prepare('SELECT COUNT(*) n FROM registrations WHERE gallery_id = ?'),
   evCount1:   db.prepare('SELECT COUNT(*) n FROM events WHERE gallery_id = ? AND type = ?'),
   invList:    db.prepare('SELECT * FROM invites WHERE gallery_id = ? ORDER BY created_at'),
@@ -560,6 +573,18 @@ function backupList() {
     .map(f => { const st = statSync(join(CFG.backupDir, f)); return { file: f, size: st.size, at: st.mtime.toISOString() }; });
 }
 
+/* ------------------------------------------------------------------- covers */
+/* only what every browser renders - a HEIC cover would be a broken image for most clients */
+const COVER_OK = /\.(jpe?g|png|webp|avif|gif)$/i;
+const COVER_MAX = 12 * 1024 * 1024;
+const COVER_MIME = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png',
+                     '.webp':'image/webp', '.avif':'image/avif', '.gif':'image/gif' };
+const coverPath = g => (g.cover_file ? join(COVERS_DIR, g.cover_file) : null);
+function dropCoverFile(g) {
+  const p = coverPath(g);
+  if (p && existsSync(p)) { try { unlinkSync(p); } catch (e) { console.error('cover unlink', e.message); } }
+}
+
 /* ------------------------------------------------------------------- immich */
 async function immich(path, init = {}) {
   /* `write: true` picks the key allowed to create things; the default key is read-only
@@ -852,6 +877,14 @@ async function galleryRoutes(req, res, gallery, rest, url) {
 
   /* the cover is visible before the gate, like Pixieset */
   if (rest === '/cover') {
+    /* an uploaded cover wins: it is deliberately not one of the album's photos */
+    const fp = coverPath(gallery);
+    if (fp && existsSync(fp)) {
+      const buf = await readFile(fp);
+      res.writeHead(200, { 'content-type': COVER_MIME[extname(fp).toLowerCase()] || 'application/octet-stream',
+                           'content-length': buf.length, 'cache-control': 'private, max-age=86400' });
+      return res.end(req.method === 'HEAD' ? undefined : buf);
+    }
     let id = gallery.cover_asset_id;
     if (id && !(await albumHas(gallery.album_id, id))) id = null;   /* never serve outside the album */
     if (!id) {
@@ -996,7 +1029,7 @@ async function proxyImage(req, res, assetId, size) {
 function gallDto(g) {
   return {
     id: g.id, slug: g.slug, title: g.title, subtitle: g.subtitle,
-    albumId: g.album_id, coverAssetId: g.cover_asset_id,
+    albumId: g.album_id, coverAssetId: g.cover_asset_id, coverFile: g.cover_file || null,
     requireEmail: !!g.require_email, hasPassword: !!g.password_hash,
     allowDownload: !!g.allow_download, expiresAt: g.expires_at,
     publishedAt: g.published_at, expired: isExpired(g),
@@ -1011,6 +1044,44 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
                             caps: await writeCaps() });
+
+  /* a cover of your own: stored beside the database, never added to the album
+     and never pushed into the Immich library */
+  const cu = path.match(/^\/api\/admin\/galleries\/(\d+)\/cover-upload$/);
+  if (cu) {
+    const g = q.gallById.get(Number(cu[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+
+    if (req.method === 'DELETE') {
+      dropCoverFile(g); q.coverFile.run(null, g.id);
+      console.log(`cover file removed for ${g.slug}`);
+      return json(res, 200, gallDto(q.gallById.get(g.id)));
+    }
+    if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' });
+
+    const name = (url.searchParams.get('name') || 'cover.jpg').replace(/[\\/\u0000]/g, '_').slice(0, 200);
+    if (!COVER_OK.test(name))
+      return json(res, 415, { error: 'Use a JPEG, PNG, WebP, AVIF or GIF. HEIC will not display in a browser.' });
+
+    const tooBig = () => {
+      json(res, 413, { error: 'Covers must be under 12 MB' }, { connection: 'close' });
+      req.destroy();
+    };
+    if (Number(req.headers['content-length'] || 0) > COVER_MAX) return tooBig();
+    let buf;
+    try { buf = await readBuffer(req, COVER_MAX); } catch { return tooBig(); }
+    if (!buf.length) return json(res, 400, { error: 'that file was empty' });
+
+    /* a new name each time, so a replaced cover is not served from a browser cache */
+    const file = `${g.id}-${randomBytes(6).toString('hex')}${extname(name).toLowerCase()}`;
+    const tmp = join(COVERS_DIR, '.' + file);
+    await writeFile(tmp, buf);
+    renameSync(tmp, join(COVERS_DIR, file));      /* appears whole, never half written */
+    dropCoverFile(g);
+    q.coverFile.run(file, g.id);
+    console.log(`cover for ${g.slug}: ${file} ${(buf.length / 1024).toFixed(0)}KB`);
+    return json(res, 200, gallDto(q.gallById.get(g.id)));
+  }
 
   if (path === '/api/admin/albums' && req.method === 'POST') {
     if (!canUpload()) return json(res, 400, { error: 'no_write_key' });
@@ -1177,7 +1248,7 @@ async function adminRoutes(req, res, path, url) {
 
     if (req.method === 'GET') return json(res, 200, gallDto(g));
 
-    if (req.method === 'DELETE') { q.gallDel.run(g.id); return json(res, 200, { ok: true }); }
+    if (req.method === 'DELETE') { dropCoverFile(g); q.gallDel.run(g.id); return json(res, 200, { ok: true }); }
 
     if (req.method === 'PATCH') {
       const b = await readJson(req);

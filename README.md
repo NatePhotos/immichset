@@ -14,6 +14,7 @@ everything client-facing — the gallery page, who may see it, and what they did
 ## What it does
 
 - **Branded gallery pages** — full-bleed cover, justified grid, fullscreen lightbox, slideshow
+- **Any image as the cover** — upload one, or pick from the album
 - **Two independent gates per gallery** — ask for an email, require a password, both, or neither
 - **Downloads** — single photos at full resolution, or the whole gallery as a zip, with progress
   and a working cancel
@@ -90,6 +91,16 @@ photos already there come back as duplicates rather than second copies.
 
 Nothing here deletes a file outright: trashing is Immich's recoverable trash, and the panel's undo
 only reaches photos it trashed itself.
+
+### Covers
+
+A gallery's cover is a photo from its album, or an image of your own. An uploaded cover is stored
+beside the database in `DATA_DIR/covers`, never added to the album and never pushed into Immich, so
+clients see it on the cover and in emails but never in the grid. No write key needed.
+
+JPEG, PNG, WebP, AVIF or GIF, under 12 MB — HEIC is refused because browsers will not display it.
+The file is served as uploaded, with no resizing step, so export it web-sized. Note that
+`BACKUP_DIR` snapshots the database only: keep your own copy of `DATA_DIR` if the covers matter.
 
 ### Email
 
