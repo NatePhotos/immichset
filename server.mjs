@@ -191,6 +191,20 @@ function syncAdminUser() {
          .run(CFG.adminEmail, hash, salt);
 }
 
+/* A small ring buffer of our own output, so logs can be read without shell
+   access to the host. */
+const LOG_MAX = 400;
+const logRing = [];
+function remember(level, args) {
+  const line = args.map(a => (typeof a === 'string' ? a : (a && a.stack) || JSON.stringify(a))).join(' ');
+  logRing.push({ at: new Date().toISOString(), level, line: line.slice(0, 2000) });
+  if (logRing.length > LOG_MAX) logRing.shift();
+}
+for (const lvl of ['log', 'warn', 'error']) {
+  const orig = console[lvl].bind(console);
+  console[lvl] = (...a) => { try { remember(lvl, a); } catch {} orig(...a); };
+}
+
 /* ------------------------------------------------------------------ helpers */
 const b64u  = b => Buffer.from(b).toString('base64url');
 const unb64 = s => Buffer.from(s, 'base64url');
@@ -894,6 +908,20 @@ async function adminRoutes(req, res, path, url) {
       }
       return json(res, 200, gallDto(q.gallById.get(g.id)));
     }
+  }
+
+  if (path === '/api/admin/logs') {
+    const n = Math.min(Number(url.searchParams.get('n') || 150), LOG_MAX);
+    return json(res, 200, { lines: logRing.slice(-n) });
+  }
+
+  if (path === '/api/admin/restart' && req.method === 'POST') {
+    console.warn('restart requested via admin API');
+    json(res, 200, { ok: true, note: 'restarting; the container policy brings us back' });
+    /* exiting cleanly is enough - `restart: always` starts a fresh process,
+       which reloads the mounted source files */
+    setTimeout(() => process.exit(0), 250);
+    return;
   }
 
   if (path === '/api/admin/backups') {

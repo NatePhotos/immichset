@@ -364,6 +364,7 @@ function resolve(){
     if (r.status === 410) return fail("This gallery has expired","The link is no longer available. Please contact your photographer for access.");
     if (!r.ok) return fail("Gallery not found","This link doesn't appear to be valid. Please check the address you were sent.");
     link = r.body;
+    BRAND = (r.body && r.body.brand) || {};
     album = {albumName: r.body.title, description: r.body.subtitle};
     if (r.body.gate === "password") return showGate("password");
     if (r.body.gate === "email")    return showGate("email");
