@@ -306,7 +306,7 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
 var S = { galleries: [], albums: [], publicUrl: null, g: null, tab: "settings", pane: "general",
-          canUpload: false, uploadMaxMb: 250, caps: {} };
+          canUpload: false, uploadMaxMb: 250, uploadMaxVideoMb: 4096, caps: {} };
 
 /* ---------- icons ---------- */
 var I = {
@@ -353,6 +353,7 @@ function takeMe(b){
   S.publicUrl   = b && b.publicUrl;
   S.canUpload   = !!(b && b.canUpload);
   S.uploadMaxMb = (b && b.uploadMaxMb) || 250;
+  S.uploadMaxVideoMb = (b && b.uploadMaxVideoMb) || 4096;
   S.caps        = (b && b.caps) || {};
 }
 var challenge = null;
@@ -721,10 +722,6 @@ function fitCover(file){
     });
   }).catch(function(){ return null; });   /* a format the browser cannot decode: let the server answer */
 }
-/* ---------- photos ---------- */
-var UP = { albumId:null, items:[], running:0 };
-var UP_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
-
 /* ---------- sets ---------- */
 function setMenu(anchor, setId){
   var g = S.g, sets = g.sets || [];
@@ -818,15 +815,18 @@ function paneNoSets(g){
 
 /* ---------- uploads ---------- */
 var UP = { albumId:null, items:[], running:0 };
-var UP_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+var UP_PHOTO = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+var UP_VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi|wmv|3gp|mts|m2ts|mpe?g)$/i;
 
 function upAdd(albumId, files){
   if (UP.albumId !== albumId && !UP.running) UP.items = [];
   UP.albumId = albumId;
   Array.prototype.forEach.call(files, function(f){
     var it = { name:f.name, file:f, pct:0, state:"wait", err:null };
-    if (!UP_OK.test(f.name)) { it.state = "fail"; it.err = "Not a photo file"; }
-    else if (f.size > S.uploadMaxMb * 1048576) { it.state = "fail"; it.err = "Over " + S.uploadMaxMb + " MB"; }
+    var vid = UP_VIDEO.test(f.name);
+    var max = (vid ? S.uploadMaxVideoMb : S.uploadMaxMb) * 1048576;
+    if (!vid && !UP_PHOTO.test(f.name)) { it.state = "fail"; it.err = "Not a photo or video"; }
+    else if (f.size > max) { it.state = "fail"; it.err = "Over " + Math.round(max/1048576) + " MB"; }
     else if (!f.size) { it.state = "fail"; it.err = "Empty file"; }
     UP.items.push(it);
   });
@@ -917,8 +917,8 @@ function paneSet(g, setId){
     + '<div class="bar" id="bar"></div>'
     + '<div class="grid dropzone" id="grid"><div class="spin"></div></div>'
     + '<div class="queue" id="queue"></div>'
-    + '<input type="file" id="pick" multiple accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">'
-    + '<input type="file" id="repl" accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">';
+    + '<input type="file" id="pick" multiple accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng,.mp4,.mov,.m4v,.webm,.mkv,.avi,.wmv,.3gp,.mts,.m2ts,.mpg,.mpeg" style="display:none">'
+    + '<input type="file" id="repl" accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng,.mp4,.mov,.m4v,.webm,.mkv,.avi,.wmv,.3gp,.mts,.m2ts,.mpg,.mpeg" style="display:none">';
 
   $("setOpts").onclick = function(ev){ ev.stopPropagation(); setMenu($("setOpts"), setId); };
   if ($("addMedia")) $("addMedia").onclick = function(){ $("pick").click(); };
@@ -993,7 +993,7 @@ function paneSet(g, setId){
            + '<button class="dots" data-act="menu" title="More">⋮</button>'
            + (a.isImage ? '' : '<span class="vbadge">▶</span>')
            + '</div>';
-    }).join("") || '<p class="empty" style="padding:14px">Nothing here yet. Drop photos in, or use Add media.</p>';
+    }).join("") || '<p class="empty" style="padding:14px">Nothing here yet. Drop photos or video in, or use Add media.</p>';
     gridEl.onclick = function(ev){
       if (busy) return;
       var el = ev.target.closest(".p"); if (!el) return;

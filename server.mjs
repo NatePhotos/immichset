@@ -16,6 +16,7 @@ const CFG = {
   immichKey:   process.env.IMMICH_API_KEY || '',
   immichWriteKey: process.env.IMMICH_WRITE_KEY || '',
   uploadMaxMb: Number(process.env.UPLOAD_MAX_MB || 250),
+  uploadMaxVideoMb: Number(process.env.UPLOAD_MAX_VIDEO_MB || 4096),
   secret:      process.env.APP_SECRET || '',
   adminToken:  process.env.ADMIN_TOKEN || '',
   dataDir:     process.env.DATA_DIR || '/data',
@@ -651,7 +652,49 @@ async function immich(path, init = {}) {
   return r;
 }
 const canUpload = () => !!CFG.immichWriteKey;
-const UPLOAD_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+const UPLOAD_PHOTO = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+const UPLOAD_VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi|wmv|3gp|mts|m2ts|mpe?g)$/i;
+const MEDIA_TYPE = {
+  '.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.heic':'image/heic','.heif':'image/heif',
+  '.webp':'image/webp','.avif':'image/avif','.gif':'image/gif','.tif':'image/tiff','.tiff':'image/tiff',
+  '.dng':'image/x-adobe-dng','.mp4':'video/mp4','.m4v':'video/x-m4v','.mov':'video/quicktime',
+  '.webm':'video/webm','.mkv':'video/x-matroska','.avi':'video/x-msvideo','.wmv':'video/x-ms-wmv',
+  '.3gp':'video/3gpp','.mts':'video/mp2t','.m2ts':'video/mp2t','.mpg':'video/mpeg','.mpeg':'video/mpeg',
+};
+
+/* Send the file to Immich as it arrives. A video runs to gigabytes, and holding one in
+   the container's memory to hand over as a Blob would be the end of a small NAS. */
+function uploadToImmich(req, name, when, cap) {
+  const b = '----immichset' + randomBytes(12).toString('hex');
+  const safe = name.replace(/["\r\n]/g, '_');
+  const field = (k, v) => `--${b}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`;
+  const head = Buffer.from(
+    field('fileCreatedAt', when) + field('fileModifiedAt', when) + field('filename', safe)
+    + `--${b}\r\nContent-Disposition: form-data; name="assetData"; filename="${safe}"\r\n`
+    + `Content-Type: ${MEDIA_TYPE[extname(safe).toLowerCase()] || 'application/octet-stream'}\r\n\r\n`);
+  const tail = Buffer.from(`\r\n--${b}--\r\n`);
+
+  let sent = 0;
+  const body = new ReadableStream({
+    async start(c) {
+      c.enqueue(head);
+      try {
+        for await (const chunk of req) {
+          sent += chunk.length;
+          if (sent > cap) { c.error(new Error('too large')); return; }   /* never store a truncated file */
+          c.enqueue(chunk);
+        }
+      } catch (e) { c.error(e); return; }                                /* the browser went away */
+      c.enqueue(tail); c.close();
+    },
+  });
+
+  const declared = Number(req.headers['content-length'] || 0);
+  const headers = { 'content-type': `multipart/form-data; boundary=${b}` };
+  if (declared) headers['content-length'] = String(head.length + declared + tail.length);
+  return immich('/api/assets', { write: true, method: 'POST', headers, body, duplex: 'half' })
+    .then(r => ({ r, bytes: sent }));
+}
 
 /* What the write key may actually do. Immich answers the permission question before it
    validates the body, so a deliberately empty request asks without creating anything.
@@ -1152,6 +1195,7 @@ async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/me')
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
+                            uploadMaxVideoMb: CFG.uploadMaxVideoMb,
                             caps: await writeCaps() });
 
   /* sets: the named parts of a gallery, each one an Immich album */
@@ -1288,29 +1332,26 @@ async function adminRoutes(req, res, path, url) {
     const albumId = url.searchParams.get('albumId') || '';
     if (!/^[0-9a-f-]{36}$/i.test(albumId)) return json(res, 400, { error: 'albumId is required' });
     const name = (url.searchParams.get('name') || 'photo.jpg').replace(/[\\/\u0000]/g, '_').slice(0, 200);
-    if (!UPLOAD_OK.test(name)) return json(res, 415, { error: 'Photos only: jpg, png, heic, webp, tiff or dng' });
+    const isVideo = UPLOAD_VIDEO.test(name);
+    if (!isVideo && !UPLOAD_PHOTO.test(name))
+      return json(res, 415, { error: 'Photos and video only \u2014 jpg, png, heic, dng, mp4, mov and the like' });
 
-    const cap = CFG.uploadMaxMb * 1024 * 1024;
-    const tooBig = () => {
+    const maxMb = isVideo ? CFG.uploadMaxVideoMb : CFG.uploadMaxMb;
+    const cap = maxMb * 1024 * 1024;
+    if (Number(req.headers['content-length'] || 0) > cap) {
       /* answer before closing, or the browser only sees a dropped connection */
-      json(res, 413, { error: `Each file must be under ${CFG.uploadMaxMb} MB` }, { connection: 'close' });
+      json(res, 413, { error: `${isVideo ? 'Videos' : 'Photos'} must be under ${maxMb} MB` }, { connection: 'close' });
       req.destroy();
-    };
-    if (Number(req.headers['content-length'] || 0) > cap) return tooBig();
-
-    let buf;
-    try { buf = await readBuffer(req, cap); }
-    catch { return tooBig(); }
-    if (!buf.length) return json(res, 400, { error: 'that file was empty' });
+      return;
+    }
 
     const when = isoOrNow(url.searchParams.get('created'));
-    const fd = new FormData();
-    fd.set('assetData', new Blob([buf]), name);
-    fd.set('filename', name);
-    fd.set('fileCreatedAt', when);
-    fd.set('fileModifiedAt', when);
-
-    const up = await immich('/api/assets', { write: true, method: 'POST', body: fd });
+    let up, bytes;
+    try { ({ r: up, bytes } = await uploadToImmich(req, name, when, cap)); }
+    catch (e) {
+      console.error('upload stream failed', name, e.message);
+      return json(res, 413, { error: `${isVideo ? 'Videos' : 'Photos'} must be under ${maxMb} MB` });
+    }
     if (!up.ok) {
       console.error('upload failed', up.status, (await up.text().catch(() => '')).slice(0, 200));
       return json(res, 502, { error: `Immich refused the upload (${up.status})` });
@@ -1329,7 +1370,7 @@ async function adminRoutes(req, res, path, url) {
       } else console.error('album add failed', r2.status);
       albumSets.delete(albumId);                    /* a photo added now must be servable now */
     }
-    console.log(`upload ${name} ${(buf.length / 1048576).toFixed(1)}MB -> ${a.status || 'ok'}${added ? ' + album' : ''}`);
+    console.log(`upload ${name} ${(bytes / 1048576).toFixed(1)}MB -> ${a.status || 'ok'}${added ? ' + album' : ''}`);
     return json(res, 200, { id: a.id || null, status: a.status || 'created', added });
   }
 

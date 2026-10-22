@@ -28,7 +28,8 @@ services:
       # plus asset.delete and albumAsset.delete to remove them. Grant only the half
       # you want. Leave it empty and the Photos tab stays off; the rest is read-only.
       IMMICH_WRITE_KEY: ""
-      UPLOAD_MAX_MB: "250"
+      UPLOAD_MAX_MB: "250"          # per photo
+      UPLOAD_MAX_VIDEO_MB: "4096"   # per video; files are streamed, not buffered
 
       # --- secrets (generate your own long random values) ---
       APP_SECRET: ""          # signs session cookies; rotating it logs everyone out

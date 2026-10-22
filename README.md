@@ -94,10 +94,14 @@ to run a shoot without opening Immich:
 - **Remove from gallery** — out of the album, still in Immich
 - **Move to trash** — into Immich's trash, where it keeps for 30 days, with an undo in the toast
 
-`UPLOAD_MAX_MB` caps each file (default 250). Photo formats only: JPEG, PNG, HEIC, WebP, AVIF,
-GIF, TIFF and DNG. One file per request, so each gets its own progress bar and one failure does
-not take the batch down. Immich deduplicates by checksum, so re-dropping a folder is safe — the
-photos already there come back as duplicates rather than second copies.
+Photos and video both: JPEG, PNG, HEIC, WebP, AVIF, GIF, TIFF, DNG, and MP4, MOV, M4V, WebM, MKV,
+AVI, WMV, 3GP, MTS, M2TS, MPEG. `UPLOAD_MAX_MB` caps a photo (default 250) and
+`UPLOAD_MAX_VIDEO_MB` a video (default 4096).
+
+A file is streamed straight through to Immich rather than read into memory first, so a multi-gigabyte
+video costs tens of megabytes of RAM to pass on, not its own size. One file per request, so each gets
+its own progress bar and one failure does not take the batch down. Immich deduplicates by checksum, so
+re-dropping a folder is safe — what is already there comes back as a duplicate rather than a second copy.
 
 Nothing here deletes a file outright: trashing is Immich's recoverable trash, and the panel's undo
 only reaches photos it trashed itself.
