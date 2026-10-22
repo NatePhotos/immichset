@@ -157,7 +157,11 @@ h3.sec:first-child{margin-top:0}
 .drop p{margin:9px 0 14px;font-size:14px}
 .drop .hint{margin-top:13px}
 .queue{margin-top:22px;max-width:620px}
+.qtot{display:flex;align-items:center;gap:12px;margin:0 0 11px}
+.qbar.big{flex:1;height:5px}
+.qpct{font-size:12px;font-variant-numeric:tabular-nums;color:var(--fg);min-width:38px;text-align:right}
 .qhead{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+.qhead .qdim{color:var(--muted);font-variant-numeric:tabular-nums}
 .qhead .link{margin-left:8px}
 .qfail{color:var(--bad)}
 .qrow{display:grid;grid-template-columns:minmax(0,1fr) 110px 104px;gap:12px;align-items:center;
@@ -825,7 +829,7 @@ function paneNoSets(g){
 }
 
 /* ---------- uploads ---------- */
-var UP = { albumId:null, items:[], running:0 };
+var UP = { albumId:null, items:[], running:0, bps:0, lastAt:0, lastDone:0, timer:null };
 var UP_PHOTO = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
 var UP_VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi|wmv|3gp|mts|m2ts|mpe?g)$/i;
 
@@ -843,12 +847,61 @@ function upAdd(albumId, files){
   });
   upRender(); upPump();
 }
+/* A batch of video is minutes of waiting. Bytes moved, how fast, and how much
+   longer are the three things worth knowing while it happens. */
+function upSendable(){ return UP.items.filter(function(i){ return i.state !== "fail" || i.sent; }); }
+function upBytes(){
+  var done = 0, total = 0;
+  upSendable().forEach(function(i){
+    var sz = i.file ? i.file.size : 0;
+    total += sz;
+    done += (i.state === "done" || i.state === "dupe") ? sz
+          : (i.state === "up") ? sz * i.pct : 0;
+  });
+  return { done: done, total: total };
+}
+function secs(n){
+  if (!isFinite(n) || n <= 0) return "";
+  if (n < 60) return "about " + Math.max(1, Math.round(n)) + "s left";
+  if (n < 3600) return "about " + Math.round(n / 60) + " min left";
+  return "about " + (n / 3600).toFixed(1) + " hr left";
+}
+/* sampled on a timer, not on progress events: those arrive in bursts and would
+   make the figure jump around */
+function upTick(){
+  var b = upBytes(), now = Date.now();
+  if (UP.lastAt){
+    var dt = (now - UP.lastAt) / 1000;
+    if (dt > 0.2){
+      var inst = Math.max(0, (b.done - UP.lastDone) / dt);
+      UP.bps = UP.bps ? UP.bps * 0.7 + inst * 0.3 : inst;      /* smoothed, or it flickers */
+      UP.lastAt = now; UP.lastDone = b.done;
+    }
+  } else { UP.lastAt = now; UP.lastDone = b.done; }
+  upRender();
+}
+
 function upRender(){
   var q = document.getElementById("queue"); if (!q) return;
   if (!UP.items.length){ q.innerHTML = ""; return; }
   var done = UP.items.filter(function(i){ return i.state==="done" || i.state==="dupe"; }).length;
   var fail = UP.items.filter(function(i){ return i.state==="fail"; }).length;
-  q.innerHTML = '<div class="qhead">' + done + ' of ' + UP.items.length + ' finished'
+  var b = upBytes();
+  var settled = done + fail;
+  var pct = b.total ? Math.round(b.done / b.total * 100) : 0;
+  /* the last bytes leave before Immich has finished taking them in, so the bar is
+     held off the end until every file has actually come back */
+  if (pct >= 100 && settled < UP.items.length) pct = 99;
+  var waiting = UP.running && b.done >= b.total;
+  var left = (UP.bps > 0 && !waiting) ? secs((b.total - b.done) / UP.bps) : "";
+  q.innerHTML =
+      '<div class="qtot"><span class="qbar big"><i style="width:' + pct + '%"></i></span>'
+    +   '<span class="qpct">' + pct + '%</span></div>'
+    + '<div class="qhead">' + done + ' of ' + UP.items.length + ' finished'
+    +   ' <span class="qdim">\u00b7 ' + mb(b.done) + ' of ' + mb(b.total) + '</span>'
+    +   (waiting ? ' <span class="qdim">\u00b7 finishing\u2026</span>'
+        : (UP.running && UP.bps > 0 ? ' <span class="qdim">\u00b7 ' + mb(UP.bps) + '/s</span>' : ''))
+    +   (UP.running && left ? ' <span class="qdim">\u00b7 ' + left + '</span>' : '')
     + (fail ? ' <span class="qfail">— ' + fail + ' failed</span>' : '')
     + (UP.running ? '' : ' <button type="button" class="link" id="qclear">Clear</button>') + '</div>'
     + UP.items.map(function(i){
@@ -868,9 +921,10 @@ function upPump(){
   while (UP.running < 3){
     var next = UP.items.filter(function(i){ return i.state==="wait"; })[0];
     if (!next) break;
-    UP.running++; next.state = "up";
+    UP.running++; next.state = "up"; next.sent = true;
     upSend(next);
   }
+  if (UP.running && !UP.timer) UP.timer = setInterval(upTick, 500);
   upRender();
   if (!UP.running && UP.items.length) upDone();
 }
@@ -906,6 +960,8 @@ function upSend(it){
   });
 }
 function upDone(){
+  if (UP.timer){ clearInterval(UP.timer); UP.timer = null; }
+  UP.bps = 0; UP.lastAt = 0; UP.lastDone = 0;
   var added = UP.items.filter(function(i){ return i.state==="done"; }).length;
   var fail  = UP.items.filter(function(i){ return i.state==="fail"; }).length;
   toast(added ? (added + " photo" + (added===1?"":"s") + " added")
