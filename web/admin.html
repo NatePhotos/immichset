@@ -183,6 +183,23 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 #toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);background:#111;color:#fff;padding:13px 22px;
   font-size:12px;letter-spacing:.07em;z-index:60;opacity:0;pointer-events:none;transition:.26s;max-width:88vw;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+#toast.act{pointer-events:auto}
+#toast button{background:none;border:none;color:#fff;font:inherit;text-decoration:underline;
+  text-underline-offset:3px;cursor:pointer;margin-left:14px;padding:0}
+
+/* ---------- photo management ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-width:760px}
+.grid .p{position:relative;aspect-ratio:1;background:var(--soft) center/cover no-repeat;cursor:pointer;
+  border:2px solid transparent}
+.grid .p.on{border-color:var(--fg)}
+.grid .p.on:after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.26)}
+.grid .p .tick{position:absolute;top:5px;left:5px;width:17px;height:17px;border-radius:50%;z-index:1;
+  background:#fff;border:1px solid var(--line);display:none}
+.grid .p.on .tick{display:block;background:var(--fg);border-color:var(--fg)}
+.grid .p.cov:before{content:"Cover";position:absolute;bottom:0;left:0;right:0;z-index:1;background:rgba(0,0,0,.62);
+  color:#fff;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;text-align:center;padding:3px 0}
+.bar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:0 0 16px;min-height:38px}
+.bar .count{font-size:12px;color:var(--muted);margin-right:4px}
 .spin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--fg);border-radius:50%;
   animation:sp .8s linear infinite;margin:50px auto}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -226,7 +243,7 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
 var S = { galleries: [], albums: [], publicUrl: null, g: null, tab: "settings", pane: "general",
-          canUpload: false, uploadMaxMb: 250 };
+          canUpload: false, uploadMaxMb: 250, caps: {} };
 
 /* ---------- icons ---------- */
 var I = {
@@ -237,7 +254,17 @@ var I = {
   up:   '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>'
 };
 
-function toast(t){ var e=$("toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(function(){e.classList.remove("on");},2600); }
+function toast(t, action){
+  var e=$("toast"); clearTimeout(e._t);
+  e.textContent=t; e.classList.toggle("act", !!action);
+  if (action){
+    var b=document.createElement("button"); b.textContent=action.label;
+    b.onclick=function(){ e.classList.remove("on","act"); action.run(); };
+    e.appendChild(b);
+  }
+  e.classList.add("on");
+  e._t=setTimeout(function(){ e.classList.remove("on","act"); }, action ? 8000 : 2600);
+}
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
 function api(path, opts){
   return fetch("/api/admin" + path, Object.assign({credentials:"same-origin"}, opts||{}))
@@ -259,6 +286,7 @@ function takeMe(b){
   S.publicUrl   = b && b.publicUrl;
   S.canUpload   = !!(b && b.canUpload);
   S.uploadMaxMb = (b && b.uploadMaxMb) || 250;
+  S.caps        = (b && b.caps) || {};
 }
 var challenge = null;
 
@@ -610,29 +638,36 @@ function upPump(){
   if (!UP.running && UP.items.length) upDone();
 }
 
+/* XHR rather than fetch: it is the only way to get upload progress per file. */
+function uploadFile(file, albumId, onProgress){
+  return new Promise(function(resolve){
+    var x = new XMLHttpRequest();
+    var qs = "?albumId=" + encodeURIComponent(albumId)
+           + "&name="    + encodeURIComponent(file.name)
+           + "&created=" + encodeURIComponent(new Date(file.lastModified || Date.now()).toISOString());
+    x.open("POST", "/api/admin/upload" + qs);
+    x.withCredentials = true;
+    x.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    if (onProgress) x.upload.onprogress = function(e){ if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = function(){
+      var b = null; try { b = JSON.parse(x.responseText); } catch(e){}
+      if (x.status >= 200 && x.status < 300) resolve({ ok:true, id: b && b.id, status: b && b.status });
+      else resolve({ ok:false, error: (b && b.error) || ("HTTP " + x.status) });
+    };
+    x.onerror = function(){ resolve({ ok:false, error:"Network error" }); };
+    x.onabort = function(){ resolve({ ok:false, error:"Cancelled" }); };
+    x.send(file);
+  });
+}
+
 function upSend(it){
-  var x = new XMLHttpRequest();
-  var qs = "?albumId=" + encodeURIComponent(UP.albumId)
-         + "&name="    + encodeURIComponent(it.name)
-         + "&created=" + encodeURIComponent(new Date(it.file.lastModified || Date.now()).toISOString());
-  function finish(){
+  uploadFile(it.file, UP.albumId, function(p){ it.pct = p; upRender(); }).then(function(res){
+    if (res.ok){ it.pct = 1; it.state = res.status === "duplicate" ? "dupe" : "done"; }
+    else { it.state = "fail"; it.err = res.error; }
     UP.running--;
     if (UP.items.filter(function(i){ return i.state==="wait"; }).length) upPump();
     else { upRender(); if (!UP.running) upDone(); }
-  }
-  x.open("POST", "/api/admin/upload" + qs);
-  x.withCredentials = true;
-  x.setRequestHeader("Content-Type", it.file.type || "application/octet-stream");
-  x.upload.onprogress = function(e){ if (e.lengthComputable){ it.pct = e.loaded / e.total; upRender(); } };
-  x.onload = function(){
-    var b = null; try { b = JSON.parse(x.responseText); } catch(e){}
-    if (x.status >= 200 && x.status < 300){ it.pct = 1; it.state = (b && b.status === "duplicate") ? "dupe" : "done"; }
-    else { it.state = "fail"; it.err = (b && b.error) || ("HTTP " + x.status); }
-    finish();
-  };
-  x.onerror   = function(){ it.state = "fail"; it.err = "Network error"; finish(); };
-  x.onabort   = function(){ it.state = "fail"; it.err = "Cancelled";     finish(); };
-  x.send(it.file);
+  });
 }
 
 function upDone(){
@@ -644,20 +679,102 @@ function upDone(){
 }
 
 function paneBrowse(g){
-  var alb = S.albums.filter(function(x){ return x.id===g.albumId; })[0];
+  var alb  = S.albums.filter(function(x){ return x.id===g.albumId; })[0];
+  var list = [], sel = {}, busy = false;
+
   $("pane").innerHTML = head("In this album",
-      "Everything the gallery is showing" + (alb ? ", from <b>" + esc(alb.name) + "</b>" : "") + ".")
-    + '<div class="picker" id="grid" style="max-height:440px"><div class="spin"></div></div>'
-    + '<div class="hint" id="gridN"></div>';
-  api("/albums/" + g.albumId + "/assets").then(function(r){
-    var list = (r.body && r.body.assets) || [];
+      "Click to select" + (alb ? ", from <b>" + esc(alb.name) + "</b>" : "") + ". Trashed photos go to Immich's trash, where they keep for 30 days.")
+    + '<div class="bar" id="bar"></div>'
+    + '<div class="grid" id="grid"><div class="spin"></div></div>'
+    + '<div class="hint" id="gridN"></div>'
+    + '<input type="file" id="repl" accept=".jpg,.jpeg,.png,.heic,.heif,.webp,.avif,.gif,.tif,.tiff,.dng" style="display:none">';
+
+  function chosen(){ return Object.keys(sel).filter(function(k){ return sel[k]; }); }
+
+  function drawBar(){
+    var n = chosen().length, c = S.caps || {};
+    var h = '<span class="count">' + (n ? n + " selected" : list.length + " photo" + (list.length===1?"":"s")) + '</span>';
+    if (!n){
+      if (list.length) h += '<button class="btn sm ghost" id="selAll">Select all</button>';
+    } else {
+      if (c.trash)       h += '<button class="btn sm danger" id="doTrash">Move to trash</button>';
+      if (c.albumRemove) h += '<button class="btn sm ghost" id="doRemove">Remove from gallery</button>';
+      /* replacing means putting the new one in and taking the old one out, so it needs both */
+      if (n === 1 && c.upload && (c.trash || c.albumRemove)) h += '<button class="btn sm ghost" id="doRepl">Replace…</button>';
+      if (n === 1)       h += '<button class="btn sm ghost" id="doCover">Make cover</button>';
+      h += '<button class="btn sm ghost" id="selNone">Clear</button>';
+    }
+    $("bar").innerHTML = h;
+    if ($("selAll"))  $("selAll").onclick  = function(){ list.forEach(function(a){ sel[a.id]=true; }); draw(); };
+    if ($("selNone")) $("selNone").onclick = function(){ sel = {}; draw(); };
+    if ($("doTrash"))  $("doTrash").onclick  = function(){ act("trash"); };
+    if ($("doRemove")) $("doRemove").onclick = function(){ act("remove"); };
+    if ($("doCover"))  $("doCover").onclick  = function(){
+      save({coverAssetId: chosen()[0]}, "Cover updated").then(function(ok){ if (ok){ sel={}; draw(); } });
+    };
+    if ($("doRepl")) $("doRepl").onclick = function(){ $("repl").click(); };
+  }
+
+  function draw(){
     $("grid").innerHTML = list.map(function(a){
-      return '<div class="p" style="background-image:url(\'' + imgSrc(a.id) + '\')"></div>';
+      return '<div class="p' + (sel[a.id] ? " on" : "") + (a.id===S.g.coverAssetId ? " cov" : "") + '" data-id="' + a.id
+           + '" style="background-image:url(\'' + imgSrc(a.id) + '\')"><span class="tick"></span></div>';
     }).join("") || '<p class="empty" style="padding:8px">No photos yet. Add some from the previous tab.</p>';
-    $("gridN").textContent = list.length
-      ? list.length + " photo" + (list.length===1?"":"s") + (list.length >= 400 ? " (showing the first 400)" : "")
-      : "";
-  });
+    Array.prototype.forEach.call($("grid").querySelectorAll(".p"), function(el){
+      el.onclick = function(){ if (busy) return; sel[el.dataset.id] = !sel[el.dataset.id]; draw(); };
+    });
+    $("gridN").textContent = list.length >= 400 ? "Showing the first 400." : "";
+    drawBar();
+  }
+
+  function load(then){
+    api("/albums/" + g.albumId + "/assets").then(function(r){
+      list = (r.body && r.body.assets) || [];
+      Object.keys(sel).forEach(function(k){
+        if (!list.some(function(a){ return a.id===k; })) delete sel[k];
+      });
+      draw(); if (then) then();
+    });
+  }
+
+  function act(kind, ids, quiet){
+    ids = ids || chosen();
+    if (!ids.length) return;
+    if (kind === "remove" && !quiet &&
+        !confirm("Take " + ids.length + " photo" + (ids.length===1?"":"s") + " out of this gallery?\n\nThey stay in Immich.")) return;
+    busy = true;
+    return post("/photos/" + kind, {albumId: g.albumId, ids: ids}).then(function(r){
+      busy = false;
+      if (!r.ok){ toast((r.body && r.body.error) || "That didn't work"); return false; }
+      var n = r.body.n;
+      sel = {};
+      load(function(){ refreshAlbums(); refreshGalleries(draw); });
+      if (kind === "trash")
+        toast(n + " photo" + (n===1?"":"s") + " moved to trash", { label: "Undo", run: function(){ act("restore", r.body.ids, true); } });
+      else if (kind === "restore") toast("Brought back");
+      else toast(n + " photo" + (n===1?"":"s") + " removed from the gallery");
+      return true;
+    });
+  }
+
+  $("repl").onchange = function(){
+    var f = $("repl").files[0], old = chosen()[0];
+    $("repl").value = "";
+    if (!f || !old) return;
+    var wasCover = old === S.g.coverAssetId;
+    busy = true; toast("Uploading the replacement…");
+    uploadFile(f, g.albumId).then(function(res){
+      busy = false;
+      if (!res.ok) return toast(res.error || "Couldn't upload that one");
+      /* only drop the old one once the new one is safely in */
+      act((S.caps && S.caps.trash) ? "trash" : "remove", [old], true).then(function(){
+        if (wasCover && res.id) save({coverAssetId: res.id}, "Replaced, and it's the new cover");
+        else toast("Replaced");
+      });
+    });
+  };
+
+  load();
 }
 
 function paneDanger(g){

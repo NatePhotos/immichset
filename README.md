@@ -51,9 +51,12 @@ album and uploads for you.
 2. `cp docker-compose.example.yml docker-compose.yml` and fill it in.
 3. In Immich, create a **read-only** API key: `asset.read`, `asset.view`, `asset.download`,
    `album.read`, `album.download`, `timeline.read`, `timeline.download`.
-   To upload from the admin panel, create a **second** key with `asset.upload`, `album.create`
-   and `albumAsset.create`, and set it as `IMMICH_WRITE_KEY`. Keeping them apart means the
-   client-facing path cannot change anything in Immich even if it is compromised.
+   To manage photos from the admin panel, create a **second** key and set it as
+   `IMMICH_WRITE_KEY`: `asset.upload`, `album.create` and `albumAsset.create` to add,
+   plus `asset.delete` and `albumAsset.delete` to remove. Keeping the two keys apart means
+   the client-facing path cannot change anything in Immich even if it is compromised.
+   Grant only the half you want — the panel probes the key on startup and shows just the
+   actions it will allow.
 4. Generate long random values for `APP_SECRET` and `ADMIN_TOKEN`.
 5. `docker compose up -d`
 6. Point your proxy at the container and open `/admin`.
@@ -68,16 +71,25 @@ It also becomes the favicon and iOS home-screen icon. Optionally add
 **`web/brand-logo-dark.png`** — the same mark in white — and browsers in dark mode will use it,
 so the icon stays visible on a dark tab strip.
 
-### Uploads
+### Managing photos
 
-Optional, and off unless `IMMICH_WRITE_KEY` is set. With it, a gallery's **Photos** tab takes a
-drag-and-drop batch straight into the Immich album it reads from, and the new-gallery form can
-create that album for you first.
+Optional, and off unless `IMMICH_WRITE_KEY` is set. With it, a gallery's **Photos** tab is enough
+to run a shoot without opening Immich:
+
+- **Add** — drop a batch on the album the gallery reads from, or let the new-gallery form create
+  that album first
+- **Replace** — swap one photo for a re-edit; the new file goes in before the old one comes out,
+  and if the old one was the cover, the cover follows
+- **Remove from gallery** — out of the album, still in Immich
+- **Move to trash** — into Immich's trash, where it keeps for 30 days, with an undo in the toast
 
 `UPLOAD_MAX_MB` caps each file (default 250). Photo formats only: JPEG, PNG, HEIC, WebP, AVIF,
 GIF, TIFF and DNG. One file per request, so each gets its own progress bar and one failure does
 not take the batch down. Immich deduplicates by checksum, so re-dropping a folder is safe — the
 photos already there come back as duplicates rather than second copies.
+
+Nothing here deletes a file outright: trashing is Immich's recoverable trash, and the panel's undo
+only reaches photos it trashed itself.
 
 ### Email
 
@@ -94,9 +106,10 @@ a residential IP without SPF and DKIM will land in spam.
   works. The password is the access control; registration is to know your audience
 - Image requests are checked against the gallery's album, so a session for one gallery cannot
   read another's photos
-- The upload key is separate from the read key and needs only `asset.upload`, `album.create` and
-  `albumAsset.create` — it can add to Immich, never delete or modify. The client-facing path never
-  touches it
+- The write key is separate from the read key, and the client-facing path never touches it. It
+  holds only what the Photos tab needs, and trashing goes to Immich's recoverable trash — nothing
+  in this app can delete a photo outright. Leave the two `*.delete` permissions off and the panel
+  becomes add-only
 
 ## Backups
 

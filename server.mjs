@@ -164,6 +164,7 @@ const q = {
   gallUpd:    db.prepare(`UPDATE galleries SET slug=?, title=?, subtitle=?, album_id=?, cover_asset_id=?,
                  require_email=?, allow_download=?, expires_at=?, published_at=? WHERE id=?`),
   gallPw:     db.prepare('UPDATE galleries SET password_hash=?, password_salt=? WHERE id=?'),
+  coverClear: db.prepare('UPDATE galleries SET cover_asset_id = NULL WHERE cover_asset_id = ?'),
   regCount:   db.prepare('SELECT COUNT(*) n FROM registrations WHERE gallery_id = ?'),
   evCount1:   db.prepare('SELECT COUNT(*) n FROM events WHERE gallery_id = ? AND type = ?'),
   invList:    db.prepare('SELECT * FROM invites WHERE gallery_id = ? ORDER BY created_at'),
@@ -573,6 +574,49 @@ async function immich(path, init = {}) {
 }
 const canUpload = () => !!CFG.immichWriteKey;
 const UPLOAD_OK = /\.(jpe?g|png|heic|heif|webp|avif|gif|tiff?|dng)$/i;
+
+/* What the write key may actually do. Immich answers the permission question before it
+   validates the body, so a deliberately empty request asks without creating anything.
+   The panel uses this to show only the buttons that will work, and to name the exact
+   permission to tick when one is missing. */
+/* Shaped like a real v4 id so the probes clear Immich's format check and reach the
+   permission answer, but belonging to nothing. Never an empty ids array: an API that
+   reads empty as "all" would turn a probe into a mass operation. */
+const NIL_ID = '00000000-0000-4000-8000-000000000000';
+const NO_CAPS = { upload: false, albumCreate: false, albumAdd: false, albumRemove: false, trash: false, restore: false };
+let capsCache = null, capsAt = 0;
+async function writeCaps() {
+  if (!canUpload()) return NO_CAPS;
+  if (capsCache && Date.now() - capsAt < 600_000) return capsCache;
+  const asJson = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const probe = async (p, init) => {
+    try {
+      const r = await immich(p, { write: true, ...init });
+      if (r.status !== 403) return true;
+      return !/Missing required permission/.test(await r.text().catch(() => ''));
+    } catch { return true; }   /* if Immich is unreachable, don't hide the buttons too */
+  };
+  const [upload, albumCreate, albumAdd, albumRemove, trash, restore] = await Promise.all([
+    probe('/api/assets', { method: 'POST', headers: { 'content-type': 'multipart/form-data; boundary=x' }, body: '--x--' }),
+    probe('/api/albums', asJson('POST', {})),
+    probe(`/api/albums/${NIL_ID}/assets`, asJson('PUT', { ids: [NIL_ID] })),
+    probe(`/api/albums/${NIL_ID}/assets`, asJson('DELETE', { ids: [NIL_ID] })),
+    probe('/api/assets', asJson('DELETE', { ids: [NIL_ID], force: false })),
+    probe('/api/trash/restore/assets', asJson('POST', { ids: [NIL_ID] })),
+  ]);
+  capsCache = { upload, albumCreate, albumAdd, albumRemove, trash, restore };
+  capsAt = Date.now();
+  return capsCache;
+}
+
+/* Undo only reaches photos this panel trashed, so it can never pull something
+   unrelated back out of Immich's trash. */
+const recentTrash = new Map();
+function rememberTrash(albumId, ids) {
+  const now = Date.now();
+  for (const [id, rec] of recentTrash) if (now - rec.at > 30 * 60_000) recentTrash.delete(id);
+  for (const id of ids) recentTrash.set(id, { albumId, at: now });
+}
 async function immichJson(path, init) {
   const r = await immich(path, init);
   if (!r.ok) throw new Error(`immich ${path} -> ${r.status}`);
@@ -942,7 +986,8 @@ function gallDto(g) {
 async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/me')
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
-                            canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb });
+                            canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
+                            caps: await writeCaps() });
 
   if (path === '/api/admin/albums' && req.method === 'POST') {
     if (!canUpload()) return json(res, 400, { error: 'no_write_key' });
@@ -1013,6 +1058,57 @@ async function adminRoutes(req, res, path, url) {
     }
     console.log(`upload ${name} ${(buf.length / 1048576).toFixed(1)}MB -> ${a.status || 'ok'}${added ? ' + album' : ''}`);
     return json(res, 200, { id: a.id || null, status: a.status || 'created', added });
+  }
+
+  /* Taking photos back out: off the album, into Immich's trash, and undo. */
+  const mng = path.match(/^\/api\/admin\/photos\/(remove|trash|restore)$/);
+  if (mng && req.method === 'POST') {
+    if (!canUpload()) return json(res, 400, { error: 'no_write_key' });
+    const act = mng[1];
+    const b = await readJson(req);
+    const albumId = String(b.albumId || '');
+    if (!/^[0-9a-f-]{36}$/i.test(albumId)) return json(res, 400, { error: 'albumId is required' });
+    const asked = (Array.isArray(b.ids) ? b.ids : []).map(String).filter(x => /^[0-9a-f-]{36}$/i.test(x));
+    if (!asked.length) return json(res, 400, { error: 'Select at least one photo' });
+    if (asked.length > 500) return json(res, 400, { error: 'Up to 500 photos at a time' });
+
+    /* Act only on photos this gallery actually holds, so a stray id cannot reach the
+       rest of the library. Undo is bounded to what this panel trashed instead. */
+    let ids;
+    if (act === 'restore') {
+      ids = asked.filter(id => recentTrash.get(id)?.albumId === albumId);
+      if (!ids.length) return json(res, 409, { error: "There's nothing left to undo" });
+    } else {
+      const here = new Set((await albumAssets(albumId)).map(a => a.id));
+      ids = asked.filter(id => here.has(id));
+      if (!ids.length) return json(res, 409, { error: 'Those photos are no longer in this gallery' });
+    }
+
+    const call = act === 'remove'
+      ? [`/api/albums/${albumId}/assets`, 'DELETE', { ids }]
+      : act === 'trash'
+        ? ['/api/assets', 'DELETE', { ids, force: false }]        /* recoverable, never a hard delete */
+        : ['/api/trash/restore/assets', 'POST', { ids }];
+    const r = await immich(call[0], {
+      write: true, method: call[1],
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(call[2]),
+    });
+    if (!r.ok) {
+      const txt = (await r.text().catch(() => '')).slice(0, 200);
+      console.error(`${act} failed`, r.status, txt);
+      const miss = /Missing required permission: ([\w.]+)/.exec(txt);
+      return json(res, 502, { error: miss
+        ? `Your Immich key is missing ${miss[1]}. Add it to the key and try again.`
+        : `Immich refused that (${r.status})` });
+    }
+
+    albumSets.delete(albumId);                        /* clients must stop seeing them at once */
+    if (act === 'trash') rememberTrash(albumId, ids);
+    if (act === 'restore') for (const id of ids) recentTrash.delete(id);
+    if (act !== 'restore') for (const id of ids) q.coverClear.run(id);
+    console.log(`${act} ${ids.length} photo(s) in album ${albumId}`);
+    return json(res, 200, { ok: true, ids, n: ids.length, skipped: asked.length - ids.length });
   }
 
   if (path === '/api/admin/albums') {
