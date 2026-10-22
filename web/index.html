@@ -301,7 +301,9 @@ var slug = null;
 (function parse(){
   var m = location.pathname.replace(/\/+$/,"").split("/").filter(Boolean);
   var i = m.indexOf("g");
+  /* a gallery is /<slug>; /g/<slug> is the old form, still honoured for links in the wild */
   if (i >= 0 && m[i+1]) slug = decodeURIComponent(m[i+1]);
+  else if (m.length === 1) slug = decodeURIComponent(m[0]);
 })();
 var BASE = slug ? (API + "/g/" + encodeURIComponent(slug)) : null;
 

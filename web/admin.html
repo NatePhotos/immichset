@@ -288,7 +288,7 @@ function coverOf(g){
   var a = S.albums.filter(function(x){return x.id===g.albumId;})[0];
   return (a && a.thumb) ? imgSrc(a.thumb,"preview") : "";
 }
-function galleryUrl(g){ return (S.publicUrl || location.origin) + "/g/" + g.slug; }
+function galleryUrl(g){ return (S.publicUrl || location.origin) + "/" + g.slug; }
 
 /* ---------- auth ---------- */
 function takeMe(b){
@@ -403,7 +403,7 @@ function listView(){
       return '<div class="card" data-id="'+g.id+'">'
         + '<div class="ph" style="background-image:url(\'' + coverOf(g) + '\')"></div>'
         + '<div class="body"><h3>'+esc(g.title)+'</h3>'
-        + '<div class="sub">'+esc(g.subtitle || ("/g/"+g.slug))+'</div>'
+        + '<div class="sub">'+esc(g.subtitle || ("/"+g.slug))+'</div>'
         + '<div class="tags">'+tags.join("")+'</div>'
         + '<div class="stats"><div><b>'+g.views+'</b>Views</div><div><b>'+g.registrations+'</b>Signups</div>'
         + '<div><b>'+g.downloads+'</b>Downloads</div></div></div></div>';
@@ -515,7 +515,7 @@ function paneGeneral(g){
   function syncSlug(){
     var v = $("fSlug").value.trim().toLowerCase();
     var host = (S.publicUrl || location.origin).replace(/^https?:\/\//,"");
-    $("slugHint").innerHTML = v ? "Clients visit <b>"+esc(host+"/g/"+v)+"</b>" : "Letters, numbers and dashes.";
+    $("slugHint").innerHTML = v ? "Clients visit <b>"+esc(host+"/"+v)+"</b>" : "Letters, numbers and dashes.";
   }
   $("fSlug").addEventListener("input", syncSlug); syncSlug();
   $("saveGen").onclick = function(){
@@ -1098,7 +1098,7 @@ function editorView(g){
   function syncSlug(){
     var v = $("fSlug").value.trim().toLowerCase();
     var host = (S.publicUrl || location.origin).replace(/^https?:\/\//,"");
-    $("slugHint").innerHTML = v ? "Clients visit <b>"+esc(host+"/g/"+v)+"</b>" : "Letters, numbers and dashes.";
+    $("slugHint").innerHTML = v ? "Clients visit <b>"+esc(host+"/"+v)+"</b>" : "Letters, numbers and dashes.";
   }
   function syncAlbum(){
     $("albHint").textContent = $("fAlbum").value === "__new__"

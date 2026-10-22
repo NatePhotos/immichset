@@ -36,6 +36,10 @@ client ──▶ immichset ──▶ sessions, registrations, events, email   (S
                       ──▶ Immich, with a read-only key the client never sees
 ```
 
+A gallery lives at `https://your-domain/<slug>`. The older `/g/<slug>` form redirects there, so
+links already sent out keep working, and slugs that would collide with the app's own paths
+(`admin`, `api`, `healthz`, …) are refused.
+
 Galleries point at an Immich album. Add or remove photos in Immich and the gallery follows —
 or, with a write key set, drop them straight into the admin panel and immichset creates the
 album and uploads for you.

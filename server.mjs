@@ -294,6 +294,13 @@ function adminOk(req) {
 }
 const isExpired = g => !!g.expires_at && new Date(g.expires_at).getTime() < Date.now();
 
+/* Galleries live at the root, so a slug may not be a path the app already answers. */
+const RESERVED = new Set(['g', 's', 'share', 'api', 'admin', 'healthz', 'brand', 'static', 'assets',
+                          'favicon.ico', 'robots.txt', 'sitemap.xml', 'index.html', 'admin.html',
+                          'well-known', 'login', 'logout']);
+const slugShape = s => /^[a-z0-9][a-z0-9-]{1,60}$/i.test(String(s));
+const slugFree  = s => !RESERVED.has(String(s).toLowerCase());
+
 function cookies(req) {
   const out = {};
   for (const part of (req.headers.cookie || '').split(';')) {
@@ -382,7 +389,7 @@ function fillVars(text, g) {
     .replace(/\{\{\s*brand\s*\}\}/gi, CFG.brandName || '');
 }
 
-function galleryUrl(g) { return `${CFG.publicUrl}/g/${g.slug}`; }
+function galleryUrl(g) { return `${CFG.publicUrl}/${g.slug}`; }
 
 function esc(t) {
   return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
@@ -818,7 +825,7 @@ const server = createServer(async (req, res) => {
     const legacy = path.match(/^\/(?:s|share)\/(.+)$/);
     if (legacy) {
       const slug = decodeURIComponent(legacy[1]).replace(/\/+$/, '');
-      res.writeHead(302, { location: '/g/' + encodeURIComponent(slug) });
+      res.writeHead(302, { location: '/' + encodeURIComponent(slug) });
       return res.end();
     }
 
@@ -838,8 +845,22 @@ const server = createServer(async (req, res) => {
       return res.end(PLACEHOLDER_MARK);
     }
 
-    if (path === '/g' || path.startsWith('/g/')) return await serveStatic(res, 'index.html');
-    if (path === '/') { res.writeHead(302, { location: '/g/' }); return res.end(); }
+    /* A gallery is /<slug>. The old /g/<slug> form still works - clients have those
+       links in their inboxes - but it moves to the short one. */
+    const old = path.match(/^\/g\/([^/]+)\/?$/);
+    if (old) {
+      res.writeHead(301, { location: '/' + encodeURIComponent(decodeURIComponent(old[1])) });
+      return res.end();
+    }
+    if (path === '/g' || path === '/g/' || path === '/') return await serveStatic(res, 'index.html');
+
+    const bare = path.match(/^\/([^/]+)\/?$/);
+    if (bare) {
+      const slug = decodeURIComponent(bare[1]).toLowerCase();
+      /* only serve the shell for a slug that exists, so a typo still gets a real 404 */
+      if (slugShape(slug) && slugFree(slug) && q.gallBySlug.get(slug))
+        return await serveStatic(res, 'index.html');
+    }
 
     return await serveStatic(res, path.replace(/^\/+/, '') || 'index.html');
   } catch (e) {
@@ -1227,7 +1248,8 @@ async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/galleries' && req.method === 'POST') {
     const b = await readJson(req);
     if (!b.slug || !b.title || !b.albumId) return json(res, 400, { error: 'slug, title and albumId are required' });
-    if (!/^[a-z0-9][a-z0-9-]{1,60}$/i.test(b.slug)) return json(res, 400, { error: 'slug must be letters, numbers and dashes' });
+    if (!slugShape(b.slug)) return json(res, 400, { error: 'slug must be letters, numbers and dashes' });
+    if (!slugFree(b.slug))  return json(res, 400, { error: `“${b.slug}” is reserved — pick another web address` });
     let hash = null, salt = null;
     if (b.password) { salt = randomBytes(16).toString('hex'); hash = hashPw(String(b.password), salt); }
     try {
@@ -1253,7 +1275,8 @@ async function adminRoutes(req, res, path, url) {
     if (req.method === 'PATCH') {
       const b = await readJson(req);
       const slug = (b.slug ?? g.slug).toLowerCase();
-      if (!/^[a-z0-9][a-z0-9-]{1,60}$/i.test(slug)) return json(res, 400, { error: 'slug must be letters, numbers and dashes' });
+      if (!slugShape(slug)) return json(res, 400, { error: 'slug must be letters, numbers and dashes' });
+      if (!slugFree(slug))  return json(res, 400, { error: `“${slug}” is reserved — pick another web address` });
       try {
         q.gallUpd.run(
           slug,
