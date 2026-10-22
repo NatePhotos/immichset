@@ -9,6 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { readdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 const CFG = {
   port:       Number(process.env.PORT || 3000),
@@ -393,9 +394,16 @@ function log(gallery, regId, type, assetId, req) {
 }
 
 function json(res, code, obj, headers = {}) {
-  const body = JSON.stringify(obj);
-  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8',
-                        'cache-control': 'no-store', ...headers });
+  let body = Buffer.from(JSON.stringify(obj));
+  const h = { 'content-type': 'application/json; charset=utf-8',
+              'cache-control': 'no-store', vary: 'accept-encoding', ...headers };
+  /* The asset list for a large gallery runs to a hundred kilobytes and every photo
+     waits behind it. Below an MTU there is nothing to gain. */
+  if (res.gzOk && body.length > 1400) {
+    body = gzipSync(body);
+    h['content-encoding'] = 'gzip';
+  }
+  res.writeHead(code, h);
   res.end(body);
 }
 async function readJson(req, limit = 64 * 1024) {
@@ -908,6 +916,7 @@ async function serveGalleryPage(res, gallery) {
 }
 
 const server = createServer(async (req, res) => {
+  res.gzOk = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
   const url = new URL(req.url, 'http://x');
   const path = url.pathname;
 
@@ -1052,6 +1061,10 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       title: gallery.title,
       subtitle: prettyDate(gallery.subtitle),   /* the client prints it as sent */
       cover: `/api/g/${gallery.slug}/cover`,
+      /* only when the cover comes from Immich: an uploaded one has no cheaper variant,
+         and asking for it twice would be slower, not faster */
+      coverSmall: coverPath(gallery) && existsSync(coverPath(gallery))
+        ? null : `/api/g/${gallery.slug}/cover?size=thumbnail`,
       allowDownload: !!gallery.allow_download,
       expiresAt: gallery.expires_at,
       /* the client shows these as tabs only when there is more than one */
@@ -1074,7 +1087,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     if (fp && existsSync(fp)) {
       const buf = await readFile(fp);
       res.writeHead(200, { 'content-type': COVER_MIME[extname(fp).toLowerCase()] || 'application/octet-stream',
-                           'content-length': buf.length, 'cache-control': 'private, max-age=86400' });
+                           'content-length': buf.length, 'cache-control': 'private, max-age=300' });
       return res.end(req.method === 'HEAD' ? undefined : buf);
     }
     let id = gallery.cover_asset_id;
@@ -1082,7 +1095,10 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     /* a video's thumbnail works as a cover too, so fall back to whatever comes first */
     if (!id) id = await firstAsset(gallery);
     if (!id) { res.writeHead(404); return res.end(); }
-    return proxyImage(req, res, id, 'preview');
+    /* a client stares at nothing until the cover lands, so the small one is offered
+       first and the full one swapped in behind it */
+    const small = url.searchParams.get('size') === 'thumbnail';
+    return proxyImage(req, res, id, small ? 'thumbnail' : 'preview', 'private, max-age=300');
   }
 
   if (rest === '/unlock' && req.method === 'POST') {
@@ -1209,7 +1225,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
   return json(res, 404, { error: 'not_found' });
 }
 
-async function proxyImage(req, res, assetId, size) {
+async function proxyImage(req, res, assetId, size, cache) {
   /* `web` is the preview Immich already made: a few hundred KB instead of twenty
      megabytes, which is what someone on a phone actually wants to keep */
   const want = size === 'web' ? 'preview' : size;
@@ -1228,7 +1244,9 @@ async function proxyImage(req, res, assetId, size) {
 
   const headers = {
     'content-type': up.headers.get('content-type') || 'application/octet-stream',
-    'cache-control': 'private, max-age=86400',
+    /* an asset's bytes never change for its id, so a repeat visit need not even ask.
+       A cover is addressed by the gallery, not the asset, and can be swapped. */
+    'cache-control': cache || 'private, max-age=86400, immutable',
     'accept-ranges': up.headers.get('accept-ranges') || 'bytes',
   };
   for (const h of ['content-disposition', 'content-length', 'content-range']) {

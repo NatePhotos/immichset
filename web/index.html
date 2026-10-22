@@ -608,14 +608,28 @@ function render(){
   $("hCount").textContent = n + (n===1 ? " Photo" : " Photos");
 
   var coverSrc = (link && link.cover) || (assets[0] ? imgUrl(assets[0].id, "preview") : null);
+  var coverLow = link && link.coverSmall;
   if (coverSrc){
-    var img = new Image();
-    img.onload = function(){
+    /* the small one is a fifth of the bytes: show it the moment it lands, then let the
+       full one replace it. The swap is invisible; the wait was not. */
+    var full = new Image();
+    full.onload = function(){
       $("coverBg").style.backgroundImage = 'url("' + coverSrc + '")';
       $("cover").classList.add("ready");
     };
-    img.onerror = function(){ $("cover").classList.add("ready"); };
-    img.src = coverSrc;
+    full.onerror = function(){ $("cover").classList.add("ready"); };
+
+    if (coverLow){
+      var low = new Image();
+      low.onload = function(){
+        if (!$("cover").classList.contains("ready")){
+          $("coverBg").style.backgroundImage = 'url("' + coverLow + '")';
+          $("cover").classList.add("ready");
+        }
+      };
+      low.src = coverLow;
+    }
+    full.src = coverSrc;
   } else { $("cover").classList.add("ready"); }
 
   if (link && link.allowDownload === false){
