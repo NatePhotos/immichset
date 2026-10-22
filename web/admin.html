@@ -552,9 +552,10 @@ function paneCover(g){
     +   '<div class="covside"><div class="covwhat">' + (own ? "Your own image" : g.coverAssetId ? "A photo from the album" : "No cover yet — the first photo stands in") + '</div>'
     +     '<button class="btn sm" id="pickCov">' + (own ? "Choose a different one" : "Upload an image") + '</button>'
     +     (own ? '<button class="btn sm ghost" id="dropCov">Remove it</button>' : '')
-    +     '<div class="hint">JPEG, PNG, WebP, AVIF or GIF, under 12 MB. It is stored with the gallery, '
+    +     '<div class="hint">JPEG, PNG, WebP, AVIF or GIF. It is stored with the gallery, '
     +       'not added to the album, so clients never see it in the grid.<br>'
-    +       'Export it web-sized — it is sent as-is, so a full-resolution file makes clients wait.</div>'
+    +       'Drop in a full-resolution export if you like — anything larger than 2400px is '
+    +       'resized here before it uploads.</div>'
     +   '</div></div>'
     + '<input type="file" id="covFile" accept=".jpg,.jpeg,.png,.webp,.avif,.gif" style="display:none">'
     + '<h3 class="sec" style="margin-top:30px">Or pick one from the album</h3>'
@@ -587,22 +588,54 @@ function paneCover(g){
   $("covFile").onchange = function(){
     var f = $("covFile").files[0]; $("covFile").value = "";
     if (!f) return;
-    if (f.size > 12*1048576) return toast("That one is over 12 MB — export it smaller");
-    if (f.size > 3*1048576) toast("That is " + Math.round(f.size/1048576) + " MB; a web-sized export would load faster");
-    var x = new XMLHttpRequest();
-    x.open("POST", "/api/admin/galleries/"+g.id+"/cover-upload?name="+encodeURIComponent(f.name));
-    x.withCredentials = true;
-    x.setRequestHeader("Content-Type", f.type || "application/octet-stream");
-    x.onload = function(){
-      var b=null; try { b = JSON.parse(x.responseText); } catch(e){}
-      if (x.status >= 200 && x.status < 300){
-        toast("Cover updated");
-        refreshGalleries(function(){ renderShell(); });
-      } else toast((b && b.error) || ("Couldn't upload that (HTTP " + x.status + ")"));
-    };
-    x.onerror = function(){ toast("Network error"); };
-    x.send(f);
+    toast("Preparing the image…");
+    fitCover(f).then(function(fit){
+      var body = fit ? fit.blob : f;
+      var name = fit ? f.name.replace(/\.[^.]+$/, "") + ".jpg" : f.name;
+      if (body.size > 12*1048576)
+        return toast("That one is " + mb(body.size) + " and could not be resized here — export it smaller");
+      var x = new XMLHttpRequest();
+      x.open("POST", "/api/admin/galleries/"+g.id+"/cover-upload?name="+encodeURIComponent(name));
+      x.withCredentials = true;
+      x.setRequestHeader("Content-Type", fit ? "image/jpeg" : (f.type || "application/octet-stream"));
+      x.onload = function(){
+        var b=null; try { b = JSON.parse(x.responseText); } catch(e){}
+        if (x.status >= 200 && x.status < 300){
+          toast(fit ? ("Cover updated — " + fit.w + "×" + fit.h + ", " + mb(fit.blob.size)) : "Cover updated");
+          refreshGalleries(function(){ renderShell(); });
+        } else toast((b && b.error) || ("Couldn't upload that (HTTP " + x.status + ")"));
+      };
+      x.onerror = function(){ toast("Network error"); };
+      x.send(body);
+    });
   };
+}
+
+/* A cover is served exactly as stored, so shrink it before it ever goes up. The browser
+   already has a decoder and an encoder; the alternative is a server-side image library,
+   which this app deliberately does without. */
+var COVER_EDGE = 2400, COVER_EASY = 1200000;
+function mb(n){ return n >= 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.round(n/1024) + " KB"; }
+function fitCover(file){
+  /* a GIF may be animated, and redrawing it would keep only the first frame */
+  if (/\.gif$/i.test(file.name) || file.type === "image/gif") return Promise.resolve(null);
+  if (!window.createImageBitmap || !document.createElement("canvas").toBlob) return Promise.resolve(null);
+  return createImageBitmap(file, { imageOrientation: "from-image" }).then(function(bm){
+    var w0 = bm.width, h0 = bm.height;
+    var scale = Math.min(1, COVER_EDGE / Math.max(w0, h0));
+    if (scale === 1 && file.size <= COVER_EASY){ bm.close(); return null; }   /* already web-sized */
+    var w = Math.max(1, Math.round(w0 * scale)), h = Math.max(1, Math.round(h0 * scale));
+    var c = document.createElement("canvas"); c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);    /* transparency flattens to white, not black */
+    ctx.drawImage(bm, 0, 0, w, h); bm.close();
+    return new Promise(function(done){
+      c.toBlob(function(b){
+        /* if re-encoding did not actually help, send what was chosen */
+        done(b && b.size < file.size ? { blob: b, w: w, h: h, from: { w: w0, h: h0 } } : null);
+      }, "image/jpeg", 0.86);
+    });
+  }).catch(function(){ return null; });   /* a format the browser cannot decode: let the server answer */
 }
 /* ---------- photos ---------- */
 var UP = { albumId:null, items:[], running:0 };
