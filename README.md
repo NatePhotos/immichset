@@ -141,6 +141,23 @@ a residential IP without SPF and DKIM will land in spam.
   in this app can delete a photo outright. Leave the two `*.delete` permissions off and the panel
   becomes add-only
 
+### Dynamic DNS
+
+Optional. A gallery served from a home connection is only reachable while its A record
+matches whatever address the ISP last handed out, and nothing announces a change — the first
+sign is a client saying the link is dead.
+
+Set `HOSTINGER_TOKEN`, `DNS_DOMAIN` and `DNS_HOST` and the app checks every
+`DNS_CHECK_MINUTES` (default 10) and corrects the record itself, emailing you when it does.
+`DNS_APPLY: "off"` watches and emails without changing anything.
+
+Guards, because this writes to live DNS: two independent lookups must agree before anything
+is believed, private, loopback and carrier-NAT addresses are refused, a new address must appear
+twice running, and at most one change is made per hour. Only the one `name`/`type` named above is
+sent, so neighbouring records — SPF, DKIM, DMARC — are never part of the request. The lookups use
+IPv4-only endpoints: asked over a dual-stack connection, the usual ones answer with an IPv6
+address.
+
 ## Backups
 
 `BACKUP_DIR` enables a daily `VACUUM INTO` snapshot, keeping `BACKUP_KEEP` days. It is consistent

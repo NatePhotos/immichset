@@ -36,6 +36,11 @@ const CFG = {
   brandUrl:     process.env.BRAND_URL || '',
   brandSocial:  process.env.BRAND_SOCIAL || '',
   brandSocialLabel: process.env.BRAND_SOCIAL_LABEL || '',
+  dnsToken:    process.env.HOSTINGER_TOKEN || '',
+  dnsDomain:   process.env.DNS_DOMAIN || '',
+  dnsHost:     process.env.DNS_HOST || '',
+  dnsApply:   (process.env.DNS_APPLY || 'on').toLowerCase() !== 'off',
+  dnsEvery:    Number(process.env.DNS_CHECK_MINUTES || 10),
 };
 for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
   if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
@@ -1798,6 +1803,129 @@ server.listen(CFG.port, '0.0.0.0', () => {
 
 /* a backup at boot and hourly thereafter; runBackup no-ops if today's exists */
 setTimeout(() => runBackup(), 20_000);
+/* ------------------------------------------------------------- dynamic dns
+   The galleries live on a home connection, so the A record is only true until the
+   ISP hands out a different address. Nothing used to notice; the first sign was a
+   client saying the link was dead. */
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+function routable(ip) {
+  const m = IPV4.exec(ip);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if ([a, Number(m[2]), Number(m[3]), Number(m[4])].some(n => n > 255)) return false;
+  if (a === 10 || a === 127 || a === 0 || a >= 224) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;   /* carrier NAT: forwarding would be broken anyway */
+  return true;
+}
+
+/* Two independent answers must agree. One service having a bad day must not be able
+   to repoint the domain. The v4-only hostnames matter: asked over a dual-stack
+   connection, the ordinary ones answer with this machine's IPv6 address. */
+const IP_SOURCES = ['https://api4.ipify.org', 'https://ipv4.icanhazip.com', 'https://checkip.amazonaws.com'];
+async function publicIp() {
+  const got = [];
+  for (const u of IP_SOURCES) {
+    try {
+      const r = await fetch(u, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) continue;
+      const t = (await r.text()).trim();
+      if (routable(t)) got.push(t);
+      if (got.length === 2) break;            /* two is enough; the third is a spare */
+    } catch { /* offline, or that service is down */ }
+  }
+  return got.length === 2 && got[0] === got[1] ? got[0] : null;
+}
+
+const hostinger = (path, init = {}) => fetch(`https://developers.hostinger.com/api/dns/v1${path}`, {
+  ...init,
+  signal: AbortSignal.timeout(20_000),
+  headers: { authorization: `Bearer ${CFG.dnsToken}`, accept: 'application/json', ...(init.headers || {}) },
+});
+
+async function dnsRecord() {
+  const r = await hostinger(`/zones/${encodeURIComponent(CFG.dnsDomain)}`);
+  if (!r.ok) throw new Error(`zone read ${r.status}`);
+  const zone = await r.json();
+  const hit = zone.find(x => x.name === CFG.dnsHost && x.type === 'A');
+  return hit?.records?.[0]?.content || null;
+}
+
+/* Only this one name and type is sent, and Hostinger replaces just the records that
+   match - the SPF, DKIM and DMARC entries beside it are never in the payload. */
+async function dnsWrite(ip) {
+  const r = await hostinger(`/zones/${encodeURIComponent(CFG.dnsDomain)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ overwrite: true,
+      zone: [{ name: CFG.dnsHost, type: 'A', ttl: 300, records: [{ content: ip }] }] }),
+  });
+  if (!r.ok) throw new Error(`zone write ${r.status}: ${(await r.text().catch(() => '')).slice(0, 160)}`);
+}
+
+async function tellAdmin(subject, lines) {
+  if (!mailReady() || !CFG.adminEmail) return;
+  try {
+    const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.7;color:#1a1a1a">`
+      + lines.map(l => `<p style="margin:0 0 12px">${esc(l)}</p>`).join('') + `</div>`;
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${CFG.resendKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: CFG.mailFrom, to: [CFG.adminEmail], subject, html }),
+    });
+    if (!r.ok) console.error('admin notice failed', r.status);
+  } catch (e) { console.error('admin notice failed', e.message); }
+}
+
+let dnsSeen = null, dnsTimes = 0, dnsActedAt = 0;
+async function dnsCheck() {
+  if (!CFG.dnsToken || !CFG.dnsDomain || !CFG.dnsHost) return;
+  const ip = await publicIp();
+  if (!ip) return console.warn('dns: no agreement on the public address, leaving it alone');
+  let now;
+  try { now = await dnsRecord(); } catch (e) { return console.error('dns:', e.message); }
+  if (now === null) return console.error(`dns: no A record for ${CFG.dnsHost}.${CFG.dnsDomain}`);
+  if (now === ip) { dnsSeen = null; dnsTimes = 0; return; }
+
+  /* believed only after the same new address twice running */
+  if (dnsSeen !== ip) { dnsSeen = ip; dnsTimes = 1;
+    return console.warn(`dns: address looks like ${ip}, record says ${now} - waiting for a second reading`); }
+  if (++dnsTimes < 2) return;
+  if (Date.now() - dnsActedAt < 3600_000) return;            /* one change an hour at most */
+  dnsActedAt = Date.now(); dnsSeen = null; dnsTimes = 0;
+
+  const name = `${CFG.dnsHost}.${CFG.dnsDomain}`;
+  if (!CFG.dnsApply) {
+    console.warn(`dns: ${name} should be ${ip} but is ${now} (DNS_APPLY is off)`);
+    return tellAdmin(`Your galleries' address has changed`, [
+      `${name} still points at ${now}, but this connection is now on ${ip}.`,
+      `Automatic updating is switched off, so nothing has been changed. Until the record is corrected in Hostinger, gallery links will not work.`,
+    ]);
+  }
+  try {
+    await dnsWrite(ip);
+    console.log(`dns: ${name} ${now} -> ${ip}`);
+    await tellAdmin(`Gallery address updated`, [
+      `Your connection moved from ${now} to ${ip}, so ${name} has been repointed.`,
+      `Links should work again within five minutes. Nothing else in the DNS was touched.`,
+    ]);
+  } catch (e) {
+    console.error('dns write failed:', e.message);
+    await tellAdmin(`Couldn't update your galleries' address`, [
+      `${name} points at ${now} but this connection is now on ${ip}, and the update failed: ${e.message}`,
+      `Gallery links will not work until the record is corrected by hand in Hostinger.`,
+    ]);
+  }
+}
+if (CFG.dnsToken && CFG.dnsDomain && CFG.dnsHost) {
+  console.log(`dynamic dns: ${CFG.dnsHost}.${CFG.dnsDomain} every ${CFG.dnsEvery} min`
+    + (CFG.dnsApply ? '' : ' (watching only)'));
+  setTimeout(() => dnsCheck().catch(e => console.error('dns:', e.message)), 20_000);
+  setInterval(() => dnsCheck().catch(e => console.error('dns:', e.message)), CFG.dnsEvery * 60_000);
+} else console.log('dynamic dns: off');
+
 setInterval(() => runBackup(), 3600_000);
 
 /* expiry reminders: shortly after boot, then hourly */
