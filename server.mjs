@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS galleries (
   album_id        TEXT NOT NULL,
   cover_asset_id  TEXT,
   cover_file      TEXT,
+  cover_focus     TEXT,
+  sort_order      TEXT,
   require_email   INTEGER NOT NULL DEFAULT 0,
   password_hash   TEXT,
   password_salt   TEXT,
@@ -179,7 +181,9 @@ CREATE TABLE IF NOT EXISTS settings (
 `);
 
 /* forward-only migrations, for databases created before a column existed */
-for (const [table, col, decl] of [['galleries', 'cover_file', 'TEXT']]) {
+for (const [table, col, decl] of [['galleries', 'cover_file', 'TEXT'],
+                                  ['galleries', 'cover_focus', 'TEXT'],
+                                  ['galleries', 'sort_order', 'TEXT']]) {
   const has = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
   if (!has) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); console.log(`migrated: ${table}.${col}`); }
 }
@@ -235,6 +239,8 @@ const q = {
   setDel:     db.prepare('DELETE FROM sets WHERE id = ?'),
   setMax:     db.prepare('SELECT COALESCE(MAX(position), -1) n FROM sets WHERE gallery_id = ?'),
   coverFile:  db.prepare('UPDATE galleries SET cover_file = ? WHERE id = ?'),
+  coverFocus: db.prepare('UPDATE galleries SET cover_focus = ? WHERE id = ?'),
+  sortOrder:  db.prepare('UPDATE galleries SET sort_order = ? WHERE id = ?'),
   regCount:   db.prepare('SELECT COUNT(*) n FROM registrations WHERE gallery_id = ?'),
   evCount1:   db.prepare('SELECT COUNT(*) n FROM events WHERE gallery_id = ? AND type = ?'),
   invList:    db.prepare('SELECT * FROM invites WHERE gallery_id = ? ORDER BY created_at'),
@@ -1061,6 +1067,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       title: gallery.title,
       subtitle: prettyDate(gallery.subtitle),   /* the client prints it as sent */
       cover: `/api/g/${gallery.slug}/cover`,
+      coverFocus: gallery.cover_focus || '50 50',
       /* only when the cover comes from Immich: an uploaded one has no cheaper variant,
          and asking for it twice would be slower, not faster */
       coverSmall: coverPath(gallery) && existsSync(coverPath(gallery))
@@ -1156,6 +1163,8 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     const asked = Number(url.searchParams.get('set') || 0);
     const set = sets.find(x => x.id === asked) || sets[0];
     const list = await albumAssets(set.album_id);
+    /* Immich hands them back newest first; chronological is the other way round */
+    if (gallery.sort_order === 'oldest') list.reverse();
     log(gallery, who.r, 'view', null, req);
     return json(res, 200, { setId: set.id, assets: list });
   }
@@ -1283,6 +1292,7 @@ function gallDto(g) {
   return {
     id: g.id, slug: g.slug, title: g.title, subtitle: g.subtitle, subtitleText: prettyDate(g.subtitle),
     albumId: g.album_id, coverAssetId: g.cover_asset_id, coverFile: g.cover_file || null,
+    coverFocus: g.cover_focus || '50 50', sortOrder: g.sort_order === 'oldest' ? 'oldest' : 'newest',
     sets: q.setsFor.all(g.id).map(x => ({ id: x.id, name: x.name, albumId: x.album_id })),
     requireEmail: !!g.require_email, hasPassword: !!g.password_hash,
     allowDownload: !!g.allow_download, expiresAt: g.expires_at,
@@ -1537,6 +1547,7 @@ async function adminRoutes(req, res, path, url) {
   const am = path.match(/^\/api\/admin\/albums\/([0-9a-f-]{36})\/assets$/i);
   if (am) {
     const list = await albumAssets(am[1]);
+    if (url.searchParams.get('sort') === 'oldest') list.reverse();
     return json(res, 200, { assets: list.slice(0, 400) });
   }
 
@@ -1596,6 +1607,14 @@ async function adminRoutes(req, res, path, url) {
         if (b.password) { const salt = randomBytes(16).toString('hex'); q.gallPw.run(hashPw(String(b.password), salt), salt, g.id); }
         else q.gallPw.run(null, null, g.id);
       }
+      if (b.coverFocus !== undefined) {
+        /* two percentages, which is all CSS needs to decide what a crop keeps */
+        const m = /^(\d{1,3}(?:\.\d+)?) (\d{1,3}(?:\.\d+)?)$/.exec(String(b.coverFocus || ''));
+        const ok = m && Number(m[1]) <= 100 && Number(m[2]) <= 100;
+        q.coverFocus.run(ok ? `${Math.round(Number(m[1]))} ${Math.round(Number(m[2]))}` : null, g.id);
+      }
+      if (b.sortOrder !== undefined)
+        q.sortOrder.run(b.sortOrder === 'oldest' ? 'oldest' : 'newest', g.id);
       return json(res, 200, gallDto(q.gallById.get(g.id)));
     }
   }

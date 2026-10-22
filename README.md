@@ -16,7 +16,9 @@ everything client-facing — the gallery page, who may see it, and what they did
 - **Branded gallery pages** — full-bleed cover, justified grid, fullscreen lightbox, slideshow
 - **Sets** — deliver a gallery in named parts (Ceremony, Dancing), reorderable; a gallery with
   one set never shows its name
-- **Any image as the cover** — upload one, or pick from the album
+- **Any image as the cover** — upload one or pick from the album, with a focal point so a tall
+  photo crops on the right thing
+- **Photo order** — newest first, or chronological
 - **Two independent gates per gallery** — ask for an email, require a password, both, or neither
 - **Favourites** — clients pick their photos; you see each client's list, and they can download
   just those

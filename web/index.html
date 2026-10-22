@@ -618,6 +618,8 @@ function render(){
       $("cover").classList.add("ready");
     };
     full.onerror = function(){ $("cover").classList.add("ready"); };
+    /* where to hold the crop when the cover is taller or wider than the screen */
+    $("coverBg").style.backgroundPosition = ((link && link.coverFocus) || "50 50").replace(" ", "% ") + "%";
 
     if (coverLow){
       var low = new Image();
