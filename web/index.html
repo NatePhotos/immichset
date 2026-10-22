@@ -650,7 +650,11 @@ function show(){
     });
   } else {
     var v = document.createElement("video");
-    v.src = BASE + "/img/" + a.id + "?size=original"; v.controls = true; v.autoplay = true; v.playsInline = true;
+    /* `video` is Immich's playback stream, served with range support, so it starts
+       and seeks instead of pulling the whole file down first */
+    v.src = BASE + "/img/" + a.id + "?size=video";
+    v.poster = imgUrl(a.id, "preview");
+    v.controls = true; v.autoplay = true; v.playsInline = true; v.preload = "metadata";
     st.appendChild(v);
   }
 }

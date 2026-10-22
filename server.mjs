@@ -855,10 +855,11 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     let id = gallery.cover_asset_id;
     if (id && !(await albumHas(gallery.album_id, id))) id = null;   /* never serve outside the album */
     if (!id) {
-      try { id = (await albumAssets(gallery.album_id)).find(a => a.isImage)?.id; } catch {}
+      /* a video's thumbnail works as a cover too, so fall back to whatever is first */
+      try { const l = await albumAssets(gallery.album_id); id = (l.find(a => a.isImage) || l[0])?.id; } catch {}
     }
     if (!id) { res.writeHead(404); return res.end(); }
-    return proxyImage(res, id, 'preview');
+    return proxyImage(req, res, id, 'preview');
   }
 
   if (rest === '/unlock' && req.method === 'POST') {
@@ -927,7 +928,9 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
       log(gallery, who.r, 'download', img[1], req);
     }
-    return proxyImage(res, img[1], size);
+    /* `video` is playback, not a download: it is never gated, and a single viewing
+       makes many range requests, so logging each one would bury the activity log */
+    return proxyImage(req, res, img[1], size);
   }
 
   if (rest === '/zip' && req.method === 'POST') {
@@ -952,22 +955,42 @@ async function galleryRoutes(req, res, gallery, rest, url) {
   return json(res, 404, { error: 'not_found' });
 }
 
-async function proxyImage(res, assetId, size) {
-  const path = size === 'original'
-    ? `/api/assets/${assetId}/original`
-    : `/api/assets/${assetId}/thumbnail?size=${encodeURIComponent(size)}`;
-  const up = await immich(path);
+async function proxyImage(req, res, assetId, size) {
+  const path = size === 'video'
+    ? `/api/assets/${assetId}/video/playback`          /* the stream a browser can actually play */
+    : size === 'original'
+      ? `/api/assets/${assetId}/original`
+      : `/api/assets/${assetId}/thumbnail?size=${encodeURIComponent(size)}`;
+
+  /* Carry the browser's Range through. Without it a video comes back as one
+     unseekable response that the player has to swallow whole before it starts —
+     which, for a file of any size, looks exactly like a gallery that won't load. */
+  const range = req.headers.range;
+  const up = await immich(path, range ? { headers: { range } } : {});
   if (!up.ok) { res.writeHead(up.status); return res.end(); }
+
   const headers = {
     'content-type': up.headers.get('content-type') || 'application/octet-stream',
     'cache-control': 'private, max-age=86400',
+    'accept-ranges': up.headers.get('accept-ranges') || 'bytes',
   };
-  const cd = up.headers.get('content-disposition'); if (cd) headers['content-disposition'] = cd;
-  const cl = up.headers.get('content-length');      if (cl) headers['content-length'] = cl;
-  res.writeHead(200, headers);
+  for (const h of ['content-disposition', 'content-length', 'content-range']) {
+    const v = up.headers.get(h); if (v) headers[h] = v;
+  }
+  res.writeHead(up.status, headers);
+  if (req.method === 'HEAD') return res.end();
+
   const reader = up.body.getReader();
-  for (;;) { const { done, value } = await reader.read(); if (done) break; res.write(Buffer.from(value)); }
-  res.end();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done || res.destroyed) break;
+      /* respect backpressure, or a large file is buffered in memory on the way out */
+      if (!res.write(Buffer.from(value))) await new Promise(r => res.once('drain', r));
+    }
+  } catch { /* the viewer closed the tab or skipped ahead */ }
+  try { await reader.cancel(); } catch {}
+  if (!res.destroyed) res.end();
 }
 
 function gallDto(g) {
@@ -1125,7 +1148,7 @@ async function adminRoutes(req, res, path, url) {
   }
 
   const im = path.match(/^\/api\/admin\/img\/([0-9a-f-]{36})$/i);
-  if (im) return proxyImage(res, im[1], url.searchParams.get('size') || 'thumbnail');
+  if (im) return proxyImage(req, res, im[1], url.searchParams.get('size') || 'thumbnail');
 
   if (path === '/api/admin/galleries' && req.method === 'GET')
     return json(res, 200, q.gallAll.all().map(gallDto));
