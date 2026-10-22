@@ -444,6 +444,25 @@ function tmpl(kind, g, extra) {
   };
 }
 
+async function sendLoginCode(email, code) {
+  if (!mailReady()) throw new Error('email is not configured');
+  const html = `<div style="font-family:Helvetica,Arial,sans-serif;max-width:460px;margin:0 auto;padding:36px 24px;color:#1a1a1a">
+    <h1 style="font-size:17px;letter-spacing:.06em;margin:0 0 12px">Your sign-in code</h1>
+    <p style="font-size:14px;line-height:1.7;margin:0 0 24px">Use this code to finish signing in to your gallery admin.</p>
+    <div style="font-size:34px;font-weight:700;letter-spacing:.32em;padding:18px 0;border-top:1px solid #e6e6e6;border-bottom:1px solid #e6e6e6">${code}</div>
+    <p style="font-size:12.5px;color:#8a8a8a;line-height:1.7;margin:22px 0 0">
+      It expires in 10 minutes. If you didn't try to sign in, someone has your password — change it.</p></div>`;
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'authorization': `Bearer ${CFG.resendKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      from: CFG.mailFrom, to: [email], subject: `${code} is your sign-in code`, html,
+      ...(CFG.mailReplyTo ? { reply_to: CFG.mailReplyTo } : {}),
+    }),
+  });
+  if (!r.ok) throw new Error(`resend ${r.status}: ${(await r.text()).slice(0, 160)}`);
+}
+
 async function sendMailKind(g, email, kind, logKind, extra) {
   if (!mailReady()) throw new Error('email is not configured');
   const t = tmpl(kind, g, extra);
@@ -1226,7 +1245,7 @@ async function adminRoutes(req, res, path, url) {
 
     let sent = 0; const failed = [];
     for (const email of list) {
-      try { await sendMail(g, email, 'ready', extra); sent++; }
+      try { await sendMailKind(g, email, 'ready', 'ready', extra); sent++; }
       catch (e) { failed.push({ email, error: String(e.message).slice(0, 160) }); }
     }
     let copy = null;
