@@ -260,17 +260,41 @@ function takeMe(b){
   S.canUpload   = !!(b && b.canUpload);
   S.uploadMaxMb = (b && b.uploadMaxMb) || 250;
 }
-api("/me").then(function(r){ if (r.ok){ takeMe(r.body); boot(); } else $("login").classList.add("on"); });
 var challenge = null;
+
+/* The code arrives by email, so signing in on a phone means leaving the browser.
+   iOS often reloads the tab on the way back, which used to drop the challenge and
+   send you through the whole sign-in again. Park it for the life of the tab. */
+var CKEY = "immichset.challenge";
+function saveChallenge(o){ try { sessionStorage.setItem(CKEY, JSON.stringify(o)); } catch(e){} }
+function clearChallenge(){ try { sessionStorage.removeItem(CKEY); } catch(e){} }
+function loadChallenge(){
+  try { var o = JSON.parse(sessionStorage.getItem(CKEY) || "null");
+        return (o && o.id && o.until > Date.now()) ? o : null; } catch(e){ return null; }
+}
+function codeStep(sentTo){
+  $("aEmail").hidden=true; $("aPass").hidden=true; $("aCode").hidden=false;
+  $("aBtn").textContent="Verify";
+  $("loginErr").style.color="var(--muted)";
+  $("loginErr").textContent = sentTo ? ("We sent a code to "+sentTo+".") : "Enter the code we emailed you.";
+  $("aCode").focus();
+}
+
+api("/me").then(function(r){
+  if (r.ok){ clearChallenge(); takeMe(r.body); boot(); return; }
+  $("login").classList.add("on");
+  var c = loadChallenge();
+  if (c){ challenge = c.id; codeStep(c.sentTo); }
+});
 $("loginForm").addEventListener("submit", function(e){
   e.preventDefault(); $("loginErr").textContent=""; $("aBtn").disabled=true;
-  var body = challenge ? {challenge:challenge, code:$("aCode").value.trim()}
+  var body = challenge ? {challenge:challenge, code:$("aCode").value.replace(/\D/g,"")}
                        : {email:$("aEmail").value.trim(), password:$("aPass").value};
   post("/login", body).then(function(r){
     $("aBtn").disabled=false;
     if (!r.ok){
       var m = r.body && r.body.error;
-      if (r.status===429) $("loginErr").textContent="Too many attempts. Wait a few minutes.";
+      if (r.status===429){ $("loginErr").textContent="Too many attempts. Wait 15 minutes and try again."; clearChallenge(); }
       else if (m==="bad_code"){ $("loginErr").textContent="That code isn't right."; $("aCode").value=""; $("aCode").focus(); }
       else if (m==="code_expired"){ $("loginErr").textContent="That code expired. Start again."; resetLogin(); }
       else if (r.status===502) $("loginErr").textContent = m || "Couldn't send your code.";
@@ -279,17 +303,17 @@ $("loginForm").addEventListener("submit", function(e){
     }
     if (r.body && r.body.step==="code"){
       challenge = r.body.challenge;
-      $("aEmail").hidden=true; $("aPass").hidden=true; $("aCode").hidden=false; $("aCode").focus();
-      $("aBtn").textContent="Verify";
-      $("loginErr").style.color="var(--muted)";
-      $("loginErr").textContent="We sent a code to "+(r.body.sentTo||"your email")+".";
+      saveChallenge({ id: challenge, sentTo: r.body.sentTo || "",
+                      until: Date.now() + ((r.body.expiresIn || 600000) - 10000) });
+      codeStep(r.body.sentTo);
       return;
     }
+    clearChallenge();
     $("login").classList.remove("on");
     api("/me").then(function(m){ takeMe(m.body); boot(); });
   });
 });
-function resetLogin(){ challenge=null; $("aEmail").hidden=false; $("aPass").hidden=false;
+function resetLogin(){ challenge=null; clearChallenge(); $("aEmail").hidden=false; $("aPass").hidden=false;
   $("aCode").hidden=true; $("aCode").value=""; $("aBtn").textContent="Sign in"; $("loginErr").style.color=""; }
 $("outBtn").addEventListener("click", function(){ post("/logout").then(function(){ location.reload(); }); });
 
