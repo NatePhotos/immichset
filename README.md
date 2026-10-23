@@ -120,8 +120,7 @@ clients see it on the cover and in emails but never in the grid. No write key ne
 JPEG, PNG, WebP, AVIF or GIF — HEIC is refused because browsers will not display it. Drop in a
 full-resolution export: anything over 2400px on its long edge is resized in the browser before it
 uploads, by canvas rather than a server-side image library. An image that is already web-sized goes
-up untouched, and a GIF is never redrawn, since it may be animated. Note that `BACKUP_DIR` snapshots
-the database only: keep your own copy of `DATA_DIR` if the covers matter.
+up untouched, and a GIF is never redrawn, since it may be animated. Covers are included in the nightly backup.
 
 ### Email
 
@@ -163,7 +162,10 @@ address.
 ## Backups
 
 `BACKUP_DIR` enables a daily `VACUUM INTO` snapshot, keeping `BACKUP_KEEP` days. It is consistent
-while the app is serving, unlike copying the live file. **Immich's own database is separate** —
+while the app is serving, unlike copying the live file. Uploaded covers are copied alongside it
+into `BACKUP_DIR/covers`, since they live on disk rather than in the database and a snapshot
+without them restores galleries pointing at files that are not there. A cover that has been
+replaced is kept for as long as the snapshots that reference it. **Immich's own database is separate** —
 enable its scheduled backup too.
 
 ## Limitations

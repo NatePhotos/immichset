@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createHmac, timingSafeEqual, scryptSync } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { readdirSync, renameSync, unlinkSync, statSync } from 'node:fs';
+import { readdirSync, renameSync, unlinkSync, statSync, copyFileSync } from 'node:fs';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -650,12 +650,46 @@ function runBackup(force = false) {
       .sort().reverse().slice(CFG.backupKeep);
     for (const f of old) { try { unlinkSync(join(CFG.backupDir, f)); } catch {} }
 
+    const cov = backupCovers();
     const size = statSync(final).size;
-    console.log(`backup written: ${final} (${(size / 1024).toFixed(0)} KB)`);
-    return { file: final, size };
+    console.log(`backup written: ${final} (${(size / 1024).toFixed(0)} KB)`
+      + (cov ? `, covers ${cov.held} held${cov.copied ? ` (+${cov.copied})` : ''}${cov.pruned ? ` -${cov.pruned}` : ''}` : ''));
+    return { file: final, size, covers: cov };
   } catch (e) {
     console.error('backup failed:', e.message);
     return { error: e.message };
+  }
+}
+
+/* An uploaded cover lives on disk, not in the database, so a snapshot of the
+   database alone restores galleries pointing at files that are not there. */
+function backupCovers() {
+  if (!CFG.backupDir || !existsSync(COVERS_DIR)) return null;
+  try {
+    const dst = join(CFG.backupDir, 'covers');
+    if (!existsSync(dst)) mkdirSync(dst, { recursive: true });
+    const live = readdirSync(COVERS_DIR).filter(f => !f.startsWith('.'));
+
+    /* names carry a random part, so a copy already here is the same file */
+    let copied = 0;
+    for (const f of live) {
+      const to = join(dst, f);
+      if (!existsSync(to)) { copyFileSync(join(COVERS_DIR, f), to); copied++; }
+    }
+
+    /* A cover that has been replaced is still needed by the snapshots that point at
+       it, so it is kept for as long as they are. */
+    const have = new Set(live);
+    const cutoff = Date.now() - CFG.backupKeep * 86400_000;
+    let pruned = 0;
+    for (const f of readdirSync(dst)) {
+      if (have.has(f) || f.startsWith('.')) continue;
+      try { if (statSync(join(dst, f)).mtimeMs < cutoff) { unlinkSync(join(dst, f)); pruned++; } } catch {}
+    }
+    return { held: readdirSync(dst).filter(f => !f.startsWith('.')).length, copied, pruned };
+  } catch (e) {
+    console.error('cover backup failed:', e.message);
+    return null;
   }
 }
 
@@ -665,6 +699,11 @@ function backupList() {
     .filter(f => /^gallery-\d{4}-\d{2}-\d{2}\.db$/.test(f))
     .sort().reverse()
     .map(f => { const st = statSync(join(CFG.backupDir, f)); return { file: f, size: st.size, at: st.mtime.toISOString() }; });
+}
+function coverBackupCount() {
+  const dst = CFG.backupDir ? join(CFG.backupDir, 'covers') : null;
+  if (!dst || !existsSync(dst)) return 0;
+  return readdirSync(dst).filter(f => !f.startsWith('.')).length;
 }
 
 /* ------------------------------------------------------------------- covers */
@@ -1635,7 +1674,7 @@ async function adminRoutes(req, res, path, url) {
 
   if (path === '/api/admin/backups') {
     if (req.method === 'POST') { const r = runBackup(true); return json(res, r && r.error ? 500 : 200, { result: r, backups: backupList() }); }
-    return json(res, 200, { dir: CFG.backupDir || null, keep: CFG.backupKeep, backups: backupList() });
+    return json(res, 200, { dir: CFG.backupDir || null, keep: CFG.backupKeep, backups: backupList(), covers: coverBackupCount() });
   }
 
   if (path === '/api/admin/mail-status')
