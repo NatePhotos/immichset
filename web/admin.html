@@ -333,7 +333,7 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
 var S = { galleries: [], albums: [], publicUrl: null, g: null, tab: "settings", pane: "general",
-          canUpload: false, uploadMaxMb: 250, uploadMaxVideoMb: 4096, caps: {} };
+          canUpload: false, uploadMaxMb: 250, uploadMaxVideoMb: 4096, caps: {}, defaultSort: "newest" };
 
 /* ---------- icons ---------- */
 var I = {
@@ -387,6 +387,7 @@ function takeMe(b){
   S.canUpload   = !!(b && b.canUpload);
   S.uploadMaxMb = (b && b.uploadMaxMb) || 250;
   S.uploadMaxVideoMb = (b && b.uploadMaxVideoMb) || 4096;
+  S.defaultSort = (b && b.defaultSort) === "oldest" ? "oldest" : "newest";
   S.caps        = (b && b.caps) || {};
 }
 var challenge = null;
@@ -631,7 +632,8 @@ function paneGeneral(g){
     + '<div class="field"><label>Photo order</label><select id="fSort">'
     +   '<option value="newest"'+(g.sortOrder!=="oldest"?" selected":"")+'>Newest first</option>'
     +   '<option value="oldest"'+(g.sortOrder==="oldest"?" selected":"")+'>Oldest first</option>'
-    +   '</select><div class="hint">How the photos run for the client. Oldest first reads as the day happened.</div></div>'
+    +   '</select><div class="hint">How the photos run for the client, and what the next new gallery starts at. '
+    +     'Oldest first reads as the day happened.</div></div>'
     + '<button class="btn" id="saveGen">Save changes</button>';
   function syncSlug(){
     var v = $("fSlug").value.trim().toLowerCase();
@@ -640,6 +642,7 @@ function paneGeneral(g){
   }
   $("fSlug").addEventListener("input", syncSlug); syncSlug();
   $("saveGen").onclick = function(){
+    S.defaultSort = $("fSort").value;          /* so the create form offers it next time */
     var patch = { title:$("fTitle").value.trim(), subtitle:$("fSub").value, sortOrder:$("fSort").value,
            slug:$("fSlug").value.trim().toLowerCase(),
            expiresAt: $("fExp").value ? new Date($("fExp").value+"T23:59:59").toISOString() : null };
@@ -1558,6 +1561,10 @@ function editorView(g){
     + '<div class="row2">'
     +   '<div class="field"><label>Web address</label><input type="text" id="fSlug" placeholder="autumn-wedding"><div class="hint" id="slugHint"></div></div>'
     +   '<div class="field"><label>Expires on</label><input type="date" id="fExp"><div class="hint">Leave empty to never expire.</div></div></div>'
+    + '<div class="field"><label>Photo order</label><select id="fSort">'
+    +   '<option value="newest"'+(S.defaultSort!=="oldest"?" selected":"")+'>Newest first</option>'
+    +   '<option value="oldest"'+(S.defaultSort==="oldest"?" selected":"")+'>Oldest first</option>'
+    +   '</select><div class="hint">Starts at whatever you chose last.</div></div>'
     + tog("fEmail","Ask visitors for their email","Anyone with the link can register.",false)
     + tog("fDl","Allow downloads","Clients can save full-size originals.",true)
     + tog("fPub","Publish now","Draft galleries return “not found”.",true)
@@ -1585,7 +1592,7 @@ function editorView(g){
   syncSlug();
   $("create").onclick = function(){
     var fresh = $("fAlbum").value === "__new__";
-    var body = { albumId:$("fAlbum").value, title:$("fTitle").value.trim(), subtitle:$("fSub").value.trim(),
+    var body = { albumId:$("fAlbum").value, title:$("fTitle").value.trim(), subtitle:$("fSub").value.trim(), sortOrder:$("fSort").value,
       slug:$("fSlug").value.trim().toLowerCase(), requireEmail:$("fEmail").checked, allowDownload:$("fDl").checked,
       publish:$("fPub").checked,
       expiresAt: $("fExp").value ? new Date($("fExp").value+"T23:59:59").toISOString() : null };

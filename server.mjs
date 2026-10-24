@@ -1348,6 +1348,7 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
                             uploadMaxVideoMb: CFG.uploadMaxVideoMb,
+                            defaultSort: (q.setGet.get('default_sort') || {}).value === 'oldest' ? 'oldest' : 'newest',
                             caps: await writeCaps() });
 
   /* sets: the named parts of a gallery, each one an Immich album */
@@ -1610,10 +1611,18 @@ async function adminRoutes(req, res, path, url) {
         b.allowDownload === false ? 0 : 1, b.expiresAt || null,
         b.publish === false ? null : new Date().toISOString());
     } catch (e) { return json(res, 409, { error: 'That web address is already taken' }); }
+    /* a new gallery runs the way the last one was set to run */
+    const lastSort = q.setGet.get('default_sort');
+    const want = b.sortOrder !== undefined
+      ? (b.sortOrder === 'oldest' ? 'oldest' : 'newest')
+      : (lastSort && lastSort.value === 'oldest' ? 'oldest' : 'newest');
     const created = q.gallBySlug.get(String(b.slug).toLowerCase());
+    q.sortOrder.run(want, created.id);
+    if (b.sortOrder !== undefined) q.setPut.run('default_sort', want);
     q.setIns.run(created.id, String(b.setName || 'Photos').trim().slice(0, 60) || 'Photos', String(b.albumId), 0);
     applyDefaultReminders(created.id);
-    return json(res, 201, gallDto(created));
+    /* read it back: the row was written to after it was first fetched */
+    return json(res, 201, gallDto(q.gallById.get(created.id)));
   }
 
   const one = path.match(/^\/api\/admin\/galleries\/(\d+)$/);
@@ -1653,8 +1662,11 @@ async function adminRoutes(req, res, path, url) {
         const ok = m && Number(m[1]) <= 100 && Number(m[2]) <= 100;
         q.coverFocus.run(ok ? `${Math.round(Number(m[1]))} ${Math.round(Number(m[2]))}` : null, g.id);
       }
-      if (b.sortOrder !== undefined)
-        q.sortOrder.run(b.sortOrder === 'oldest' ? 'oldest' : 'newest', g.id);
+      if (b.sortOrder !== undefined) {
+        const want = b.sortOrder === 'oldest' ? 'oldest' : 'newest';
+        q.sortOrder.run(want, g.id);
+        q.setPut.run('default_sort', want);     /* the next gallery starts this way too */
+      }
       return json(res, 200, gallDto(q.gallById.get(g.id)));
     }
   }
