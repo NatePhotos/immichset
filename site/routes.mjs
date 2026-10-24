@@ -17,8 +17,12 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=
                 '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const isJpeg = b => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
 const isPng = b => b.length > 8 && b.readUInt32BE(0) === 0x89504e47;
+const SVG_BAD = [/<script/i, /foreignObject/i, /<use[\s>\/]/i, /xlink:/i, /href\s*=/i, /src\s*=/i, /style/i,
+  /\bon\w+\s*=/i, /javascript:/i, /&#/, /<!ENTITY/i, /<!DOCTYPE/i, /<[a-z0-9_-]+:[a-z]/i];
 const isSafeSvg = b => { const t = b.toString('utf8');
-  return /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(t) && !/<script|\son\w+\s*=|javascript:/i.test(t); };
+  return /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(t) && !SVG_BAD.some(re => re.test(t)); };
+const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+const FRESH_MS = 10 * 60_000;
 
 export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload, tellAdmin, fetch: f = globalThis.fetch }) {
   const dir = join(cfg.dataDir, 'site');
@@ -34,7 +38,13 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
   }
 
   /* ---- Immich ---- */
-  async function ensureAlbum(photo) {
+  const albumFlight = new Map();
+  function ensureAlbum(photo) {
+    const key = photo.galleryId == null ? 'pages' : photo.galleryId;
+    if (!albumFlight.has(key)) albumFlight.set(key, makeAlbum(photo).finally(() => albumFlight.delete(key)));
+    return albumFlight.get(key);
+  }
+  async function makeAlbum(photo) {
     const g = photo.galleryId == null ? null : store.gallery(photo.galleryId);
     let id = g ? g.immichAlbumId : store.meta('pagesAlbumId');
     if (id) return id;
@@ -45,7 +55,15 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     if (g) store.setImmichAlbum(g.id, id); else store.setMeta('pagesAlbumId', id);
     return id;
   }
-  async function sendToImmich(photo) {
+  const sendFlight = new Map();      /* one send per photo, however many callers ask */
+  function sendToImmich(photo) {
+    if (!sendFlight.has(photo.id)) sendFlight.set(photo.id, doSend(photo).finally(() => sendFlight.delete(photo.id)));
+    return sendFlight.get(photo.id);
+  }
+  async function doSend(photo) {
+    const cur = store.photo(photo.id);
+    if (!cur) return null;
+    if (cur.immichStatus === 'ok') return null;       /* already there: nothing to do */
     if (!canUpload()) throw new Error('no Immich write key');
     const file = readdirSync(join(dir, 'originals')).find(n => n.startsWith(photo.fileKey + '.'));
     if (!file) throw new Error('original file missing');
@@ -75,23 +93,25 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     if (!hashCache.has(path)) hashCache.set(path, pagesHash(buf, path));
     return hashCache.get(path);
   };
+  const fresh = f => { try { return Date.now() - statSync(f).mtimeMs < FRESH_MS; } catch { return true; } };
   function prune() {
     const keep = store.referencedFileKeys();
     for (const n of readdirSync(join(dir, 'img'))) {
       const m = IMG_NAME.exec(n);
-      if (m && !keep.has(m[1])) { try { unlinkSync(join(dir, 'img', n)); hashCache.delete(`img/${n}`); } catch {} }
+      if (m && !keep.has(m[1]) && !fresh(join(dir, 'img', n))) { try { unlinkSync(join(dir, 'img', n)); hashCache.delete(`img/${n}`); } catch {} }
     }
     const waiting = new Set([...store.getState().pagePhotos, ...store.getState().galleries.flatMap(g => g.photos)]
       .filter(p => p.immichStatus !== 'ok').map(p => p.fileKey));
     for (const n of readdirSync(join(dir, 'originals'))) {
-      if (!waiting.has(n.split('.')[0])) { try { unlinkSync(join(dir, 'originals', n)); } catch {} }
+      if (!waiting.has(n.split('.')[0]) && !fresh(join(dir, 'originals', n))) { try { unlinkSync(join(dir, 'originals', n)); } catch {} }
     }
   }
-  let publishing = false;
+  let busy = null;                       /* 'publish' | 'restore': never both at once */
+  const notReady = 'Publishing is not set up yet: add CF_ACCOUNT_ID, CF_PAGES_TOKEN and CF_PAGES_PROJECT to galleryapp.';
   async function publish() {
-    if (!publisher.ready) throw new InputError('Publishing is not set up yet: add CF_ACCOUNT_ID, CF_PAGES_TOKEN and CF_PAGES_PROJECT to galleryapp.');
-    if (publishing) throw new InputError('A publish is already running');
-    publishing = true;
+    if (!publisher.ready) throw new InputError(notReady);
+    if (busy) throw new InputError(`A ${busy} is already running`);
+    busy = 'publish';
     const rev = store.rev();
     try {
       if (cfg.allowTestHooks && store.meta('_test_fail_deploy')) { store.setMeta('_test_fail_deploy', null); throw new Error('test failure'); }
@@ -113,19 +133,24 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
         'Your live site is unchanged. Open the Website section of the admin panel and press Publish to try again.',
       ]);
       throw e;
-    } finally { publishing = false; }
+    } finally { busy = null; }
   }
   async function restore(id) {
+    if (!publisher.ready) throw new InputError(notReady);
+    if (busy) throw new InputError(`A ${busy} is already running`);
     const row = store.getPublish(Number(id));
     if (!row || row.status !== 'ok') throw new InputError('That version cannot be restored');
+    busy = 'restore';
     try {
       await publisher.rollback(row.deploymentId);
     } catch (e) {
       await watcher.alert('restore', 'Your website could not be restored', [
         `Going back to an earlier version failed: ${e.message}`, 'Your live site is unchanged.']);
       throw e;
-    }
+    } finally { busy = null; }
     store.restoreSnapshot(row.snapshot);
+    const logo = store.getState().settings.style.logo;
+    if (logo && !existsSync(join(dir, logo))) store.patchSettings(null, { style: { logo: null } });
     store.setMeta('publishedRev', store.rev());
     await watcher.resolve('restore', 'Website restore works again', ['The last restore went through.']);
   }
@@ -146,7 +171,9 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
   async function serveFile(res, rel, cache) {
     try {
       const body = await readFile(join(dir, rel));
-      res.writeHead(200, { 'content-type': TYPES[extname(rel)] || 'application/octet-stream', 'cache-control': cache });
+      const h = { 'content-type': TYPES[extname(rel)] || 'application/octet-stream', 'cache-control': cache, 'x-content-type-options': 'nosniff' };
+      if (extname(rel) === '.svg') h['content-security-policy'] = SVG_CSP;
+      res.writeHead(200, h);
       res.end(body);
     } catch { json(res, 404, { error: 'not_found' }); }
   }
@@ -160,7 +187,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
         dirty: store.rev() !== Number(store.meta('publishedRev') ?? -1),
         canPublish: publisher.ready,
         missing: publisher.ready ? null : 'Publishing is not set up yet: add CF_ACCOUNT_ID, CF_PAGES_TOKEN and CF_PAGES_PROJECT to galleryapp.',
-        fonts: FONTS, defaults: DEFAULT_STYLE, liveUrl: cfg.siteUrl || null, publishing,
+        fonts: FONTS, defaults: DEFAULT_STYLE, liveUrl: cfg.siteUrl || null, publishing: busy === 'publish',
       });
     }
     if (path === '/api/admin/site/settings' && m === 'PUT') {
@@ -211,7 +238,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       await writeFile(join(dir, 'img', `${key}-full.jpg`), fb);
       await writeFile(join(dir, 'originals', `${key}${extname(name).toLowerCase()}`), ob);
       const photo = store.addPhoto(null, galleryId, { fileKey: key, width, height, originalName: name });
-      try { store.setPhotoImmich(photo.id, 'ok', await sendToImmich(photo), 1); }
+      try { const aid = await sendToImmich(photo); if (aid) store.setPhotoImmich(photo.id, 'ok', aid, 1); }
       catch (e) { console.error('site immich:', e.message); store.setPhotoImmich(photo.id, 'pending', null, 1); }
       return json(res, 201, { photo: store.photo(photo.id), rev: store.rev() });
     }
@@ -222,8 +249,15 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       return respond(res, async () => {
         const p = store.photo(Number(rm[1]));
         if (!p) throw new InputError('No such photo');
-        try { store.setPhotoImmich(p.id, 'ok', await sendToImmich(p), 1); }
-        catch (e) { store.setPhotoImmich(p.id, p.immichStatus === 'failed' ? 'failed' : 'pending', null, 1); throw new InputError(`Immich: ${e.message}`); }
+        if (p.immichStatus === 'ok') return { photo: p };
+        let aid;
+        try { aid = await sendToImmich(p); }
+        catch (e) {
+          const cur = store.photo(p.id);
+          if (cur && cur.immichStatus !== 'ok') store.setPhotoImmich(p.id, p.immichStatus === 'failed' ? 'failed' : 'pending', null, 1);
+          throw new InputError(`Immich: ${e.message}`);
+        }
+        if (aid) store.setPhotoImmich(p.id, 'ok', aid, 1);
         await watcher.resolve(`immich:${p.id}`, 'A website photo is in Immich now', [`${p.originalName || 'A photo'} has been saved to Immich.`]);
         return { photo: store.photo(p.id) };
       });
@@ -261,9 +295,12 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
   async function preview(req, res, path) {
     if (!adminOk(req)) { res.writeHead(302, { location: '/admin' }); return res.end(); }
     const base = '/admin/site-preview/';
-    let rel = decodeURIComponent(path.slice(base.length));
+    let rel;
+    try { rel = decodeURIComponent(path.slice(base.length)); } catch { return json(res, 404, { error: 'not_found' }); }
+    const im = /^img\/([^/]+)$/.exec(rel);
+    if (im && IMG_NAME.test(im[1])) return serveFile(res, rel, 'private, max-age=300');
     if (rel === '' || rel.endsWith('/')) rel += 'index.html';
-    const { files, images } = build(store.getState(), { base });
+    const { files, images } = build(store.getState(), { base, siteUrl: cfg.siteUrl });
     if (images.has(rel)) return serveFile(res, images.get(rel), 'private, max-age=300');
     const found = files.has(rel) && rel !== '_headers';
     const body = found ? files.get(rel) : files.get('404.html');
@@ -282,7 +319,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
         if (!existsSync(join(to, 'img', n))) { copyFileSync(join(dir, 'img', n), join(to, 'img', n)); copied++; }
       }
       for (const n of ['logo.png', 'logo.svg']) if (existsSync(join(dir, n))) copyFileSync(join(dir, n), join(to, n));
-      return { copied, held: readdirSync(join(to, 'img')).length };
+      return { copied, photos: Math.floor(readdirSync(join(to, 'img')).length / 2) };
     } catch (e) { console.error('site backup failed:', e.message); return null; }
   }
 

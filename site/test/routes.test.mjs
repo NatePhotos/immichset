@@ -141,3 +141,66 @@ test('a failed publish emails, keeps the site, and says why', async () => {
   assert.match(r.body.error, /test failure/);
   assert.equal(mails.length, before + 1);
 });
+
+test('retrying a photo that is already in Immich changes nothing', async () => {
+  const g = (await send('POST', '/api/admin/site/galleries', { title: 'Twice' })).body.gallery;
+  const up = await upload(g.id);
+  assert.equal(up.body.photo.immichStatus, 'ok');
+  const assets = fake.seen.assets;
+  const r = await fetch(`${base}/api/admin/site/photos/${up.body.photo.id}/retry`, { method: 'POST', headers: H() });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).photo.immichStatus, 'ok');
+  assert.equal(fake.seen.assets, assets);
+});
+
+test('two uploads at once to a new gallery make one Immich album', async () => {
+  const g = (await send('POST', '/api/admin/site/galleries', { title: 'Twins' })).body.gallery;
+  const rs = await Promise.all([upload(g.id), upload(g.id)]);
+  assert.deepEqual(rs.map(r => r.status), [201, 201]);
+  assert.equal(fake.seen.albums.filter(a => a.albumName === 'Website – Twins').length, 1);
+});
+
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(20)]);
+const logo = (name, body) => fetch(`${base}/api/admin/site/logo?name=${name}`, { method: 'POST', headers: H(), body });
+
+test('logos: PNG and plain SVG accepted, anything scriptable refused', async () => {
+  assert.equal((await logo('a.png', PNG)).status, 200);
+  assert.equal((await logo('a.svg', '<svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>')).status, 200);
+  const svgImg = await fetch(base + '/api/admin/site/img/logo.svg', { headers: H() });
+  assert.equal(svgImg.headers.get('content-type'), 'image/svg+xml');
+  assert.match(svgImg.headers.get('content-security-policy'), /sandbox/);
+  assert.equal(svgImg.headers.get('x-content-type-options'), 'nosniff');
+  for (const bad of [
+    '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><x:script xmlns:x="http://www.w3.org/2000/svg">alert(1)</x:script></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><p/></foreignObject></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><a href="&#106;avascript:alert(1)"><rect/></a></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><use href="https://example.com/x.svg#a"/></svg>',
+  ]) assert.equal((await logo('b.svg', bad)).status, 415, bad);
+  await fetch(base + '/api/admin/site/logo', { method: 'DELETE', headers: H() });
+});
+
+test('stored images are served; other names are not', async () => {
+  const g = (await send('POST', '/api/admin/site/galleries', { title: 'Imgs' })).body.gallery;
+  const k = (await upload(g.id)).body.photo.fileKey;
+  const ok = await fetch(`${base}/api/admin/site/img/${k}-grid.jpg`, { headers: H() });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('content-type'), 'image/jpeg');
+  for (const n of ['../server.mjs', 'x.jpg', '%2e%2e%2fserver.mjs'])
+    assert.equal((await fetch(`${base}/api/admin/site/img/${n}`, { headers: H() })).status, 404, n);
+});
+
+test('backup copies the web copies and the logo', async () => {
+  await logo('a.png', PNG);
+  const out = mkdtempSync(join(tmpdir(), 'bk-'));
+  const r = site.backup(out);
+  assert.ok(r.photos >= 1);
+  assert.ok(readdirSync(join(out, 'site', 'img')).length >= 2);
+  assert.ok(existsSync(join(out, 'site', 'logo.png')));
+  await fetch(base + '/api/admin/site/logo', { method: 'DELETE', headers: H() });
+});
+
+test('restoring a version that does not exist is a 400', async () => {
+  const r = await send('POST', '/api/admin/site/restore', { id: 99999 });
+  assert.equal(r.status, 400);
+});

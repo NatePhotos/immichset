@@ -661,7 +661,7 @@ function runBackup(force = false) {
     const size = statSync(final).size;
     console.log(`backup written: ${final} (${(size / 1024).toFixed(0)} KB)`
       + (cov ? `, covers ${cov.held} held${cov.copied ? ` (+${cov.copied})` : ''}${cov.pruned ? ` -${cov.pruned}` : ''}` : '')
-      + (siteCopy ? `, website ${siteCopy.held} photos` : ''));
+      + (siteCopy ? `, website ${siteCopy.photos} photos` : ''));
     return { file: final, size, covers: cov };
   } catch (e) {
     console.error('backup failed:', e.message);

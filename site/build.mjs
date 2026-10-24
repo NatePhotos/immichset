@@ -8,7 +8,8 @@ const GAPS = { none: '0rem', tight: '.68rem', normal: '1.2rem', roomy: '2rem' };
 const RATIOS = { tall: '226 / 276', square: '1 / 1', wide: '3 / 2' };
 const SCALES = { smaller: 0.9, normal: 1, larger: 1.12 };
 const GRID_W = 800;
-export const HEADERS = '/img/*\n  Cache-Control: public, max-age=31536000, immutable\n';
+export const HEADERS = '/img/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+  + "\n/logo.svg\n  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox\n  X-Content-Type-Options: nosniff\n";
 
 export const esc = t => String(t ?? '').replace(/[&<>"']/g,
   c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
