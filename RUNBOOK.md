@@ -50,16 +50,32 @@ write one used only by the admin panel. Keeping them apart is deliberate.
 
 ## Deploying a change
 
-1. Edit the files in a clone.
-2. `node --check server.mjs` — catches the syntax slips.
-3. Copy `server.mjs` and the two `web/*.html` files to the app's directory on the host.
-4. Restart: `curl -X POST <base>/api/admin/restart -H "x-admin-token: <token>"`
-   The container's `restart: always` brings it straight back on the new source.
-   Only `server.mjs` needs a restart — the two HTML files are read per request.
-5. **Run the smoke test.** `ADMIN_TOKEN=… node smoke.mjs <base>`
+```
+./deploy.sh              check, copy, restart, test
+./deploy.sh --dry-run    say what would change and stop
+./deploy.sh --rollback   put the previous files back
+```
 
-Step 5 is not optional. It takes ninety seconds and it is the only thing standing between
-a change and a client finding the problem for you.
+Settings live in `.deploy.env` beside the script — copy `.deploy.env.example` and fill it
+in. That file names your server, so it is gitignored.
+
+What it does, in order: parses `server.mjs` and the script inside each HTML file, so a
+typo never reaches the server; snapshots the three files currently on the host into
+`.previous`; copies anything that differs; restarts and waits for `/healthz`; then runs
+the smoke test. If the tests fail it says so and exits non-zero, and `--rollback` puts
+back exactly the set that was running before.
+
+Only `server.mjs` needs the restart — the two HTML files are read per request — but the
+script restarts anyway, which costs a couple of seconds and removes a thing to remember.
+
+**Do not skip the test.** It takes ninety seconds and it is the only thing standing between
+a change and a client finding the problem for you. `--no-test` exists for emergencies.
+
+### By hand, if the script is unavailable
+
+Copy `server.mjs` and `web/*.html` to the app's directory on the host, then
+`curl -X POST <base>/api/admin/restart -H "x-admin-token: <token>"`. The container's
+`restart: always` brings it back on the new source.
 
 ### Changing configuration
 
@@ -149,7 +165,8 @@ Anything pasted into a chat, a ticket or a log is burned. Rotate it.
 ## Working on this
 
 **Run the smoke test before you start and before you finish.** Before, so you know what
-was already broken. After, so you know what you broke.
+was already broken. After, so you know what you broke. `./deploy.sh` runs it for you at
+the end; running it at the start is on you.
 
 **Commit before handing over, and commit after.** If two people — or two agents — have
 this open at once, `git add -A` sweeps up whatever the other one left uncommitted and
@@ -203,6 +220,14 @@ permission` means wrongly scoped.
 **`pkill -f "node server.mjs"` does not match `node /full/path/server.mjs`.** Stray test
 processes that survive a cleanup will answer on the port you thought you freed and hand
 you baffling results.
+
+**Not every upstream sends `content-length`.** A test that reads the header rather than
+measuring the body it received will pass against one server and fail against another,
+and the failure will look like a bug in the thing being tested.
+
+**A partial snapshot is worse than none.** Saving only the files a deploy changes leaves
+a `.previous` that mixes one deploy with another, so rolling back restores a combination
+that never ran. Snapshot the whole set every time.
 
 **Reverse proxies compress HTML and often not JSON.** Check rather than assume.
 

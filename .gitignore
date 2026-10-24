@@ -15,3 +15,6 @@ data/
 
 .DS_Store
 node_modules/
+
+# deploy settings name your server
+.deploy.env
