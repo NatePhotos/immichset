@@ -1627,8 +1627,7 @@ function editorView(g){
   };
 }
 /* the Website section (site-admin.js) is a separate classic script and uses these */
-window.$ = $; window.api = api; window.esc = esc; window.toast = toast;
-window.chrome = chrome; window.listView = listView; window.tog = tog;
+window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog };
 })();
 </script>
 <script src="/site-admin.js"></script>

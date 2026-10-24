@@ -1,8 +1,9 @@
 /* Website section: the public site's galleries, pages, style and publishing.
    Uses the panel's globals: $, api, esc, toast, chrome, listView, tog. */
 (function(){
+var K = window.AdminKit, $ = K.$, api = K.api, esc = K.esc, toast = K.toast, chrome = K.chrome, listView = K.listView, tog = K.tog;
 var W = { state:null, rev:0, screen:"galleries", gid:null, publishes:[], dirty:false, canPublish:false,
-          missing:null, fonts:[], defaults:null, liveUrl:null, queue:[], uploading:false, showVersions:false };
+          missing:null, fonts:[], defaults:null, liveUrl:null, queue:[], uploading:false, showVersions:false, active:false, liveDeploymentId:null };
 
 var css = document.createElement("style");
 css.textContent = [
@@ -40,7 +41,7 @@ function load(){
     if (!r.ok) throw new Error((r.body && r.body.error) || "Could not load the website");
     var b = r.body;
     W.state = b.state; W.rev = b.rev; W.publishes = b.publishes; W.dirty = b.dirty;
-    W.canPublish = b.canPublish; W.missing = b.missing; W.fonts = b.fonts; W.defaults = b.defaults; W.liveUrl = b.liveUrl;
+    W.canPublish = b.canPublish; W.missing = b.missing; W.fonts = b.fonts; W.defaults = b.defaults; W.liveUrl = b.liveUrl; W.liveDeploymentId = b.liveDeploymentId || null;
   });
 }
 /* every change carries the revision it was made against; a stale one means another tab won */
@@ -48,13 +49,16 @@ function send(path, method, data){
   return api("/site" + path, { method: method, headers: { "Content-Type":"application/json", "x-site-rev": String(W.rev) },
                                body: data === undefined ? undefined : JSON.stringify(data) })
     .then(function(r){
-      if (r.status === 409){ toast("Changed in another tab — showing the latest"); return load().then(function(){ render(); return null; }); }
+      if (r.status === 409){ toast("Changed in another tab — showing the latest"); return load().then(function(){ render(); return null; }, function(e){ toast(e.message); return null; }); }
       if (!r.ok){ toast((r.body && r.body.error) || "That didn’t work"); return null; }
       if (r.body && r.body.rev) W.rev = Math.max(W.rev, r.body.rev);
       return r.body;
     });
 }
-function changed(msg){ return load().then(function(){ render(); if (msg) toast(msg); }); }
+function changed(msg){
+  if (!W.active) return Promise.resolve();
+  return load().then(function(){ render(); if (msg) toast(msg); }, function(e){ toast(e.message); });
+}
 function gal(id){ return (W.state.galleries || []).filter(function(g){ return g.id === id; })[0]; }
 function allPhotos(){ return W.state.pagePhotos.concat.apply(W.state.pagePhotos, W.state.galleries.map(function(g){ return g.photos; })); }
 function photoById(id){ return allPhotos().filter(function(p){ return p.id === id; })[0]; }
@@ -67,27 +71,28 @@ function shrinkTo(src, w, h){
   while (cw / 2 >= w && ch / 2 >= h){
     cw = Math.round(cw / 2); ch = Math.round(ch / 2);
     var c = document.createElement("canvas"); c.width = cw; c.height = ch;
-    var x = c.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(cur, 0, 0, cw, ch); cur = c;
+    var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, cw, ch); x.imageSmoothingQuality = "high"; x.drawImage(cur, 0, 0, cw, ch); cur = c;
   }
   var out = document.createElement("canvas"); out.width = w; out.height = h;
-  var o = out.getContext("2d"); o.imageSmoothingQuality = "high"; o.drawImage(cur, 0, 0, w, h);
+  var o = out.getContext("2d"); o.fillStyle = "#fff"; o.fillRect(0, 0, w, h); o.imageSmoothingQuality = "high"; o.drawImage(cur, 0, 0, w, h);
   return out;
 }
-function jpeg(canvas){ return new Promise(function(ok){ canvas.toBlob(ok, "image/jpeg", 0.82); }); }
+function jpeg(canvas){ return new Promise(function(ok, bad){ canvas.toBlob(function(b){ if (b) ok(b); else bad(new Error("This browser could not make the web copy of the photo.")); }, "image/jpeg", 0.82); }); }
 function makeCopies(file){
   return createImageBitmap(file, { imageOrientation: "from-image" }).then(function(bmp){
     var w = bmp.width, h = bmp.height;
     var gs = w > 800 ? 800 / w : 1, fs = Math.max(w, h) > 2048 ? 2048 / Math.max(w, h) : 1;
     var gw = Math.round(w * gs), gh = Math.round(h * gs), fw = Math.round(w * fs), fh = Math.round(h * fs);
     return Promise.all([jpeg(shrinkTo(bmp, gw, gh)), jpeg(shrinkTo(bmp, fw, fh))]).then(function(b){
-      return { grid: b[0], full: b[1], width: fw, height: fh };
-    });
+      bmp.close(); return { grid: b[0], full: b[1], width: fw, height: fh };
+    }, function(e){ bmp.close(); throw e; });
   }, function(){ throw new Error(file.name + ": this browser can’t read it. Use a JPEG, or upload from Safari."); });
 }
 
 /* ---------- uploads: one at a time, with a running count ---------- */
-function queue(files, target, after){
-  Array.prototype.forEach.call(files, function(f){ W.queue.push({ file:f, target:target, after:after }); });
+function queue(files, target, after, zone, multiple){
+  var list = Array.prototype.slice.call(files); if (!multiple) list = list.slice(0, 1);
+  list.forEach(function(f){ W.queue.push({ file:f, target:target, after:after, zone:zone }); });
   pump();
 }
 function pump(){
@@ -96,7 +101,7 @@ function pump(){
   if (!it){ changed(); return; }
   W.uploading = true;
   var left = W.queue.length;
-  var st = $("wupst"); if (st) st.textContent = "Uploading " + it.file.name + (left ? " (" + left + " more)" : "") + "…";
+  var st = $(it.zone + "st"); if (st) st.textContent = "Uploading " + it.file.name + (left ? " (" + left + " more)" : "") + "…";
   makeCopies(it.file).then(function(c){
     var f = new FormData();
     f.append("original", it.file, it.file.name);
@@ -113,32 +118,36 @@ function pump(){
 }
 function dropZone(id, target, label, after, multiple){
   return { html: '<div class="wdrop" id="'+id+'">'+esc(label)+'<input type="file" accept="image/*"'+(multiple?" multiple":"")+' hidden></div>'
-                 + '<div class="hint" id="wupst"></div>',
+                 + '<div class="hint" id="'+id+'st"></div>',
     wire: function(){
       var z = $(id), inp = z.querySelector("input");
       z.onclick = function(){ inp.click(); };
-      inp.onchange = function(){ queue(inp.files, target, after); inp.value = ""; };
+      inp.onchange = function(){ queue(inp.files, target, after, id, multiple); inp.value = ""; };
       z.ondragover = function(e){ e.preventDefault(); z.classList.add("on"); };
       z.ondragleave = function(){ z.classList.remove("on"); };
-      z.ondrop = function(e){ e.preventDefault(); z.classList.remove("on"); queue(e.dataTransfer.files, target, after); };
+      z.ondrop = function(e){ e.preventDefault(); z.classList.remove("on"); queue(e.dataTransfer.files, target, after, id, multiple); };
     } };
 }
 
 /* ---------- drag to reorder ---------- */
 function sortable(container, itemSel, onDone){
-  var dragging = null;
+  var dragging = null, start = "";
+  function order(){ return Array.prototype.map.call(container.querySelectorAll(itemSel), function(x){ return Number(x.dataset.id); }); }
   Array.prototype.forEach.call(container.querySelectorAll(itemSel), function(el){
     el.draggable = true;
-    el.ondragstart = function(e){ dragging = el; el.classList.add("drag"); e.dataTransfer.effectAllowed = "move"; };
+    el.ondragstart = function(e){
+      dragging = el; start = order().join(","); el.classList.add("drag");
+      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", el.dataset.id);
+    };
     el.ondragend = function(){
       el.classList.remove("drag"); dragging = null;
-      onDone(Array.prototype.map.call(container.querySelectorAll(itemSel), function(x){ return Number(x.dataset.id); }));
+      var now = order(); if (now.join(",") !== start) onDone(now);
     };
     el.ondragover = function(e){
       e.preventDefault();
       if (!dragging || dragging === el) return;
-      var r = el.getBoundingClientRect();
-      var after = (e.clientY - r.top) / r.height > 0.5 || (e.clientX - r.left) / r.width > 0.5;
+      var items = Array.prototype.slice.call(container.querySelectorAll(itemSel));
+      var after = items.indexOf(dragging) < items.indexOf(el);
       container.insertBefore(dragging, after ? el.nextSibling : el);
     };
   });
@@ -146,12 +155,14 @@ function sortable(container, itemSel, onDone){
 
 /* ---------- shell ---------- */
 window.websiteView = function(screen, gid){
+  W.active = true;
   W.screen = screen || W.screen || "galleries"; W.gid = gid || null;
-  chrome({ title:"Website", sub: W.liveUrl ? W.liveUrl.replace(/^https?:\/\//, "") : "", back: listView });
+  chrome({ title:"Website", sub: W.liveUrl ? W.liveUrl.replace(/^https?:\/\//, "") : "", back: function(){ W.active = false; listView(); } });
   $("root").innerHTML = '<div class="wrap" style="padding-top:22px"><div class="spin"></div></div>';
   load().then(render, function(e){ $("root").innerHTML = '<div class="wrap"><p class="empty">'+esc(e.message)+'</p></div>'; });
 };
 function render(){
+  if (!W.active) return;
   var tabs = [["galleries","Galleries"],["pages","Pages"],["style","Style"]].map(function(t){
     return '<button data-s="'+t[0]+'" class="'+(W.screen===t[0]?"on":"")+'">'+t[1]+'</button>'; }).join("");
   var status = W.dirty ? "<b>Unpublished changes</b>" : "Everything is live";
@@ -183,9 +194,11 @@ function publish(){
 function versionsHtml(){
   var ok = W.publishes.filter(function(p){ return p.status === "ok"; });
   if (!ok.length) return '<div class="wver"><p class="hint">Nothing published from here yet.</p></div>';
-  return '<div class="wver">' + ok.map(function(p, i){
-    return '<div><span>'+esc(new Date(p.createdAt).toLocaleString())+(i===0?" — live now":"")+'</span>'
-      + (i === 0 ? "" : '<button class="btn sm ghost" data-restore="'+p.id+'">Restore</button>') + '</div>';
+  var live = ok.filter(function(p){ return W.liveDeploymentId && p.deploymentId === W.liveDeploymentId; })[0] || ok[0];
+  return '<div class="wver">' + ok.map(function(p){
+    var isLive = p === live;
+    return '<div><span>'+esc(new Date(p.createdAt).toLocaleString())+(isLive?" — live now":"")+'</span>'
+      + (isLive ? "" : '<button class="btn sm ghost" data-restore="'+p.id+'">Restore</button>') + '</div>';
   }).join("") + '</div>';
 }
 function wireVersions(){

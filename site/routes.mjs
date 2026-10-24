@@ -122,6 +122,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       const d = await publisher.deploy(out, hashOf);
       store.recordPublish({ status: 'ok', deploymentId: d.id, rev });
       store.setMeta('publishedRev', rev);
+      store.setMeta('liveDeploymentId', d.id);
       prune();
       await watcher.resolve('publish', 'Website publishing works again', ['Your last publish went through.']);
       return d;
@@ -152,6 +153,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     const logo = store.getState().settings.style.logo;
     if (logo && !existsSync(join(dir, logo))) store.patchSettings(null, { style: { logo: null } });
     store.setMeta('publishedRev', store.rev());
+    store.setMeta('liveDeploymentId', row.deploymentId);
     await watcher.resolve('restore', 'Website restore works again', ['The last restore went through.']);
   }
 
@@ -187,6 +189,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
         dirty: store.rev() !== Number(store.meta('publishedRev') ?? -1),
         canPublish: publisher.ready,
         missing: publisher.ready ? null : 'Publishing is not set up yet: add CF_ACCOUNT_ID, CF_PAGES_TOKEN and CF_PAGES_PROJECT to galleryapp.',
+        liveDeploymentId: store.meta('liveDeploymentId'),
         fonts: FONTS, defaults: DEFAULT_STYLE, liveUrl: cfg.siteUrl || null, publishing: busy === 'publish',
       });
     }

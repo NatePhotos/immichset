@@ -118,6 +118,7 @@ test('publish deploys, records a version and clears the unpublished flag', async
   st = await (await fetch(base + '/api/admin/site', { headers: H() })).json();
   assert.equal(st.dirty, false);
   assert.equal(st.publishes[0].status, 'ok');
+  assert.equal(st.liveDeploymentId, st.publishes[0].deploymentId);
   const manifest = JSON.parse(deploys.at(-1).get('manifest'));
   assert.ok(manifest['/index.html'] && manifest['/Autumn-Wedding/index.html']);
 });
@@ -131,6 +132,7 @@ test('restore rolls Cloudflare back and puts the old state back', async () => {
   const st = await (await fetch(base + '/api/admin/site', { headers: H() })).json();
   assert.ok(!st.state.galleries.some(g => g.title === 'Added Later'));
   assert.equal(st.dirty, false);
+  assert.equal(st.liveDeploymentId, first.deploymentId);
 });
 
 test('a failed publish emails, keeps the site, and says why', async () => {
