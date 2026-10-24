@@ -177,6 +177,13 @@ without them restores galleries pointing at files that are not there. A cover th
 replaced is kept for as long as the snapshots that reference it. **Immich's own database is separate** —
 enable its scheduled backup too.
 
+## Keeping it running
+
+[`RUNBOOK.md`](RUNBOOK.md) is the operations guide: how it fits together, how to deploy,
+what to do when something breaks, how to restore, and the traps that have already cost
+somebody a day. Written for whoever holds this next, including an AI agent picking it up
+cold. Site-specific values belong in a private note beside the server, not in this repo.
+
 ## Checking it still works
 
 `smoke.mjs` walks a running instance the way a client would and prints a line per check.
