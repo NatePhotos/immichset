@@ -71,7 +71,7 @@ const CLEAN = {
 const galDto = r => r && ({ id: r.id, slug: r.slug, title: r.title, showTitle: !!r.show_title, hidden: !!r.hidden,
   position: r.position, coverPhotoId: r.cover_photo_id ?? null, immichAlbumId: r.immich_album_id ?? null });
 const phoDto = r => r && ({ id: r.id, galleryId: r.gallery_id ?? null, position: r.position, fileKey: r.file_key,
-  width: r.width, height: r.height, originalName: r.original_name, immichStatus: r.immich_status, createdAt: r.created_at });
+  width: r.width, height: r.height, originalName: r.original_name, immichStatus: r.immich_status, immichTries: r.immich_tries, createdAt: r.created_at });
 
 export function createStore(db, { now = Date.now } = {}) {
   db.exec(SCHEMA);
@@ -249,10 +249,20 @@ export function createStore(db, { now = Date.now } = {}) {
     restoreSnapshot(json) {
       const snap = JSON.parse(json);
       return mutate(null, () => {
+        /* Immich state is a fact about the outside world, not part of an old version: keep today's */
+        const nowPhotos = new Map(q.phoAll.all().map(p => [p.id, p]));
+        const nowGalleries = new Map(q.galAll.all().map(g => [g.id, g]));
         db.exec('DELETE FROM site_photos; DELETE FROM site_galleries;');
-        for (const g of snap.galleries) q.galRestore.run(g.id, g.slug, g.title, g.show_title, g.hidden, g.position, g.cover_photo_id, g.immich_album_id);
-        for (const p of snap.photos) q.phoRestore.run(p.id, p.gallery_id, p.position, p.file_key, p.width, p.height,
-          p.original_name, p.immich_asset_id, p.immich_status, p.immich_tries, p.created_at);
+        for (const g of snap.galleries) {
+          const cur = nowGalleries.get(g.id);
+          q.galRestore.run(g.id, g.slug, g.title, g.show_title, g.hidden, g.position, g.cover_photo_id, g.immich_album_id ?? (cur ? cur.immich_album_id : null));
+        }
+        for (const p of snap.photos) {
+          const cur = nowPhotos.get(p.id);
+          const imm = cur || p;
+          q.phoRestore.run(p.id, p.gallery_id, p.position, p.file_key, p.width, p.height,
+            p.original_name, imm.immich_asset_id, imm.immich_status, imm.immich_tries, p.created_at);
+        }
         putSettings(snap.settings);
       });
     },
@@ -262,8 +272,8 @@ export function createStore(db, { now = Date.now } = {}) {
       return keys;
     },
 
-    recordPublish({ status, deploymentId = null, error = null, rev: r }) {
-      const res = q.pubIns.run(now(), deploymentId, r, status, error, snapshot());
+    recordPublish({ status, deploymentId = null, error = null, rev: r, snapshot: snap }) {
+      const res = q.pubIns.run(now(), deploymentId, r, status, error, snap ?? snapshot());
       q.pubPruneOk.run(KEEP);
       q.pubPruneFail.run(KEEP);
       return Number(res.lastInsertRowid);

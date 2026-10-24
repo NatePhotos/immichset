@@ -59,6 +59,16 @@ async function upload(gallery) {
   return { status: r.status, body: await r.json() };
 }
 
+/* the upload answers at once; Immich is filled in behind it */
+async function waitForImmich(id, want, minTries = 0) {
+  for (let i = 0; i < 100; i++) {
+    const p = site.store.photo(id);
+    if (p && p.immichStatus === want && p.immichTries >= minTries) return p;
+    await new Promise(r => setTimeout(r, 20));
+  }
+  assert.fail(`photo ${id} never became ${want}`);
+}
+
 test('a stale revision gets 409', async () => {
   const r = await fetch(base + '/api/admin/site/galleries', { method: 'POST', headers: H({ 'content-type': 'application/json', 'x-site-rev': '999' }), body: '{"title":"X"}' });
   assert.equal(r.status, 409);
@@ -68,7 +78,8 @@ test('upload stores both copies, sends the original to Immich into a new album',
   const g = (await send('POST', '/api/admin/site/galleries', { title: 'Autumn Wedding' })).body.gallery;
   const r = await upload(g.id);
   assert.equal(r.status, 201);
-  assert.equal(r.body.photo.immichStatus, 'ok');
+  assert.equal(r.body.photo.immichStatus, 'pending');
+  await waitForImmich(r.body.photo.id, 'ok');
   const k = r.body.photo.fileKey;
   assert.ok(existsSync(join(dir, 'site', 'img', `${k}-grid.jpg`)) && existsSync(join(dir, 'site', 'img', `${k}-full.jpg`)));
   assert.deepEqual(readdirSync(join(dir, 'site', 'originals')), []);   /* removed once Immich has it */
@@ -81,6 +92,7 @@ test('Immich down: photo is still added as pending, retry fixes it', async () =>
   const r = await upload(g.id);
   assert.equal(r.status, 201);
   assert.equal(r.body.photo.immichStatus, 'pending');
+  await waitForImmich(r.body.photo.id, 'pending', 1);
   assert.equal(readdirSync(join(dir, 'site', 'originals')).length, 1);   /* kept for the retry */
   FAIL.value = false;
   const again = await fetch(`${base}/api/admin/site/photos/${r.body.photo.id}/retry`, { method: 'POST', headers: H() });
@@ -147,7 +159,7 @@ test('a failed publish emails, keeps the site, and says why', async () => {
 test('retrying a photo that is already in Immich changes nothing', async () => {
   const g = (await send('POST', '/api/admin/site/galleries', { title: 'Twice' })).body.gallery;
   const up = await upload(g.id);
-  assert.equal(up.body.photo.immichStatus, 'ok');
+  await waitForImmich(up.body.photo.id, 'ok');
   const assets = fake.seen.assets;
   const r = await fetch(`${base}/api/admin/site/photos/${up.body.photo.id}/retry`, { method: 'POST', headers: H() });
   assert.equal(r.status, 200);
@@ -159,6 +171,7 @@ test('two uploads at once to a new gallery make one Immich album', async () => {
   const g = (await send('POST', '/api/admin/site/galleries', { title: 'Twins' })).body.gallery;
   const rs = await Promise.all([upload(g.id), upload(g.id)]);
   assert.deepEqual(rs.map(r => r.status), [201, 201]);
+  for (const r of rs) await waitForImmich(r.body.photo.id, 'ok');
   assert.equal(fake.seen.albums.filter(a => a.albumName === 'Website – Twins').length, 1);
 });
 

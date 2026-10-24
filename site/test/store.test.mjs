@@ -114,6 +114,31 @@ test('publishes keep a snapshot, restore puts the state back, only 10 kept', () 
   assert.equal(s.listPublishes().filter(p => p.status === 'ok').length, 10);
 });
 
+test('recordPublish stores the snapshot it is given, not the current state', () => {
+  const s = fresh();
+  s.addGallery(null, 'Before');
+  const snap = s.snapshot();
+  s.addGallery(null, 'After');
+  const id = s.recordPublish({ status: 'ok', deploymentId: 'd', rev: s.rev(), snapshot: snap });
+  assert.equal(s.getPublish(id).snapshot, snap);
+  assert.deepEqual(JSON.parse(s.getPublish(id).snapshot).galleries.map(g => g.title), ['Before']);
+});
+
+test('restore keeps today\'s Immich state for photos and albums that still exist', () => {
+  const s = fresh();
+  const g = s.addGallery(null, 'G');
+  const p = s.addPhoto(null, g.id, photo('im'));
+  const id = s.recordPublish({ status: 'ok', deploymentId: 'd', rev: s.rev() });   /* snapshot: pending, no album */
+  s.setPhotoImmich(p.id, 'ok', 'asset-9', 1);
+  s.setImmichAlbum(g.id, 'album-9');
+  s.restoreSnapshot(s.getPublish(id).snapshot);
+  const ph = s.photo(p.id);
+  assert.equal(ph.immichStatus, 'ok');
+  assert.equal(ph.immichTries, 1);
+  assert.equal(s.gallery(g.id).immichAlbumId, 'album-9');
+  assert.deepEqual(s.pendingImmich(), []);
+});
+
 test('referenced file keys include kept snapshots', () => {
   const s = fresh();
   const g = s.addGallery(null, 'G');

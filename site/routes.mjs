@@ -48,7 +48,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     const g = photo.galleryId == null ? null : store.gallery(photo.galleryId);
     let id = g ? g.immichAlbumId : store.meta('pagesAlbumId');
     if (id) return id;
-    const r = await immich('/api/albums', { write: true, method: 'POST', headers: { 'content-type': 'application/json' },
+    const r = await immich('/api/albums', { write: true, method: 'POST', signal: AbortSignal.timeout(120_000), headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ albumName: `Website – ${g ? g.title : 'Pages'}` }) });
     if (!r.ok) throw new Error(`Immich album ${r.status}`);
     id = (await r.json()).id;
@@ -74,11 +74,11 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     form.append('fileModifiedAt', when);
     form.append('filename', photo.originalName || file);
     form.append('assetData', new Blob([buf]), photo.originalName || file);
-    const r = await immich('/api/assets', { write: true, method: 'POST', body: form });
+    const r = await immich('/api/assets', { write: true, method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
     if (!r.ok) throw new Error(`Immich upload ${r.status}`);
     const asset = await r.json();
     const album = await ensureAlbum(photo);
-    const r2 = await immich(`/api/albums/${album}/assets`, { write: true, method: 'PUT',
+    const r2 = await immich(`/api/albums/${album}/assets`, { write: true, method: 'PUT', signal: AbortSignal.timeout(120_000),
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: [asset.id] }) });
     if (!r2.ok) throw new Error(`Immich album add ${r2.status}`);
     unlinkSync(join(dir, 'originals', file));
@@ -113,6 +113,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     if (busy) throw new InputError(`A ${busy} is already running`);
     busy = 'publish';
     const rev = store.rev();
+    const snap = store.snapshot();      /* what is being published, captured before any await */
     try {
       if (cfg.allowTestHooks && store.meta('_test_fail_deploy')) { store.setMeta('_test_fail_deploy', null); throw new Error('test failure'); }
       const { files, images } = build(store.getState(), { base: '/', siteUrl: cfg.siteUrl });
@@ -120,7 +121,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       for (const [p, body] of files) out.set(p, Buffer.from(body));
       for (const [p, rel] of images) out.set(p, await readFile(join(dir, rel)));
       const d = await publisher.deploy(out, hashOf);
-      store.recordPublish({ status: 'ok', deploymentId: d.id, rev });
+      store.recordPublish({ status: 'ok', deploymentId: d.id, rev, snapshot: snap });
       store.setMeta('publishedRev', rev);
       store.setMeta('liveDeploymentId', d.id);
       prune();
@@ -128,7 +129,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       return d;
     } catch (e) {
       if (e instanceof InputError) throw e;
-      store.recordPublish({ status: 'failed', error: e.message, rev });
+      store.recordPublish({ status: 'failed', error: e.message, rev, snapshot: snap });
       await watcher.alert('publish', 'Your website did not publish', [
         `The publish failed: ${e.message}`,
         'Your live site is unchanged. Open the Website section of the admin panel and press Publish to try again.',
@@ -241,8 +242,8 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       await writeFile(join(dir, 'img', `${key}-full.jpg`), fb);
       await writeFile(join(dir, 'originals', `${key}${extname(name).toLowerCase()}`), ob);
       const photo = store.addPhoto(null, galleryId, { fileKey: key, width, height, originalName: name });
-      try { const aid = await sendToImmich(photo); if (aid) store.setPhotoImmich(photo.id, 'ok', aid, 1); }
-      catch (e) { console.error('site immich:', e.message); store.setPhotoImmich(photo.id, 'pending', null, 1); }
+      sendToImmich(photo).then(aid => { if (aid) store.setPhotoImmich(photo.id, 'ok', aid, 1); })
+        .catch(e => { console.error('site immich:', e.message); try { store.setPhotoImmich(photo.id, 'pending', null, 1); } catch {} });
       return json(res, 201, { photo: store.photo(photo.id), rev: store.rev() });
     }
     const pm = path.match(/^\/api\/admin\/site\/photos\/(\d+)$/);
@@ -267,7 +268,13 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     }
 
     if (path === '/api/admin/site/logo' && m === 'POST') {
-      const buf = Buffer.concat(await Array.fromAsync(req));
+      const chunks = []; let got = 0;
+      for await (const c of req) {
+        got += c.length;
+        if (got > 2 * 1024 * 1024) { json(res, 413, { error: 'Logos must be under 2 MB' }); req.destroy(); return; }
+        chunks.push(c);
+      }
+      const buf = Buffer.concat(chunks);
       const svg = /\.svg$/i.test(url.searchParams.get('name') || '');
       if (buf.length > 2 * 1024 * 1024) return json(res, 413, { error: 'Logos must be under 2 MB' });
       if (svg ? !isSafeSvg(buf) : !isPng(buf)) return json(res, 415, { error: 'Logos must be PNG or a plain SVG' });

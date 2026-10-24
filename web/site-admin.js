@@ -3,7 +3,7 @@
 (function(){
 var K = window.AdminKit, $ = K.$, api = K.api, esc = K.esc, toast = K.toast, chrome = K.chrome, listView = K.listView, tog = K.tog;
 var W = { state:null, rev:0, screen:"galleries", gid:null, publishes:[], dirty:false, canPublish:false,
-          missing:null, fonts:[], defaults:null, liveUrl:null, queue:[], uploading:false, showVersions:false, active:false, liveDeploymentId:null };
+          missing:null, fonts:[], defaults:null, liveUrl:null, queue:[], uploading:false, showVersions:false, active:false, liveDeploymentId:null, dirtyForm:false };
 
 var css = document.createElement("style");
 css.textContent = [
@@ -59,6 +59,15 @@ function changed(msg){
   if (!W.active) return Promise.resolve();
   return load().then(function(){ render(); if (msg) toast(msg); }, function(e){ toast(e.message); });
 }
+/* after an upload run: rebuild the screen, unless the person is part-way through typing on a form */
+function settled(){
+  if (!W.active) return;
+  if (!W.dirtyForm || (W.screen !== "pages" && W.screen !== "style")){ changed(); return; }
+  load().then(function(){
+    var st = document.querySelector(".wbar .st"); if (st) st.innerHTML = statusHtml();
+  }, function(e){ toast(e.message); });
+}
+function statusHtml(){ return W.dirty ? "<b>Unpublished changes</b>" : "Everything is live"; }
 function gal(id){ return (W.state.galleries || []).filter(function(g){ return g.id === id; })[0]; }
 function allPhotos(){ return W.state.pagePhotos.concat.apply(W.state.pagePhotos, W.state.galleries.map(function(g){ return g.photos; })); }
 function photoById(id){ return allPhotos().filter(function(p){ return p.id === id; })[0]; }
@@ -98,7 +107,7 @@ function queue(files, target, after, zone, multiple){
 function pump(){
   if (W.uploading) return;
   var it = W.queue.shift();
-  if (!it){ changed(); return; }
+  if (!it){ settled(); return; }
   W.uploading = true;
   var left = W.queue.length;
   var st = $(it.zone + "st"); if (st) st.textContent = "Uploading " + it.file.name + (left ? " (" + left + " more)" : "") + "…";
@@ -111,7 +120,6 @@ function pump(){
       .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || "Upload failed"); return j; }); });
   }).then(function(j){
     W.rev = Math.max(W.rev, j.rev);
-    if (j.photo.immichStatus !== "ok") toast(it.file.name + " is on the website; it will go to Immich when it can");
     if (it.after) return it.after(j.photo);
   }).catch(function(e){ toast(e.message); })
     .then(function(){ W.uploading = false; pump(); });
@@ -165,7 +173,7 @@ function render(){
   if (!W.active) return;
   var tabs = [["galleries","Galleries"],["pages","Pages"],["style","Style"]].map(function(t){
     return '<button data-s="'+t[0]+'" class="'+(W.screen===t[0]?"on":"")+'">'+t[1]+'</button>'; }).join("");
-  var status = W.dirty ? "<b>Unpublished changes</b>" : "Everything is live";
+  var status = statusHtml();
   $("root").innerHTML = '<div class="wrap" style="padding-top:22px">'
     + '<div class="wbar"><span class="st">'+status+'</span>'
     +   '<button class="btn sm ghost" id="wprev">Preview</button>'
@@ -180,6 +188,8 @@ function render(){
   $("wvers").onclick = function(){ W.showVersions = !W.showVersions; render(); };
   $("wpub").onclick = publish;
   wireVersions();
+  W.dirtyForm = false;
+  $("wbody").addEventListener("input", function(){ W.dirtyForm = true; });
   if (W.screen === "pages") return pagesScreen();
   if (W.screen === "style") return styleScreen();
   return W.gid ? galleryScreen(gal(W.gid)) : galleriesScreen();
@@ -292,8 +302,19 @@ function photoPicker(id, label, current, onSet){
 }
 function pagesScreen(){
   var s = W.state.settings;
-  function setPhoto(key, field){ return function(photoId){ var patch = {}; patch[key] = {}; patch[key][field] = photoId;
-    return send("/settings", "PUT", patch); }; }
+  /* the same save carries everything typed so far, so choosing a photo never wipes unsaved text */
+  function typed(){
+    return {
+      siteName: $("wsn").value,
+      about: { heading: $("wah").value, text: $("wat").value },
+      contact: { heading: $("wch").value, email: $("wce").value, phone: $("wcp").value },
+      footer: { copyright: $("wfc").value, instagram: $("wfi").value }
+    };
+  }
+  function setPhoto(key, field){ return function(photoId){
+    var patch = $("wsn") ? typed() : {};
+    patch[key] = patch[key] || {}; patch[key][field] = photoId;
+    return send("/settings", "PUT", patch).then(function(r){ if (r) W.dirtyForm = false; return r; }); }; }
   var ap = photoPicker("wapic", "About photo", s.about.photoId, setPhoto("about", "photoId"));
   var bp = photoPicker("wbpic", "Contact banner photo", s.contact.bannerPhotoId, setPhoto("contact", "bannerPhotoId"));
   $("wbody").innerHTML = '<h3 class="sec">Site</h3>'
@@ -313,12 +334,7 @@ function pagesScreen(){
     + '<button class="btn" id="wsavep">Save changes</button>';
   ap.wire(); bp.wire();
   $("wsavep").onclick = function(){
-    send("/settings", "PUT", {
-      siteName: $("wsn").value,
-      about: { heading: $("wah").value, text: $("wat").value },
-      contact: { heading: $("wch").value, email: $("wce").value, phone: $("wcp").value },
-      footer: { copyright: $("wfc").value, instagram: $("wfi").value },
-    }).then(function(r){ if (r) changed("Saved"); });
+    send("/settings", "PUT", typed()).then(function(r){ if (r) changed("Saved"); });
   };
 }
 
