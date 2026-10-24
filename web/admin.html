@@ -321,6 +321,7 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
     <button class="btn sm ghost" id="aPreview" hidden>Preview</button>
     <button class="btn sm" id="aShare" hidden>Copy link</button>
     <button class="btn sm" id="newBtn">New</button>
+    <button class="btn sm ghost" id="siteBtn" hidden>Website</button>
     <button class="link" id="outBtn">Sign out</button>
   </div></div>
   <div id="root"></div>
@@ -462,6 +463,7 @@ function chrome(opts){
   $("backBtn").hidden = !opts.back;
   $("backBtn").onclick = opts.back || null;
   $("newBtn").hidden = !opts.showNew;
+  $("siteBtn").hidden = !opts.showNew;
   var g = opts.gallery;
   $("tPill").hidden = !g;
   if (g){
@@ -1624,7 +1626,11 @@ function editorView(g){
     });
   };
 }
+/* the Website section (site-admin.js) is a separate classic script and uses these */
+window.$ = $; window.api = api; window.esc = esc; window.toast = toast;
+window.chrome = chrome; window.listView = listView; window.tog = tog;
 })();
 </script>
+<script src="/site-admin.js"></script>
 </body>
 </html>
