@@ -58,10 +58,14 @@ services:
 
       # --- dynamic DNS (optional) ---
       # For a gallery served from a home connection, where the ISP changes the
-      # address without warning. Token: hPanel > Profile > API, with DNS permission.
+      # address without warning. Set the token for whoever hosts your DNS:
+      #   Hostinger:  hPanel > Profile > API, with DNS permission.
+      #   Cloudflare: an API token with Zone > DNS > Edit for this one domain.
+      # Set both while moving a domain between them; remove the old one after.
       # Only the one record named below is ever written; the rest of the zone is
       # never in the payload. Set DNS_APPLY to "off" to watch and email only.
       HOSTINGER_TOKEN: ""
+      CLOUDFLARE_TOKEN: ""
       DNS_DOMAIN: ""               # example.com
       DNS_HOST: ""                 # the subdomain, e.g. clients
       DNS_APPLY: "on"

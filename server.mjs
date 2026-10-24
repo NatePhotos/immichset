@@ -37,7 +37,8 @@ const CFG = {
   brandUrl:     process.env.BRAND_URL || '',
   brandSocial:  process.env.BRAND_SOCIAL || '',
   brandSocialLabel: process.env.BRAND_SOCIAL_LABEL || '',
-  dnsToken:    process.env.HOSTINGER_TOKEN || '',
+  hostingerToken: process.env.HOSTINGER_TOKEN || '',
+  cfToken:     process.env.CLOUDFLARE_TOKEN || '',
   dnsDomain:   process.env.DNS_DOMAIN || '',
   dnsHost:     process.env.DNS_HOST || '',
   dnsApply:   (process.env.DNS_APPLY || 'on').toLowerCase() !== 'off',
@@ -1915,31 +1916,77 @@ async function publicIp() {
   return got.length === 2 && got[0] === got[1] ? got[0] : null;
 }
 
+/* Each DNS host is a read and a write of the one A record. Both can be set at once:
+   while a domain moves between them it is not obvious which one the world is asking,
+   so both are kept right until the old token is removed. */
 const hostinger = (path, init = {}) => fetch(`https://developers.hostinger.com/api/dns/v1${path}`, {
   ...init,
   signal: AbortSignal.timeout(20_000),
-  headers: { authorization: `Bearer ${CFG.dnsToken}`, accept: 'application/json', ...(init.headers || {}) },
+  headers: { authorization: `Bearer ${CFG.hostingerToken}`, accept: 'application/json', ...(init.headers || {}) },
 });
 
-async function dnsRecord() {
-  const r = await hostinger(`/zones/${encodeURIComponent(CFG.dnsDomain)}`);
-  if (!r.ok) throw new Error(`zone read ${r.status}`);
-  const zone = await r.json();
-  const hit = zone.find(x => x.name === CFG.dnsHost && x.type === 'A');
-  return hit?.records?.[0]?.content || null;
-}
+const hostingerDns = {
+  name: 'Hostinger',
+  async read() {
+    const r = await hostinger(`/zones/${encodeURIComponent(CFG.dnsDomain)}`);
+    if (!r.ok) throw new Error(`zone read ${r.status}`);
+    const zone = await r.json();
+    const hit = zone.find(x => x.name === CFG.dnsHost && x.type === 'A');
+    return hit?.records?.[0]?.content || null;
+  },
+  /* Only this one name and type is sent, and Hostinger replaces just the records that
+     match - the SPF, DKIM and DMARC entries beside it are never in the payload. */
+  async write(ip) {
+    const r = await hostinger(`/zones/${encodeURIComponent(CFG.dnsDomain)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ overwrite: true,
+        zone: [{ name: CFG.dnsHost, type: 'A', ttl: 300, records: [{ content: ip }] }] }),
+    });
+    if (!r.ok) throw new Error(`zone write ${r.status}: ${(await r.text().catch(() => '')).slice(0, 160)}`);
+  },
+};
 
-/* Only this one name and type is sent, and Hostinger replaces just the records that
-   match - the SPF, DKIM and DMARC entries beside it are never in the payload. */
-async function dnsWrite(ip) {
-  const r = await hostinger(`/zones/${encodeURIComponent(CFG.dnsDomain)}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ overwrite: true,
-      zone: [{ name: CFG.dnsHost, type: 'A', ttl: 300, records: [{ content: ip }] }] }),
+const cloudflare = async (path, init = {}) => {
+  const r = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    ...init,
+    signal: AbortSignal.timeout(20_000),
+    headers: { authorization: `Bearer ${CFG.cfToken}`, 'content-type': 'application/json', ...(init.headers || {}) },
   });
-  if (!r.ok) throw new Error(`zone write ${r.status}: ${(await r.text().catch(() => '')).slice(0, 160)}`);
-}
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.success) {
+    const why = (j.errors || []).map(e => e.message).join('; ') || `HTTP ${r.status}`;
+    throw new Error(`Cloudflare ${init.method || 'GET'} ${r.status}: ${why.slice(0, 160)}`);
+  }
+  return j.result;
+};
+
+const cloudflareDns = {
+  name: 'Cloudflare',
+  zoneId: null, recordId: null,
+  async read() {
+    if (!this.zoneId) {
+      const zones = await cloudflare(`/zones?name=${encodeURIComponent(CFG.dnsDomain)}`);
+      if (!zones.length) throw new Error(`no Cloudflare zone for ${CFG.dnsDomain}`);
+      this.zoneId = zones[0].id;
+    }
+    const name = `${CFG.dnsHost}.${CFG.dnsDomain}`;
+    const hits = await cloudflare(`/zones/${this.zoneId}/dns_records?type=A&name=${encodeURIComponent(name)}`);
+    this.recordId = hits[0]?.id || null;
+    return hits[0]?.content || null;
+  },
+  /* PATCH changes only the address of that one record; its proxy setting and TTL stay
+     as they are, and no other record in the zone is part of the request. */
+  async write(ip) {
+    if (!this.recordId) await this.read();
+    if (!this.recordId) throw new Error('record disappeared before it could be updated');
+    await cloudflare(`/zones/${this.zoneId}/dns_records/${this.recordId}`, {
+      method: 'PATCH', body: JSON.stringify({ content: ip }),
+    });
+  },
+};
+
+const DNS_HOSTS = [CFG.hostingerToken && hostingerDns, CFG.cfToken && cloudflareDns].filter(Boolean);
 
 async function tellAdmin(subject, lines) {
   if (!mailReady() || !CFG.adminEmail) return;
@@ -1957,13 +2004,23 @@ async function tellAdmin(subject, lines) {
 
 let dnsSeen = null, dnsTimes = 0, dnsActedAt = 0;
 async function dnsCheck() {
-  if (!CFG.dnsToken || !CFG.dnsDomain || !CFG.dnsHost) return;
+  if (!DNS_HOSTS.length || !CFG.dnsDomain || !CFG.dnsHost) return;
   const ip = await publicIp();
   if (!ip) return console.warn('dns: no agreement on the public address, leaving it alone');
-  let now;
-  try { now = await dnsRecord(); } catch (e) { return console.error('dns:', e.message); }
-  if (now === null) return console.error(`dns: no A record for ${CFG.dnsHost}.${CFG.dnsDomain}`);
-  if (now === ip) { dnsSeen = null; dnsTimes = 0; return; }
+  const name = `${CFG.dnsHost}.${CFG.dnsDomain}`;
+
+  /* A host that can't be read, or has no such record, is left alone - this only ever
+     corrects an existing record, it never creates one. */
+  const stale = [];
+  for (const h of DNS_HOSTS) {
+    let now;
+    try { now = await h.read(); } catch (e) { console.error(`dns (${h.name}):`, e.message); continue; }
+    if (now === null) { console.error(`dns (${h.name}): no A record for ${name}`); continue; }
+    if (now !== ip) stale.push({ h, now });
+  }
+  if (!stale.length) { dnsSeen = null; dnsTimes = 0; return; }
+  const now = stale.map(s => s.now).join(' / ');
+  const where = stale.map(s => s.h.name).join(' and ');
 
   /* believed only after the same new address twice running */
   if (dnsSeen !== ip) { dnsSeen = ip; dnsTimes = 1;
@@ -1972,32 +2029,38 @@ async function dnsCheck() {
   if (Date.now() - dnsActedAt < 3600_000) return;            /* one change an hour at most */
   dnsActedAt = Date.now(); dnsSeen = null; dnsTimes = 0;
 
-  const name = `${CFG.dnsHost}.${CFG.dnsDomain}`;
   if (!CFG.dnsApply) {
-    console.warn(`dns: ${name} should be ${ip} but is ${now} (DNS_APPLY is off)`);
+    console.warn(`dns: ${name} should be ${ip} but is ${now} in ${where} (DNS_APPLY is off)`);
     return tellAdmin(`Your galleries' address has changed`, [
-      `${name} still points at ${now}, but this connection is now on ${ip}.`,
-      `Automatic updating is switched off, so nothing has been changed. Until the record is corrected in Hostinger, gallery links will not work.`,
+      `${name} still points at ${now} in ${where}, but this connection is now on ${ip}.`,
+      `Automatic updating is switched off, so nothing has been changed. Until the record is corrected in ${where}, gallery links may not work.`,
     ]);
   }
-  try {
-    await dnsWrite(ip);
-    console.log(`dns: ${name} ${now} -> ${ip}`);
+  const failed = [];
+  for (const { h, now: was } of stale) {
+    try {
+      await h.write(ip);
+      console.log(`dns (${h.name}): ${name} ${was} -> ${ip}`);
+    } catch (e) {
+      console.error(`dns write failed (${h.name}):`, e.message);
+      failed.push(`${h.name}: ${e.message}`);
+    }
+  }
+  if (!failed.length) {
     await tellAdmin(`Gallery address updated`, [
-      `Your connection moved from ${now} to ${ip}, so ${name} has been repointed.`,
+      `Your connection moved from ${now} to ${ip}, so ${name} has been repointed in ${where}.`,
       `Links should work again within five minutes. Nothing else in the DNS was touched.`,
     ]);
-  } catch (e) {
-    console.error('dns write failed:', e.message);
+  } else {
     await tellAdmin(`Couldn't update your galleries' address`, [
-      `${name} points at ${now} but this connection is now on ${ip}, and the update failed: ${e.message}`,
-      `Gallery links will not work until the record is corrected by hand in Hostinger.`,
+      `${name} points at ${now} but this connection is now on ${ip}, and the update failed - ${failed.join('; ')}`,
+      `Gallery links may not work until the record is corrected by hand.`,
     ]);
   }
 }
-if (CFG.dnsToken && CFG.dnsDomain && CFG.dnsHost) {
-  console.log(`dynamic dns: ${CFG.dnsHost}.${CFG.dnsDomain} every ${CFG.dnsEvery} min`
-    + (CFG.dnsApply ? '' : ' (watching only)'));
+if (DNS_HOSTS.length && CFG.dnsDomain && CFG.dnsHost) {
+  console.log(`dynamic dns: ${CFG.dnsHost}.${CFG.dnsDomain} in ${DNS_HOSTS.map(h => h.name).join(' + ')}`
+    + ` every ${CFG.dnsEvery} min` + (CFG.dnsApply ? '' : ' (watching only)'));
   setTimeout(() => dnsCheck().catch(e => console.error('dns:', e.message)), 20_000);
   setInterval(() => dnsCheck().catch(e => console.error('dns:', e.message)), CFG.dnsEvery * 60_000);
 } else console.log('dynamic dns: off');

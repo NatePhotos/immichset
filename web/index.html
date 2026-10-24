@@ -145,7 +145,11 @@ footer a:hover{color:var(--page-fg)}
   z-index:50;overscroll-behavior:contain;touch-action:none;background:#0d0d0d;display:none;opacity:0;transition:opacity .28s}
 #lb.on{display:block}
 #lb.vis{opacity:1}
-#lb .stage{position:absolute;inset:0;display:grid;place-items:center;padding:62px 70px;touch-action:none;overflow:hidden}
+/* minmax(0,1fr), not the default auto: an auto track grows to the image's natural
+   height, and `max-height:100%` then measures against that inflated track and does
+   nothing, so a tall photo ran off the bottom of the screen. */
+#lb .stage{position:absolute;inset:0;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);
+  place-items:center;padding:62px 70px;touch-action:none;overflow:hidden}
 #lb img,#lb video{max-width:100%;max-height:100%;object-fit:contain;width:auto;height:auto}
 #lb img{transform-origin:50% 50%;will-change:transform}
 #lb .bar{position:absolute;top:0;left:0;right:0;min-height:60px;display:flex;align-items:center;gap:8px;z-index:2;

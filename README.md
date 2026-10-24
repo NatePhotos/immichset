@@ -148,9 +148,18 @@ Optional. A gallery served from a home connection is only reachable while its A 
 matches whatever address the ISP last handed out, and nothing announces a change — the first
 sign is a client saying the link is dead.
 
-Set `HOSTINGER_TOKEN`, `DNS_DOMAIN` and `DNS_HOST` and the app checks every
-`DNS_CHECK_MINUTES` (default 10) and corrects the record itself, emailing you when it does.
+Set `DNS_DOMAIN`, `DNS_HOST` and a token for whoever hosts the domain's DNS —
+`HOSTINGER_TOKEN` or `CLOUDFLARE_TOKEN` — and the app checks every `DNS_CHECK_MINUTES`
+(default 10) and corrects the record itself, emailing you when it does.
 `DNS_APPLY: "off"` watches and emails without changing anything.
+
+Both tokens can be set at once. That is for moving a domain from one to the other: until
+the nameserver change has fully spread, either copy of the record may be the one people
+see, so both are kept right. Remove the old token once the move is done.
+
+The Cloudflare token needs only **Zone → DNS → Edit**, limited to the one domain. The
+record must already exist; the app corrects an address, it never creates a record, and it
+leaves the record's proxy setting as it is.
 
 Guards, because this writes to live DNS: two independent lookups must agree before anything
 is believed, private, loopback and carrier-NAT addresses are refused, a new address must appear
