@@ -177,11 +177,28 @@ without them restores galleries pointing at files that are not there. A cover th
 replaced is kept for as long as the snapshots that reference it. **Immich's own database is separate** —
 enable its scheduled backup too.
 
+## Checking it still works
+
+`smoke.mjs` walks a running instance the way a client would and prints a line per check.
+It needs nothing installed.
+
+```
+ADMIN_TOKEN=... node smoke.mjs https://your-domain
+ADMIN_TOKEN=... node smoke.mjs https://your-domain --write    # also uploads and trashes a photo
+```
+
+It builds a throwaway gallery called `smoke-check` against the smallest album it can find,
+exercises the gates, the sets, the sizes, favourites, ordering, expiry and the backups, then
+removes it — including when a check fails part way. Originals are fetched as a one-kilobyte
+range, so a gallery of video does not mean downloading a gigabyte to test a URL. Exit code 0
+means everything passed.
+
+Run it after any change, and before sending a gallery to a client.
+
 ## Limitations
 
 - No watermarking
 - One admin account
-- No tests
 
 ## Licence
 
