@@ -209,7 +209,11 @@ export function createStore(db, { now = Date.now } = {}) {
       });
     },
     deleteGallery(expected, id) {
-      return mutate(expected, () => { q.phoDelGal.run(id); q.galDel.run(id); });
+      return mutate(expected, () => {
+        for (const p of q.phoAll.all()) if (p.gallery_id === id) clearPhotoRefs(p.id);
+        q.phoDelGal.run(id);
+        q.galDel.run(id);
+      });
     },
     reorderGalleries(expected, ids) {
       return mutate(expected, () => {
@@ -238,7 +242,7 @@ export function createStore(db, { now = Date.now } = {}) {
         ids.forEach((id, i) => q.phoPos.run(i, id));
       });
     },
-    setPhotoImmich: (id, status, assetId, triesAdd) => q.phoImm.run(status, assetId ?? null, triesAdd, id),
+    setPhotoImmich: (id, status, assetId, triesAdd = 0) => q.phoImm.run(status, assetId ?? null, triesAdd, id),
     pendingImmich: () => q.phoPending.all().map(phoDto),
 
     snapshot,

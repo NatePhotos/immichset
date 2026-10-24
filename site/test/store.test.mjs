@@ -89,6 +89,16 @@ test('deleting a gallery deletes its photos', () => {
   assert.equal(st.pagePhotos.length, 0);
 });
 
+test('deleting a gallery clears page references to its photos', () => {
+  const s = fresh();
+  const g = s.addGallery(null, 'G');
+  const p = s.addPhoto(null, g.id, photo('gp'));
+  s.updateGallery(null, g.id, { coverPhotoId: p.id });
+  s.patchSettings(null, { about: { photoId: p.id } });
+  s.deleteGallery(null, g.id);
+  assert.equal(s.getSettings().about.photoId, null);
+});
+
 test('publishes keep a snapshot, restore puts the state back, only 10 kept', () => {
   const s = fresh();
   const g = s.addGallery(null, 'Keep');
