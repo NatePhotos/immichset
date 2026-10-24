@@ -71,6 +71,14 @@ services:
       DNS_APPLY: "on"
       DNS_CHECK_MINUTES: "10"
 
+      # --- public website (optional) ---
+      # Edit and publish a portfolio site from the admin panel's Website section.
+      # Token: Cloudflare > Account API Tokens, permission Account > Cloudflare Pages > Edit.
+      CF_ACCOUNT_ID: ""
+      CF_PAGES_TOKEN: ""
+      CF_PAGES_PROJECT: ""           # the Pages project name, e.g. my-portfolio
+      SITE_URL: ""                   # https://example.com - for links and the uptime check
+
       # --- client sessions ---
       SESSION_DAYS: "30"
     ports:

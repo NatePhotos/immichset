@@ -168,6 +168,18 @@ sent, so neighbouring records — SPF, DKIM, DMARC — are never part of the req
 IPv4-only endpoints: asked over a dual-stack connection, the usual ones answer with an IPv6
 address.
 
+### Public website
+
+Optional. The admin panel's **Website** section edits a simple portfolio site — galleries,
+About and Contact pages, colours and fonts — and publishes it to Cloudflare Pages, so the
+public site never depends on this machine. Uploaded originals also go to Immich, into a
+`Website – <gallery>` album, using the write key.
+
+Set `CF_ACCOUNT_ID`, `CF_PAGES_TOKEN` (an account token with **Cloudflare Pages → Edit**),
+`CF_PAGES_PROJECT` and `SITE_URL`. Without them the section still edits and previews.
+Each publish is kept as a version (the last 10) and can be restored. Failed publishes, photos
+that never reach Immich, and the site going down are emailed to `ADMIN_EMAIL`.
+
 ## Backups
 
 `BACKUP_DIR` enables a daily `VACUUM INTO` snapshot, keeping `BACKUP_KEEP` days. It is consistent

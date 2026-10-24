@@ -10,6 +10,7 @@ import { readdirSync, renameSync, unlinkSync, statSync, copyFileSync } from 'nod
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { createSite } from './site/routes.mjs';
 
 const CFG = {
   port:       Number(process.env.PORT || 3000),
@@ -43,6 +44,10 @@ const CFG = {
   dnsHost:     process.env.DNS_HOST || '',
   dnsApply:   (process.env.DNS_APPLY || 'on').toLowerCase() !== 'off',
   dnsEvery:    Number(process.env.DNS_CHECK_MINUTES || 10),
+  cfAccountId:   process.env.CF_ACCOUNT_ID || '',
+  cfPagesToken:  process.env.CF_PAGES_TOKEN || '',
+  cfPagesProject: process.env.CF_PAGES_PROJECT || '',
+  siteUrl:      (process.env.SITE_URL || '').replace(/\/+$/, ''),
 };
 for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
   if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
@@ -652,9 +657,11 @@ function runBackup(force = false) {
     for (const f of old) { try { unlinkSync(join(CFG.backupDir, f)); } catch {} }
 
     const cov = backupCovers();
+    const siteCopy = site.backup(CFG.backupDir);
     const size = statSync(final).size;
     console.log(`backup written: ${final} (${(size / 1024).toFixed(0)} KB)`
-      + (cov ? `, covers ${cov.held} held${cov.copied ? ` (+${cov.copied})` : ''}${cov.pruned ? ` -${cov.pruned}` : ''}` : ''));
+      + (cov ? `, covers ${cov.held} held${cov.copied ? ` (+${cov.copied})` : ''}${cov.pruned ? ` -${cov.pruned}` : ''}` : '')
+      + (siteCopy ? `, website ${siteCopy.held} photos` : ''));
     return { file: final, size, covers: cov };
   } catch (e) {
     console.error('backup failed:', e.message);
@@ -961,6 +968,9 @@ async function serveGalleryPage(res, gallery) {
   res.end(html);
 }
 
+/* the public website editor: its own tables, files and routes, see site/ */
+const site = createSite({ db, cfg: CFG, json, readJson, adminOk, immich, canUpload, tellAdmin });
+
 const server = createServer(async (req, res) => {
   res.gzOk = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
   const url = new URL(req.url, 'http://x');
@@ -1028,6 +1038,7 @@ const server = createServer(async (req, res) => {
       if (!adminOk(req)) return json(res, 401, { error: 'unauthorized' });
       return await adminRoutes(req, res, path, url);
     }
+    if (path.startsWith('/admin/site-preview/')) return await site.preview(req, res, path);
     if (path === '/admin' || path.startsWith('/admin/')) return await serveStatic(res, 'admin.html');
 
     /* ---- public gallery api: /api/g/<slug>/... ---- */
@@ -1344,6 +1355,7 @@ function gallDto(g) {
 }
 
 async function adminRoutes(req, res, path, url) {
+  if (path === '/api/admin/site' || path.startsWith('/api/admin/site/')) return site.admin(req, res, path, url);
   if (path === '/api/admin/me')
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
@@ -2082,3 +2094,5 @@ setInterval(() => runBackup(), 3600_000);
 /* expiry reminders: shortly after boot, then hourly */
 setTimeout(() => expirySweep().catch(e => console.error('sweep:', e.message)), 60_000);
 setInterval(() => expirySweep().catch(e => console.error('sweep:', e.message)), 3600_000);
+
+site.startJobs();
