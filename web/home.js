@@ -130,7 +130,7 @@ function tone(item, soft){ return item.ok === true ? "ok" : (item.ok === null ||
 function healthHtml(hl){
   var items = [
     { title:"Website", it: hl.site, tone: tone(hl.site) },
-    { title:"NAS and Immich", it: hl.nas, tone: tone(hl.nas) },
+    { title:"Backups", it: hl.nas, tone: tone(hl.nas) },
     { title:"Email", it: hl.email, tone: tone(hl.email, true) }
   ];
   var rank = { ok:0, warn:1, bad:2 }, worst = items[0];

@@ -337,7 +337,10 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     const run = (fn, label) => fn().catch(e => console.error(`site ${label}:`, e.message));
     setTimeout(() => run(watcher.immichTick, 'immich'), 60_000);
     setInterval(() => run(watcher.immichTick, 'immich'), 15 * 60_000);
-    if (cfg.siteUrl) setInterval(() => run(watcher.siteTick, 'site check'), 30 * 60_000);
+    if (cfg.siteUrl) {
+      setTimeout(() => run(watcher.siteTick, 'site check'), 60_000);
+      setInterval(() => run(watcher.siteTick, 'site check'), 30 * 60_000);
+    }
   }
 
   /* what the admin Home page needs to know about the website, cheaply */
