@@ -19,6 +19,7 @@ function ratio(a, b) {
 const cases = [
   ["muted", "bg", 4.5], ["muted", "card", 4.5], ["muted", "panel", 4.5],
   ["fg", "bg", 7], ["fg", "card", 7],
+  ["muted-on-raised", "raised", 4.5], ["placeholder", "input-bg", 4.5], ["fg", "input-bg", 7],
   ["on-primary", "primary", 4.5],
   ["ok", "ok-bg", 4.5], ["warn", "warn-bg", 4.5], ["bad", "bad-bg", 4.5],
 ];
@@ -26,7 +27,6 @@ for (const [fg, bg, min] of cases) {
   test(`--${fg} on --${bg} is at least ${min}:1`, () => {
     assert.ok(v[fg] && v[bg], `missing --${fg} or --${bg} in :root`);
     const r = ratio(v[fg], v[bg]);
-    console.log(`  --${fg} ${v[fg]} on --${bg} ${v[bg]} = ${r.toFixed(2)}`);
     assert.ok(r >= min, `${r.toFixed(2)} < ${min}`);
   });
 }

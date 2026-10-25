@@ -21,7 +21,7 @@ css.textContent = [
 ".wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:14px}",
 ".wp{position:relative;aspect-ratio:1;background:var(--raised);border-radius:6px;overflow:hidden;cursor:grab}",
 ".wp img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}",
-".wp .bd{position:absolute;left:6px;bottom:6px;font-size:11px;background:rgba(0,0,0,.65);color:#fff;border-radius:4px;padding:2px 6px}",
+".wp .bd{position:absolute;left:6px;bottom:6px;font-size:11px;background:rgba(0,0,0,.65);color:var(--on-media,#fff);border-radius:4px;padding:2px 6px}",
 ".wp .bd.cv{background:var(--ok-bg);color:var(--ok)}",
 ".wp .mn{position:absolute;right:4px;top:4px;border:0;border-radius:50%;width:26px;height:26px;background:rgba(20,20,26,.85);color:var(--fg);cursor:pointer;font-size:15px;line-height:1}",
 ".wp .menu{position:absolute;right:4px;top:34px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.5);z-index:2;min-width:150px}",

@@ -35,7 +35,7 @@ say() { echo "  $*"; }
 [ -n "$BASE" ] || die "BASE is not set"
 [ -d "$DEST" ] || die "DEST does not exist or is not mounted: $DEST"
 
-FILES=(server.mjs web/admin.html web/index.html web/site-admin.js
+FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/admin-theme.css
        site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs
        site/assets/site.css site/assets/site.js)
 PREV="$DEST/.previous"
