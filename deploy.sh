@@ -35,7 +35,9 @@ say() { echo "  $*"; }
 [ -n "$BASE" ] || die "BASE is not set"
 [ -d "$DEST" ] || die "DEST does not exist or is not mounted: $DEST"
 
-FILES=(server.mjs web/admin.html web/index.html)
+FILES=(server.mjs web/admin.html web/index.html web/site-admin.js
+       site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs
+       site/assets/site.css site/assets/site.js)
 PREV="$DEST/.previous"
 
 # ---- rollback -------------------------------------------------------------
@@ -95,7 +97,7 @@ mkdir -p "$PREV/web"
 # a partial snapshot mixes one deploy's files with another's, and rolling back
 # to that combination would restore something that never ran.
 for f in "${FILES[@]}"; do
-  [ -f "$DEST/$f" ] && cp "$DEST/$f" "$PREV/$f"
+  [ -f "$DEST/$f" ] && { mkdir -p "$PREV/$(dirname "$f")"; cp "$DEST/$f" "$PREV/$f"; }
 done
 
 CHANGED=0
@@ -103,6 +105,7 @@ for f in "${FILES[@]}"; do
   if cmp -s "$f" "$DEST/$f"; then
     say "unchanged  $f"
   else
+    mkdir -p "$DEST/$(dirname "$f")"
     cp "$f" "$DEST/$f"
     say "copied     $f"
     CHANGED=1
