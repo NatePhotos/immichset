@@ -165,7 +165,7 @@ function sortable(container, itemSel, onDone){
 window.websiteView = function(screen, gid){
   W.active = true;
   W.screen = screen || W.screen || "galleries"; W.gid = gid || null;
-  chrome({ title:"Website", sub: W.liveUrl ? W.liveUrl.replace(/^https?:\/\//, "") : "", back: function(){ W.active = false; listView(); } });
+  chrome({ title:"Website", section:"website", sub: W.liveUrl ? W.liveUrl.replace(/^https?:\/\//, "") : "" });
   $("root").innerHTML = '<div class="wrap" style="padding-top:22px"><div class="spin"></div></div>';
   load().then(render, function(e){ $("root").innerHTML = '<div class="wrap"><p class="empty">'+esc(e.message)+'</p></div>'; });
 };
@@ -399,5 +399,6 @@ function styleScreen(){
   if ($("wlogox")) $("wlogox").onclick = function(){ send("/logo", "DELETE").then(function(r){ if (r) changed("Logo removed"); }); };
 }
 
-$("siteBtn").addEventListener("click", function(){ websiteView("galleries"); });
+/* one entry in the heading's section menu; leaving stops background repaints */
+K.addSection("website", "Website", function(){ websiteView("galleries"); }, function(){ W.active = false; });
 })();

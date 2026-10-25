@@ -40,7 +40,17 @@ a{color:inherit}
 .topin{display:flex;align-items:center;gap:12px;padding:0 18px;height:60px;max-width:1400px;margin:0 auto}
 .back{width:34px;height:34px;display:grid;place-items:center;border:none;background:none;cursor:pointer;color:var(--fg);flex:0 0 auto}
 .back:hover{background:var(--soft);border-radius:50%}
-.ttl{min-width:0;flex:1 1 auto}
+.ttl{min-width:0;flex:1 1 auto;position:relative}
+.secbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:7px;max-width:100%}
+.secbtn svg{flex:0 0 auto;transition:transform .15s}
+.secbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.secmenu{position:absolute;top:calc(100% + 12px);left:-8px;min-width:210px;background:#fff;border:1px solid var(--line);
+  border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:6px;z-index:30}
+.secmenu button{display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;padding:10px 12px;
+  border-radius:6px;font:inherit;font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--fg)}
+.secmenu button:hover{background:var(--soft)}
+.secmenu button.on{font-weight:800}
+.secmenu button.on::after{content:"\2713";float:right;margin-left:14px}
 .ttl h1{margin:0;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ttl .sub{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -321,7 +331,6 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
     <button class="btn sm ghost" id="aPreview" hidden>Preview</button>
     <button class="btn sm" id="aShare" hidden>Copy link</button>
     <button class="btn sm" id="newBtn">New</button>
-    <button class="btn sm ghost" id="siteBtn" hidden>Website</button>
     <button class="link" id="outBtn">Sign out</button>
   </div></div>
   <div id="root"></div>
@@ -456,14 +465,54 @@ function boot(){
   });
 }
 
+/* ---------- sections ---------- */
+/* The heading on a top-level screen is a menu of the panel's sections. Other files add
+   theirs with addSection; leave() runs when you switch away from a section. */
+var SECTIONS = [{ key:"galleries", label:"Galleries", open:function(){ listView(); } }];
+var curSection = "galleries";
+function addSection(key, label, open, leave){ SECTIONS.push({ key:key, label:label, open:open, leave:leave }); }
+function sectionOf(key){ return SECTIONS.filter(function(s){ return s.key === key; })[0]; }
+function goSection(key){
+  closeSecMenu();
+  var cur = sectionOf(curSection), next = sectionOf(key);
+  if (!next || key === curSection) return;
+  if (cur && cur.leave) cur.leave();
+  next.open();
+}
+function closeSecMenu(){
+  var m = document.getElementById("secmenu"); if (m) m.remove();
+  var b = document.getElementById("secBtn"); if (b) b.setAttribute("aria-expanded", "false");
+  document.removeEventListener("click", closeSecMenu);
+}
+function openSecMenu(){
+  var m = document.createElement("div");
+  m.id = "secmenu"; m.className = "secmenu"; m.setAttribute("role", "menu");
+  m.innerHTML = SECTIONS.map(function(s){
+    return '<button role="menuitem" data-sec="'+esc(s.key)+'" class="'+(s.key===curSection?"on":"")+'">'+esc(s.label)+'</button>';
+  }).join("");
+  m.onclick = function(ev){ var k = ev.target.dataset && ev.target.dataset.sec; if (k) goSection(k); };
+  document.querySelector(".ttl").appendChild(m);
+  $("secBtn").setAttribute("aria-expanded", "true");
+  setTimeout(function(){ document.addEventListener("click", closeSecMenu); }, 0);
+}
+
 /* ---------- chrome ---------- */
+var CARET = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" '
+          + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 function chrome(opts){
-  $("tTitle").textContent = opts.title;
+  closeSecMenu();
+  if (opts.section){
+    curSection = opts.section;
+    $("tTitle").innerHTML = '<button class="secbtn" id="secBtn" aria-haspopup="menu" aria-expanded="false" title="Switch section">'
+                          + esc(opts.title) + CARET + '</button>';
+    $("secBtn").onclick = function(ev){ ev.stopPropagation(); if (document.getElementById("secmenu")) closeSecMenu(); else openSecMenu(); };
+  } else {
+    $("tTitle").textContent = opts.title;
+  }
   $("tSub").textContent = opts.sub || "";
   $("backBtn").hidden = !opts.back;
   $("backBtn").onclick = opts.back || null;
   $("newBtn").hidden = !opts.showNew;
-  $("siteBtn").hidden = !opts.showNew;
   var g = opts.gallery;
   $("tPill").hidden = !g;
   if (g){
@@ -483,7 +532,7 @@ function chrome(opts){
 
 /* ---------- gallery list ---------- */
 function listView(){
-  chrome({title:"Galleries", showNew:true});
+  chrome({title:"Galleries", showNew:true, section:"galleries"});
   var h = '<div class="wrap" style="padding-top:26px">';
   if (!S.galleries.length){
     h += '<h3 class="sec">No galleries yet</h3><p class="empty">Create one from an Immich album. '
@@ -1627,7 +1676,7 @@ function editorView(g){
   };
 }
 /* the Website section (site-admin.js) is a separate classic script and uses these */
-window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog };
+window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection };
 })();
 </script>
 <script src="/site-admin.js"></script>
