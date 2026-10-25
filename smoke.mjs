@@ -331,6 +331,13 @@ try {
     is(seen.distinct, 1, 'distinct favourites');
     is(seen.people.length, 1, 'clients with favourites');
   });
+  await check('a download is attributed to the client who made it', async () => {
+    const r = await clientFetch(`/api/g/${SLUG}/img/${first()}?size=web`);
+    is(r.status, 200, 'status');
+    await r.arrayBuffer();
+    const seen = await adminJson(`/api/admin/galleries/${galleryId}/downloads`);
+    ok(seen.people.some(p => p.email && p.ids.includes(first())), 'download listed under a client');
+  });
   await check('a favourite outside the gallery is refused', async () => {
     const r = await clientFetch(`/api/g/${SLUG}/favourites`, {
       method: 'POST', headers: { 'content-type': 'application/json' },

@@ -59,6 +59,8 @@ a{color:inherit}
 @media(max-width:700px){.topin{gap:8px;padding:0 12px}.ttl .sub{display:none}}
 
 /* ---------- layout ---------- */
+html{scrollbar-width:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar{display:none}
 .wrap{max-width:1400px;margin:0 auto;padding:0 18px 90px}
 .detail{display:grid;grid-template-columns:230px minmax(0,1fr);gap:0;max-width:1400px;margin:0 auto}
 .side{border-right:1px solid var(--line);min-height:calc(100vh - 60px);padding-bottom:40px}
@@ -719,7 +721,7 @@ var NAV = {
   email:    { icon:"mail",  label:"Email",
     panes:[["clients","Clients"],["compose","Compose"],["templates","Templates"],["reminders","Expiry reminders"]] },
   activity: { icon:"chart", label:"Activity",
-    panes:[["overview","Overview"],["picks","Favourites"],["people","Who registered"],
+    panes:[["overview","Overview"],["picks","Favourites"],["downloads","Downloads"],["people","Who registered"],
            ["log","Recent activity"],["mail","Emails sent"]] }
 };
 
@@ -792,7 +794,7 @@ function renderPane(){
     general: paneGeneral, access: paneAccess, cover: paneCover, danger: paneDanger,
     clients: paneClients, compose: paneCompose, templates: paneTemplates, reminders: paneReminders,
     overview: paneActivity, people: paneActivity, log: paneActivity, mail: paneActivity,
-    picks: panePicks
+    downloads: paneDownloads, picks: panePicks
   })[S.pane];
   if (f) f(S.g);
 }
@@ -1698,6 +1700,34 @@ function panePicks(g){
           .then(function(){ toast("Asset ids copied"); }, function(){ toast("Couldn't copy"); });
       };
     });
+  });
+}
+
+function paneDownloads(g){
+  $("pane").innerHTML = head("Downloads", "Which photos each client saved. Zips list the photos they contained.")
+    + '<div id="dls"><div class="spin"></div></div>';
+  api("/galleries/"+g.id+"/downloads").then(function(r){
+    if (!r.ok) return ($("dls").innerHTML = '<p class="empty">Couldn\'t load downloads.</p>');
+    var people = (r.body && r.body.people) || [];
+    if (!people.length) return ($("dls").innerHTML = '<p class="empty">Nothing has been downloaded yet.</p>');
+    function thumbs(ids){
+      return '<div class="picksrow">' + ids.map(function(id){
+        return '<div class="p" style="background-image:url(\'' + imgSrc(id) + '\')"></div>'; }).join("") + '</div>';
+    }
+    $("dls").innerHTML = people.map(function(p){
+      var zipN = p.zips.length, h = '<div class="pick"><div class="pickhead"><b>'
+        + esc(p.name || p.email || "Anonymous") + '</b>'
+        + (p.name && p.email ? '<span class="pmail">' + esc(p.email) + '</span>' : '')
+        + '<span class="pn">' + p.ids.length + ' photo' + (p.ids.length===1?"":"s")
+        + (zipN ? ' · ' + zipN + ' zip' + (zipN===1?"":"s") : "") + ' · ' + fmtWhen(p.last) + '</span></div>';
+      if (p.ids.length) h += thumbs(p.ids);
+      p.zips.forEach(function(z){
+        h += '<p class="hint" style="margin:12px 0 8px">Zip, ' + fmtWhen(z.at)
+          + (z.ids ? ' — ' + z.ids.length + ' photo' + (z.ids.length===1?"":"s") : ' — contents not recorded') + '</p>'
+          + (z.ids ? thumbs(z.ids) : "");
+      });
+      return h + '</div>';
+    }).join("");
   });
 }
 

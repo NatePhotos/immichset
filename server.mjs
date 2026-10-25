@@ -190,7 +190,8 @@ CREATE TABLE IF NOT EXISTS settings (
 /* forward-only migrations, for databases created before a column existed */
 for (const [table, col, decl] of [['galleries', 'cover_file', 'TEXT'],
                                   ['galleries', 'cover_focus', 'TEXT'],
-                                  ['galleries', 'sort_order', 'TEXT']]) {
+                                  ['galleries', 'sort_order', 'TEXT'],
+                                  ['events', 'detail', 'TEXT']]) {
   const has = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
   if (!has) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); console.log(`migrated: ${table}.${col}`); }
 }
@@ -221,7 +222,11 @@ const q = {
   regIns:     db.prepare('INSERT INTO registrations (gallery_id,email,name) VALUES (?,?,?)'),
   regById:    db.prepare('SELECT * FROM registrations WHERE id = ?'),
   regList:    db.prepare('SELECT * FROM registrations WHERE gallery_id = ? ORDER BY created_at DESC'),
-  evIns:      db.prepare('INSERT INTO events (gallery_id,reg_id,type,asset_id,ip,ua) VALUES (?,?,?,?,?,?)'),
+  evIns:      db.prepare('INSERT INTO events (gallery_id,reg_id,type,asset_id,ip,ua,detail) VALUES (?,?,?,?,?,?,?)'),
+  dlList:     db.prepare(`SELECT e.type, e.asset_id, e.detail, e.created_at, e.reg_id, r.email, r.name
+                          FROM events e LEFT JOIN registrations r ON r.id = e.reg_id
+                          WHERE e.gallery_id = ? AND e.type IN ('download','download_all')
+                          ORDER BY e.created_at DESC, e.id DESC`),
   evList:     db.prepare('SELECT * FROM events WHERE gallery_id = ? ORDER BY created_at DESC LIMIT ?'),
   evCounts:   db.prepare(`SELECT type, COUNT(*) n FROM events WHERE gallery_id = ? GROUP BY type`),
   gallDel:    db.prepare('DELETE FROM galleries WHERE id = ?'),
@@ -399,10 +404,11 @@ function cookies(req) {
 const clientIp = req =>
   (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
 
-function log(gallery, regId, type, assetId, req) {
+function log(gallery, regId, type, assetId, req, detail) {
   try {
     q.evIns.run(gallery?.id ?? null, regId ?? null, type, assetId ?? null,
-                clientIp(req), (req.headers['user-agent'] || '').slice(0, 300));
+                clientIp(req), (req.headers['user-agent'] || '').slice(0, 300),
+                detail ? JSON.stringify(detail) : null);
   } catch (e) { console.error('log failed', e.message); }
 }
 
@@ -1267,7 +1273,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       list = (await allAssets(gallery)).filter(a => want.has(a.id));
     }
     if (!list.length) return json(res, 400, { error: 'nothing_selected' });
-    log(gallery, who.r, 'download_all', null, req);
+    log(gallery, who.r, 'download_all', null, req, list.map(a => a.id));
     const up = await immich('/api/download/archive', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1869,6 +1875,27 @@ async function adminRoutes(req, res, path, url) {
       ids: q.favOf.all(r.id).map(x => x.asset_id),
     }));
     return json(res, 200, { people, distinct: q.favTotal.get(g.id).n });
+  }
+
+  /* who downloaded what: one entry per client, singles and zips kept apart */
+  const dlM = path.match(/^\/api\/admin\/galleries\/(\d+)\/downloads$/);
+  if (dlM) {
+    const g = q.gallById.get(Number(dlM[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+    const by = new Map();
+    for (const e of q.dlList.all(g.id)) {
+      const k = e.reg_id ?? 0;
+      if (!by.has(k)) by.set(k, { id: e.reg_id, email: e.email || null, name: e.name || null,
+                                  last: e.created_at, ids: [], zips: [] });
+      const p = by.get(k);
+      if (e.type === 'download') { if (e.asset_id && !p.ids.includes(e.asset_id)) p.ids.push(e.asset_id); }
+      else {
+        let ids = null;
+        try { ids = e.detail ? JSON.parse(e.detail) : null; } catch {}
+        p.zips.push({ at: e.created_at, ids });
+      }
+    }
+    return json(res, 200, { people: [...by.values()] });
   }
 
   const st = path.match(/^\/api\/admin\/galleries\/(\d+)\/stats$/);
