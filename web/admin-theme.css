@@ -102,10 +102,11 @@ h3.sec{font-size:16px;font-weight:600;letter-spacing:0;text-transform:none;color
 .field input[type=text],.field input[type=date],.field input[type=password],.field input[type=email],.field select{min-height:36px;padding:9px 12px}
 .field textarea{padding:9px 12px}
 input[type=time],input[type=tel]{min-height:36px;padding:9px 12px}
+input[type=number],input[type=url],input[type=search],input[type=color]{min-height:36px}
 input[type=color]{background:var(--input-bg);border:1px solid var(--input-line);border-radius:var(--r)}
 input[type=file]{color:var(--fg);font-size:14px}
 input[type=file]::file-selector-button{background:var(--btn2);color:var(--fg);border:0;border-radius:var(--r);
-  padding:8px 14px;margin-right:10px;font:inherit;font-size:14px;font-weight:500;cursor:pointer}
+  padding:8px 14px;min-height:36px;margin-right:10px;font:inherit;font-size:14px;font-weight:500;cursor:pointer}
 input[type=file]::file-selector-button:hover{background:var(--btn2-hover)}
 .field input::placeholder,.field textarea::placeholder,.lbox input::placeholder{color:var(--placeholder)}
 .field input:focus,.field select:focus,.field textarea:focus,.lbox input:focus,.tplrow select:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(89,166,255,.3)}
@@ -176,7 +177,7 @@ td{border-bottom:1px solid var(--line)}
 .covnow .shot{background-color:var(--raised);border:1px solid var(--line);border-radius:var(--r)}
 .covwhat{font-size:12px;letter-spacing:.04em}
 .focpick{border:1px solid var(--line);background:var(--raised);border-radius:var(--r);overflow:hidden}
-.focouts span{font-size:11px}
+.focouts span{font-size:11px;color:var(--muted)}
 .focout{background-color:var(--raised);border:1px solid var(--line);border-radius:4px}
 .spin{border-color:var(--line);border-top-color:var(--primary)}
 
@@ -188,7 +189,9 @@ td{border-bottom:1px solid var(--line)}
   .navset .sdots{min-width:44px;min-height:44px}
   .lbdots{position:relative}
   .lbdots::after,.grid .p .dots::after{content:"";position:absolute;inset:-10px}
-  .menu button{min-height:44px}
+  .menu button{min-height:44px;padding:12px 15px}
+  input[type=time],input[type=tel],input[type=number],input[type=url],input[type=search],input[type=color]{min-height:44px}
+  input[type=file]::file-selector-button{min-height:44px}
   .field input[type=text],.field input[type=date],.field input[type=password],.field input[type=email],.field select,.tplrow select{min-height:44px}
   .secmenu button{padding:12px}
 }
