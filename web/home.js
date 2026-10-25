@@ -48,7 +48,7 @@ var DOING = { register:"registered", favourite:"added a favourite", download:"do
 function toGallery(id, tab, pane){ K.openGallery(Number(id), tab, pane); }
 
 /* ---------- data ---------- */
-function refresh(){
+function refresh(quiet){   /* quiet: a toast already said what went wrong */
   var my = ++H.seq;
   return api("/overview").then(function(r){
     if (!H.active || my !== H.seq) return;   /* left Home, or a newer refresh is on its way */
@@ -59,7 +59,7 @@ function refresh(){
     H.data = r.body;
     render();
   }, function(){
-    if (H.active && my === H.seq) toast("Could not load the overview");
+    if (H.active && my === H.seq && !quiet) toast("Could not load the overview");
   });
 }
 
@@ -186,7 +186,12 @@ function render(){
     b.onclick = function(){ toGallery(b.dataset.gal); };
   });
   if ($("hmAll")) $("hmAll").onclick = function(){ H.allAttention = true; render(); };
-  $("hmHealth").onclick = function(){ H.healthOpen = !H.healthOpen; render(); var b = $("hmHealth"); if (b) b.focus(); };
+  /* toggled in place: a full repaint would reset the recent galleries' sideways scroll */
+  $("hmHealth").onclick = function(){
+    H.healthOpen = !H.healthOpen;
+    this.setAttribute("aria-expanded", String(H.healthOpen));
+    this.parentNode.classList.toggle("open", H.healthOpen);
+  };
   $("hmSeeAll").onclick = function(){ K.goSection("galleries"); };
   $("hmNewTile").onclick = function(){ K.openNewGallery(); };
 }
@@ -202,36 +207,44 @@ function act(a, b){
   if (a.action === "gallery" && a.galleryId != null) return toGallery(a.galleryId);
   K.goSection("website");
 }
+var OFFLINE = "Couldn\u2019t reach the server. Try again.";
+/* the request never got an answer: give the button back now (the server may still be away), then repaint */
+function offline(b, label){ b.disabled = false; b.textContent = label; toast(OFFLINE); return refresh(true); }
 /* the same publish endpoint the Website section's Publish button uses */
 function publishSite(b){
-  busy(b, "Publishing…");
+  busy(b, "Publishing\u2026");
   api("/site").then(function(r){
     if (!r.ok || !r.body){ toast((r.body && r.body.error) || "Could not load the website"); return refresh(); }
-    if (!r.body.canPublish){ toast(r.body.missing || "Publishing isn’t set up on this server"); return refresh(); }
+    if (!r.body.canPublish){ toast(r.body.missing || "Publishing isn\u2019t set up on this server"); return refresh(); }
     return api("/site/publish", { method:"POST" }).then(function(p){
-      toast(p.ok ? "Published — live in about a minute" : (p.body && p.body.error) || "That didn’t work");
+      toast(p.ok ? "Published \u2014 live in about a minute" : (p.body && p.body.error) || "That didn\u2019t work");
       return refresh();
     });
-  });
+  }).catch(function(){ offline(b, "Publish"); });
 }
 /* the overview only counts the waiting photos, so find them in the website's state; one failure stops the run */
 function retryImmich(b){
-  busy(b, "Retrying…");
+  busy(b, "Retrying\u2026");
   api("/site").then(function(r){
-    if (!r.ok || !r.body || !r.body.state){ if (H.active) K.goSection("website"); return; }
+    if (!r.ok || !r.body || !r.body.state){
+      toast((r.body && r.body.error) || "Could not load the website");
+      b.disabled = false; b.textContent = "Retry";
+      return;
+    }
     var st = r.body.state, all = (st.pagePhotos || []).slice();
     (st.galleries || []).forEach(function(g){ all = all.concat(g.photos || []); });
     var ids = all.filter(function(p){ return p.immichStatus === "pending"; }).map(function(p){ return p.id; });
     if (!ids.length){ toast("Nothing is waiting any more"); return refresh(); }
     var done = 0;
-    (function next(){
+    function next(){
       if (done === ids.length){ toast(ids.length === 1 ? "Saved to Immich" : "All " + ids.length + " saved to Immich"); return refresh(); }
-      api("/site/photos/" + ids[done] + "/retry", { method:"POST" }).then(function(p){
+      return api("/site/photos/" + ids[done] + "/retry", { method:"POST" }).then(function(p){
         if (!p.ok){ toast((p.body && p.body.error) || "Still failing"); return refresh(); }
-        done++; next();
+        done++; return next();
       });
-    })();
-  });
+    }
+    return next();
+  }).catch(function(){ offline(b, "Retry"); });
 }
 
 K.addSection("home", "Home", K.icons.home, open, leave, 10);
