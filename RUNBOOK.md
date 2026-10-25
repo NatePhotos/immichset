@@ -233,3 +233,17 @@ that never ran. Snapshot the whole set every time.
 
 **`immutable` is right for a photo and wrong for a cover.** A photo is addressed by asset
 id and never changes; a cover is addressed by gallery and can be swapped.
+
+**`position: fixed` is measured against the layout viewport, not what is on screen.** On
+iOS the visible area can sit lower inside that viewport — after a keyboard closes, or when
+locking the body collapses the page — and a full-screen overlay then renders above the
+screen, taking its top bar with it. `visualViewport.offsetTop` is the only thing that
+reports the gap; the lightbox follows it through `--lbt`. The same applies in Chrome on
+iPhone, which is WebKit underneath.
+
+**There are three ways out of the lightbox and they are easy to break.** The X in the top
+bar, Escape on a desktop, and a tap on the dark surround — which works because `.bar` is
+`pointer-events:none`, so a tap over it falls through to the stage, and because the
+`touchmove` handler calls `preventDefault`, so a swipe between photos never synthesises the
+click that would dismiss it. Change either of those and the gesture quietly stops working,
+or starts firing when it should not. `smoke.mjs` asserts all three are still wired.
