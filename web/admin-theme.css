@@ -1,0 +1,176 @@
+/* Dark theme for the admin panel (OpenCull look). Loaded after the inline <style> in admin.html,
+   so same-selector rules here win. */
+:root{color-scheme:dark;
+  --bg:#14141a;--fg:#f2f2f2;--muted:#8c8c8c;--line:#2e2e2e;--soft:#2a2a36;
+  --panel:#1c1c24;--card:#1f1f1f;--raised:#2a2a36;
+  --input-bg:#1a1a20;--input-line:#3a3a44;
+  --primary:#59a6ff;--on-primary:#0b1220;
+  --ok:#7fdcae;--ok-bg:#163a2a;
+  --warn:#f0c46a;--warn-bg:#2a2414;--warn-line:#5a4a1f;
+  --bad:#f27373;--bad-bg:#3a1c1c;
+  --r:8px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-size:14px}
+::selection{background:rgba(89,166,255,.35)}
+
+/* ---------- buttons ---------- */
+.btn{padding:8px 16px;min-height:36px;border:0;border-radius:var(--r);background:var(--primary);color:var(--on-primary);
+  font-size:14px;font-weight:500;letter-spacing:0;text-transform:none;transition:filter .15s,background .15s}
+.btn:hover{opacity:1;filter:brightness(1.08)}
+.btn.ghost{background:#2e2e2e;color:var(--fg);border:0}
+.btn.ghost:hover{background:#383838;filter:none}
+.btn.danger{background:var(--bad-bg);color:var(--bad);border:0}
+.btn.danger:hover{background:#4a2323;filter:none}
+.btn.sm{padding:6px 12px;font-size:13px;min-height:32px}
+.btn[disabled]{opacity:.4}
+.btn:focus-visible,.link:focus-visible,.navitem:focus-visible,.tabs button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.link{color:var(--muted);font-size:13px;letter-spacing:0;text-transform:none}
+.link:hover{color:var(--fg)}
+.setacts .btn.ghost{padding:8px 11px}
+
+/* ---------- top bar ---------- */
+.top{background:rgba(28,28,36,.96);border-bottom:1px solid var(--line)}
+.back:hover{background:var(--raised)}
+.ttl h1{font-size:21px;font-weight:600;letter-spacing:0;text-transform:none}
+.ttl .sub{font-size:12px}
+.secmenu{background:var(--panel);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.secmenu button{font-size:14px;font-weight:500;letter-spacing:0;text-transform:none}
+.secmenu button:hover{background:var(--raised)}
+.secmenu button.on{font-weight:600}
+.pill{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;padding:3px 10px;border:0;background:var(--raised);color:var(--muted)}
+.pill.live{background:var(--ok-bg);color:var(--ok)}
+.pill.draft{background:var(--warn-bg);color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn-line)}
+.pill.exp{background:var(--bad-bg);color:var(--bad)}
+
+/* ---------- layout / side rail ---------- */
+.side{background:var(--panel);border-right:1px solid var(--line)}
+.side .cov{background-color:var(--raised);border-bottom:1px solid var(--line)}
+.tabs{border-bottom:1px solid var(--line)}
+.tabs button{color:var(--muted)}
+.tabs button.on{color:var(--fg);border-bottom-color:var(--primary)}
+.tabs button:hover{color:var(--fg)}
+.navhead{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.navitem{font-size:14px;color:var(--fg);border-radius:0}
+.navitem:hover{background:rgba(255,255,255,.05)}
+.navitem.on{background:var(--raised);font-weight:600}
+.navitem .tag{font-size:11px;font-weight:600;letter-spacing:.04em;background:var(--raised);color:var(--muted)}
+.navitem.on .tag,.navitem .tag.on{background:var(--ok-bg);color:var(--ok)}
+.navset:hover{background:rgba(255,255,255,.05)}
+.navset.on{background:var(--raised)}
+.navset.on .navitem,.navset:hover .navitem{background:transparent}
+.addset{font-size:13px;letter-spacing:0}
+.addset:hover{background:rgba(255,255,255,.05)}
+.dropzone.over{outline-color:var(--primary);background:rgba(89,166,255,.08)}
+.main h2{font-size:16px;font-weight:600;letter-spacing:0}
+.main .lede{font-size:14px}
+@media(max-width:860px){
+  .navitem{font-size:14px;border:1px solid var(--line);border-radius:var(--r);min-height:44px}
+  .navitem.on{border-color:var(--primary)}
+  .navset{border:1px solid var(--line);border-radius:var(--r)}
+  .navset.on{border-color:var(--primary)}
+  .addset{border:1px dashed var(--line);border-radius:var(--r);min-height:44px}
+}
+
+/* ---------- cards ---------- */
+h3.sec{font-size:12px;font-weight:600;letter-spacing:.08em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.card:hover{border-color:var(--primary)}
+.card .ph{background-color:var(--raised)}
+.card h3{font-size:15px;font-weight:600;letter-spacing:0;text-transform:none}
+.card .sub{font-size:12px}
+.tag2{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;padding:2px 9px;border:0;border-radius:999px;background:var(--raised);color:var(--muted)}
+.tag2.live{background:var(--ok-bg);color:var(--ok)}
+.tag2.draft{background:var(--warn-bg);color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn-line)}
+.tag2.exp{background:var(--bad-bg);color:var(--bad)}
+.stats{font-size:12px}
+
+/* ---------- forms ---------- */
+.field label{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted)}
+.field input[type=text],.field input[type=date],.field input[type=password],.field input[type=email],.field select,.field textarea,
+.lbox input,.tplrow select,input[type=number],input[type=url],input[type=search]{
+  background:var(--input-bg);border:1px solid var(--input-line);color:var(--fg);border-radius:var(--r);font-size:14px}
+.field input[type=text],.field input[type=date],.field input[type=password],.field input[type=email],.field select{min-height:36px;padding:9px 12px}
+.field textarea{padding:9px 12px}
+.field input::placeholder,.field textarea::placeholder,.lbox input::placeholder{color:#6e6e78}
+.field input:focus,.field select:focus,.field textarea:focus,.lbox input:focus,.tplrow select:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(89,166,255,.3)}
+.hint{font-size:12px;color:var(--muted)}
+.toggle{border-top:1px solid var(--line)}
+.toggle:last-of-type{border-bottom:1px solid var(--line)}
+.toggle input{accent-color:var(--primary)}
+.toggle .t{font-size:14px;font-weight:500}
+.toggle .d{font-size:12px}
+.picker{background:var(--input-bg);border:1px solid var(--line);border-radius:var(--r)}
+.picker .p{background-color:var(--raised);border-radius:4px}
+.picker .p.on{border-color:var(--primary)}
+
+/* ---------- uploads ---------- */
+.drop{border:1.5px dashed var(--input-line);background:var(--card);border-radius:10px}
+.drop.on{border-color:var(--primary);background:rgba(89,166,255,.08)}
+.drop p{font-size:14px}
+.qhead{font-size:12px;letter-spacing:.04em}
+.qpct{color:var(--fg)}
+.qrow{border-top:1px solid var(--line);font-size:13px}
+.qbar{background:var(--line);border-radius:3px}
+.qbar i{background:var(--primary)}
+.qrow.fail .qbar i{background:var(--bad)}
+
+/* ---------- compose ---------- */
+.pane{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.pane h4{font-size:11px;letter-spacing:.1em}
+.pane iframe{background:#fff;border:1px solid var(--line);border-radius:var(--r)}
+.subjline{background:var(--input-bg);border:1px solid var(--input-line);border-bottom:none;color:var(--fg);
+  border-radius:var(--r) var(--r) 0 0;font-size:14px}
+.vars code{background:var(--raised);color:var(--fg);border-radius:4px}
+.tplrow select{min-height:36px}
+
+/* ---------- data ---------- */
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.kpi b{color:var(--fg)}
+.kpi span{font-size:11px;letter-spacing:.08em}
+table{font-size:14px}
+th{font-size:11px;letter-spacing:.08em;border-bottom:1px solid var(--line)}
+td{border-bottom:1px solid var(--line)}
+.empty{font-size:14px}
+
+/* ---------- login ---------- */
+.lbox h1{font-size:21px;font-weight:600;letter-spacing:0;text-transform:none}
+.lbox input{padding:12px 14px;min-height:44px}
+.lbox .btn{min-height:44px}
+
+#toast{background:var(--raised);color:var(--fg);border:1px solid var(--input-line);border-radius:var(--r);
+  font-size:14px;letter-spacing:0;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+#toast button{color:var(--primary)}
+
+/* ---------- photo grid ---------- */
+.grid .p{background-color:var(--raised);border-radius:4px}
+.grid .p.on{border-color:var(--primary)}
+.grid .p .tick{background:rgba(20,20,26,.7);border:1px solid rgba(255,255,255,.6)}
+.grid .p.on .tick{background:var(--primary);border-color:var(--primary);box-shadow:inset 0 0 0 3px var(--on-primary)}
+.bar .count{font-size:12px}
+.pick{border-top:1px solid var(--line)}
+.pickhead .pmail{font-size:12px}
+.pickhead .pn{font-size:12px;letter-spacing:.04em}
+.picksrow .p{background-color:var(--raised);border-radius:4px}
+
+.menu{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 12px 34px rgba(0,0,0,.55)}
+.menu button{font-size:14px}
+.menu button:hover{background:var(--raised)}
+
+/* ---------- cover ---------- */
+.covnow .shot{background-color:var(--raised);border:1px solid var(--line);border-radius:var(--r)}
+.covwhat{font-size:12px;letter-spacing:.04em}
+.focpick{border:1px solid var(--line);background:var(--raised);border-radius:var(--r);overflow:hidden}
+.focouts span{font-size:11px}
+.focout{background-color:var(--raised);border:1px solid var(--line);border-radius:4px}
+.spin{border-color:var(--line);border-top-color:var(--primary)}
+
+/* ---------- small screens: 44px controls ---------- */
+@media(max-width:899px){
+  .btn{min-height:44px}
+  .btn.sm{min-height:44px;padding:8px 14px}
+  .link{min-height:44px}
+  .field input[type=text],.field input[type=date],.field input[type=password],.field input[type=email],.field select,.tplrow select{min-height:44px}
+  .menu button{padding:12px 15px}
+  .secmenu button{padding:12px}
+}
