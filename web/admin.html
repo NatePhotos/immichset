@@ -319,19 +319,34 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 </div>
 
 <div id="app" hidden>
-  <div class="top"><div class="topin">
-    <button class="back" id="backBtn" hidden aria-label="Back">
-      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8"
-        stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
-    </button>
-    <div class="ttl"><h1 id="tTitle">Galleries</h1><div class="sub" id="tSub"></div></div>
-    <span class="pill" id="tPill" hidden></span>
-    <button class="btn sm ghost" id="aPreview" hidden>Preview</button>
-    <button class="btn sm" id="aShare" hidden>Copy link</button>
-    <button class="btn sm" id="newBtn">New</button>
-    <button class="link" id="outBtn">Sign out</button>
-  </div></div>
-  <div id="root"></div>
+  <nav id="sidebar" aria-label="Sections">
+    <div class="sbname" id="sbName">Admin</div>
+    <div class="sbitems" id="sbItems"></div>
+    <button type="button" class="sbitem sbout" id="outBtn"></button>
+  </nav>
+  <div id="appmain">
+    <div class="top" id="tBar"><div class="topin">
+      <button class="back" id="backBtn" hidden aria-label="Back">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="ttl">
+        <div class="crumb" id="tCrumb" hidden></div>
+        <div class="ttlrow"><span class="tcov" id="tCov" hidden></span><h1 id="tTitle">Galleries</h1><span class="pill" id="tPill" hidden></span></div>
+        <div class="sub" id="tSub"></div>
+      </div>
+      <div class="tacts" id="tActs"></div>
+    </div></div>
+    <div id="root"></div>
+  </div>
+  <nav id="tabbar" aria-label="Sections"></nav>
+  <div id="moresheet" hidden>
+    <div class="mshade" id="msShade"></div>
+    <div class="mpanel" role="dialog" aria-label="All sections">
+      <div class="msitems" id="msItems"></div>
+      <button type="button" class="msitem msout" id="msOut"></button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -350,6 +365,19 @@ var I = {
   chart:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>',
   image:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.6" cy="10" r="1.6"/><path d="M3.5 17l5-4.6 4 3.4 3.2-2.6 4.8 4"/></svg>',
   up:   '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>'
+};
+/* the shell's icons (sidebar, bottom bar, More sheet, header actions); trusted constants, never user text */
+function svg20(d){ return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" '
+  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; }
+var IC = {
+  photo:    svg20('<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8.5"/>'),
+  globe:    svg20('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/>'),
+  home:     svg20('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/>'),
+  users:    svg20('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/>'),
+  mail:     svg20('<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'),
+  settings: svg20('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>'),
+  dots:     svg20('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>'),
+  logout:   svg20('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/>')
 };
 
 function toast(t, action){
@@ -397,6 +425,7 @@ function takeMe(b){
   S.uploadMaxVideoMb = (b && b.uploadMaxVideoMb) || 4096;
   S.defaultSort = (b && b.defaultSort) === "oldest" ? "oldest" : "newest";
   S.caps        = (b && b.caps) || {};
+  S.brandName   = (b && b.brandName) || "";
 }
 var challenge = null;
 
@@ -453,64 +482,97 @@ $("loginForm").addEventListener("submit", function(e){
 });
 function resetLogin(){ challenge=null; clearChallenge(); $("aEmail").hidden=false; $("aPass").hidden=false;
   $("aCode").hidden=true; $("aCode").value=""; $("aBtn").textContent="Sign in"; $("loginErr").style.color=""; }
-$("outBtn").addEventListener("click", function(){ post("/logout").then(function(){ location.reload(); }); });
+function signOut(){ post("/logout").then(function(){ location.reload(); }); }
+$("outBtn").addEventListener("click", signOut);
+$("msOut").addEventListener("click", signOut);
 
 function boot(){
   $("app").hidden=false;
+  renderNav();
   Promise.all([api("/galleries"), api("/albums")]).then(function(rs){
     S.galleries = rs[0].body || []; S.albums = rs[1].body || [];
-    listView();
+    SECTIONS[0].open();   /* the lowest-order section; Galleries until a Home section exists */
   });
 }
 
 /* ---------- sections ---------- */
-/* The heading on a top-level screen is a menu of the panel's sections. Other files add
-   theirs with addSection; leave() runs when you switch away from a section. */
-var SECTIONS = [{ key:"galleries", label:"Galleries", open:function(){ listView(); } }];
+/* Every section of the panel sits in the sidebar (wide screens) and the bottom bar with its More
+   sheet (phones). Other files add theirs with addSection; leave() runs when you switch away from
+   a section, and sections are listed by order (lowest first; boot opens the first one). */
+var SECTIONS = [{ key:"galleries", label:"Galleries", icon:IC.photo, order:20, n:0, open:function(){ listView(); } }];
 var curSection = "galleries";
-function addSection(key, label, open, leave){ SECTIONS.push({ key:key, label:label, open:open, leave:leave }); }
+function addSection(key, label, icon, open, leave, order){
+  SECTIONS.push({ key:key, label:label, icon:icon || "", open:open, leave:leave,
+                  order: typeof order === "number" ? order : 100, n:SECTIONS.length });
+  SECTIONS.sort(function(x, y){ return (x.order - y.order) || (x.n - y.n); });
+  renderNav();
+}
 function sectionOf(key){ return SECTIONS.filter(function(s){ return s.key === key; })[0]; }
+/* picking the section you are in takes you to its top screen (a gallery back to the list) */
 function goSection(key){
-  closeSecMenu();
   var cur = sectionOf(curSection), next = sectionOf(key);
-  if (!next || key === curSection) return;
-  if (cur && cur.leave) cur.leave();
+  if (!next) return;
+  if (key !== curSection && cur && cur.leave) cur.leave();
   next.open();
 }
-function closeSecMenu(){
-  var m = document.getElementById("secmenu"); if (m) m.remove();
-  var b = document.getElementById("secBtn"); if (b) b.setAttribute("aria-expanded", "false");
-  document.removeEventListener("click", closeSecMenu);
+function navItem(s, cls){
+  var on = s.key === curSection;
+  return '<button type="button" class="'+cls+(on?" on":"")+'" data-sec="'+esc(s.key)+'"'+(on?' aria-current="page"':'')+'>'
+       + (s.icon || "") + '<span>'+esc(s.label)+'</span></button>';
 }
-function openSecMenu(){
-  var m = document.createElement("div");
-  m.id = "secmenu"; m.className = "secmenu"; m.setAttribute("role", "menu");
-  m.innerHTML = SECTIONS.map(function(s){
-    return '<button role="menuitem" data-sec="'+esc(s.key)+'" class="'+(s.key===curSection?"on":"")+'">'+esc(s.label)+'</button>';
-  }).join("");
-  m.onclick = function(ev){ var k = ev.target.dataset && ev.target.dataset.sec; if (k) goSection(k); };
-  document.querySelector(".ttl").appendChild(m);
-  $("secBtn").setAttribute("aria-expanded", "true");
-  setTimeout(function(){ document.addEventListener("click", closeSecMenu); }, 0);
+function renderNav(){
+  var shown = SECTIONS.slice(0, 3);
+  var inBar = shown.some(function(s){ return s.key === curSection; });
+  $("sbName").textContent = S.brandName || "Admin";
+  $("sbItems").innerHTML = SECTIONS.map(function(s){ return navItem(s, "sbitem"); }).join("");
+  $("msItems").innerHTML = SECTIONS.map(function(s){ return navItem(s, "msitem"); }).join("");
+  $("tabbar").innerHTML = shown.map(function(s){ return navItem(s, "tbitem"); }).join("")
+    + '<button type="button" class="tbitem'+((!inBar || !$("moresheet").hidden)?" on":"")+'" id="tbMore" aria-haspopup="dialog">'
+    + IC.dots + '<span>More</span></button>';
 }
+function navClick(ev){
+  var b = ev.target.closest("[data-sec]"); if (!b) return;
+  closeMore(); goSection(b.dataset.sec);
+}
+function moreKey(ev){ if (ev.key === "Escape") closeMore(); }
+function openMore(){
+  $("moresheet").hidden = false; renderNav();
+  document.addEventListener("keydown", moreKey);
+  var f = $("msItems").querySelector("button"); if (f) f.focus();
+}
+function closeMore(){
+  if ($("moresheet").hidden) return;
+  $("moresheet").hidden = true; renderNav();
+  document.removeEventListener("keydown", moreKey);
+}
+$("outBtn").innerHTML = IC.logout + '<span>Sign out</span>';
+$("msOut").innerHTML = IC.logout + '<span>Sign out</span>';
+$("sbItems").onclick = navClick;
+$("msItems").onclick = navClick;
+$("msShade").onclick = closeMore;
+$("tabbar").onclick = function(ev){
+  if (ev.target.closest("#tbMore")) return $("moresheet").hidden ? openMore() : closeMore();
+  navClick(ev);
+};
 
 /* ---------- chrome ---------- */
-var CARET = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" '
-          + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+/* The page header. opts: title; crumb (small line above the title, a link back when back is set);
+   summary (or sub) under the title; back (function); gallery (status pill and cover thumbnail);
+   actions [{label, icon, primary, onClick, id}] right-aligned — on phones only the primary stays,
+   the rest go in a "⋯" menu; section (which sidebar item is lit; sub-screens pass their parent). */
 function chrome(opts){
-  closeSecMenu();
-  if (opts.section){
-    curSection = opts.section;
-    $("tTitle").innerHTML = '<button class="secbtn" id="secBtn" aria-haspopup="menu" aria-expanded="false" title="Switch section">'
-                          + esc(opts.title) + CARET + '</button>';
-    $("secBtn").onclick = function(ev){ ev.stopPropagation(); if (document.getElementById("secmenu")) closeSecMenu(); else openSecMenu(); };
-  } else {
-    $("tTitle").textContent = opts.title;
+  if (opts.section) curSection = opts.section;
+  var back = opts.back || null, crumb = $("tCrumb");
+  crumb.hidden = !opts.crumb;
+  if (opts.crumb){
+    crumb.innerHTML = (back ? '<button type="button" class="crumbbtn" id="crumbBtn">'+esc(opts.crumb)+'</button>' : esc(opts.crumb)) + ' /';
+    if (back) $("crumbBtn").onclick = back;
   }
-  $("tSub").textContent = opts.sub || "";
-  $("backBtn").hidden = !opts.back;
-  $("backBtn").onclick = opts.back || null;
-  $("newBtn").hidden = !opts.showNew;
+  $("tBar").classList.toggle("hascrumb", !!(opts.crumb && back));
+  $("tTitle").textContent = opts.title;
+  $("tSub").textContent = opts.summary || opts.sub || "";
+  $("backBtn").hidden = !back;
+  $("backBtn").onclick = back;
   var g = opts.gallery;
   $("tPill").hidden = !g;
   if (g){
@@ -518,19 +580,40 @@ function chrome(opts){
     var txt = g.expired ? "Expired" : (g.publishedAt ? "Live" : "Draft");
     $("tPill").className = "pill " + cls; $("tPill").textContent = txt;
   }
-  $("aPreview").hidden = !g; $("aShare").hidden = !g;
-  if (g){
-    $("aPreview").onclick = function(){ window.open(galleryUrl(g), "_blank", "noopener"); };
-    $("aShare").onclick = function(){
+  var cov = g ? coverOf(g) : "";
+  $("tCov").hidden = !cov;
+  $("tCov").style.cssText = cov ? coverCss(g) : "";
+  var acts = opts.actions || [], more = [];
+  $("tActs").innerHTML = acts.map(function(a, i){
+    if (!a.primary) more.push(a);
+    return '<button type="button" class="btn sm '+(a.primary?"pri":"ghost sec")+'" data-act="'+i+'"'
+         + (a.id ? ' id="'+esc(a.id)+'"' : '') + '>' + (a.icon || "") + '<span>'+esc(a.label)+'</span></button>';
+  }).join("") + (more.length ? '<button type="button" class="btn sm ghost tmore" id="tMore" aria-label="More actions" aria-haspopup="menu">'+IC.dots+'</button>' : '');
+  Array.prototype.forEach.call($("tActs").querySelectorAll("[data-act]"), function(b){
+    var a = acts[Number(b.dataset.act)];
+    b.onclick = function(){ a.onClick(); };
+  });
+  if (more.length) $("tMore").onclick = function(){
+    popMenu($("tMore"), more.map(function(a){ return { label:a.label, run:a.onClick }; }));
+  };
+  renderNav();
+}
+function galleryChrome(g){
+  chrome({title:g.title, crumb:"Galleries", summary:g.subtitleText || galleryUrl(g).replace(/^https?:\/\//,""),
+          back:listView, gallery:g, section:"galleries", actions:[
+    { label:"Preview", onClick:function(){ window.open(galleryUrl(g), "_blank", "noopener"); } },
+    { label:"Copy link", primary:true, onClick:function(){
       navigator.clipboard.writeText(galleryUrl(g)).then(function(){ toast("Link copied"); },
         function(){ toast(galleryUrl(g)); });
-    };
-  }
+    } }
+  ]});
 }
 
 /* ---------- gallery list ---------- */
 function listView(){
-  chrome({title:"Galleries", showNew:true, section:"galleries"});
+  var n = S.galleries.length;
+  chrome({title:"Galleries", section:"galleries", summary: n ? n + (n === 1 ? " gallery" : " galleries") : "",
+          actions:[{ label:"New gallery", primary:true, onClick:function(){ editorView(null); } }]});
   var h = '<div class="wrap" style="padding-top:26px">';
   if (!S.galleries.length){
     h += '<h3 class="sec">No galleries yet</h3><p class="empty">Create one from an Immich album. '
@@ -556,7 +639,6 @@ function listView(){
     c.onclick = function(){ openGallery(Number(c.dataset.id)); };   /* photos first, like Pixieset */
   });
 }
-$("newBtn").addEventListener("click", function(){ editorView(null); });
 
 /* ---------- gallery detail shell ---------- */
 var NAV = {
@@ -583,13 +665,15 @@ function openGallery(id, tab, pane){
   var g = S.galleries.filter(function(x){return x.id===id;})[0];
   if (!g) return listView();
   S.g = g; S.tab = tab || "photos"; S.pane = pane || firstPane(S.tab);
-  chrome({title:g.title, sub:g.subtitleText || galleryUrl(g).replace(/^https?:\/\//,""), back:listView, gallery:g});
+  galleryChrome(g);
   renderShell();
 }
 function renderShell(){
+  if (curSection !== "galleries" || !S.g) return;   /* a late refresh must not paint over another section */
   var g = S.g;
   var tabs = Object.keys(NAV).map(function(k){
-    return '<button data-tab="'+k+'" class="'+(k===S.tab?"on":"")+'" aria-label="'+NAV[k].label+'">'+I[NAV[k].icon]+'</button>';
+    return '<button type="button" role="tab" data-tab="'+k+'" class="'+(k===S.tab?"on":"")+'" aria-selected="'+(k===S.tab)+'">'
+         + esc(NAV[k].label)+'</button>';
   }).join("");
   var sets = NAV[S.tab].sets;
   var items = panesOf(S.tab).map(function(p){
@@ -602,15 +686,14 @@ function renderShell(){
   if (sets) items += '<button class="addset" id="addSet">+ Add set</button>';
   $("root").innerHTML =
       '<div class="detail">'
+    +   '<div class="gtabs" role="tablist">'+tabs+'</div>'
     +   '<div class="side">'
-    +     '<div class="cov" style="' + coverCss(g) + '"></div>'
-    +     '<div class="tabs">'+tabs+'</div>'
     +     '<div class="navhead">'+esc(NAV[S.tab].label)+'</div>'
     +     '<div class="navrow">'+items+'</div>'
     +   '</div>'
     +   '<div class="main" id="pane"><div class="spin"></div></div>'
     + '</div>';
-  Array.prototype.forEach.call(document.querySelectorAll(".tabs button"), function(b){
+  Array.prototype.forEach.call(document.querySelectorAll(".gtabs button"), function(b){
     b.onclick = function(){ S.tab = b.dataset.tab; S.pane = firstPane(S.tab); renderShell(); };
   });
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"), function(b){
@@ -630,6 +713,7 @@ var OVERLAY = null;
 function renderPane(){
   if (OVERLAY) OVERLAY.close();
   var m = document.getElementById("pmenu"); if (m) m.remove();
+  if (!$("pane")) return;
   if (S.pane && S.pane.indexOf("set:") === 0) return paneSet(S.g, Number(S.pane.slice(4)));
   if (S.tab === "photos") return paneNoSets(S.g);
   var f = ({
@@ -656,7 +740,7 @@ function save(patch, msg){
     if (!r.ok) { toast((r.body&&r.body.error)||"Couldn't save"); return false; }
     toast(msg || "Saved");
     return new Promise(function(res){ refreshGalleries(function(){
-      chrome({title:S.g.title, sub:S.g.subtitleText || galleryUrl(S.g).replace(/^https?:\/\//,""), back:listView, gallery:S.g});
+      galleryChrome(S.g);
       res(true);
     }); });
   });
@@ -1597,7 +1681,8 @@ function paneActivity(g){
 /* ---------- create / edit ---------- */
 function editorView(g){
   var isNew = !g;
-  chrome({title:isNew?"New gallery":"Edit", back:function(){ isNew ? listView() : openGallery(g.id); }});
+  chrome({title:isNew?"New gallery":"Edit", crumb:isNew?"Galleries":g.title, section:"galleries",
+          back:function(){ isNew ? listView() : openGallery(g.id); }});
   $("root").innerHTML = '<div class="wrap" style="padding-top:26px">'
     + '<div class="field"><label>Photos</label><select id="fAlbum">'
     +   (S.canUpload ? '<option value="__new__">Start a new album and upload</option>' : '')
@@ -1674,7 +1759,7 @@ function editorView(g){
   };
 }
 /* the Website section (site-admin.js) is a separate classic script and uses these */
-window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection };
+window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC };
 })();
 </script>
 <script src="/site-admin.js"></script>

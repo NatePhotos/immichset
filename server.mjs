@@ -1357,7 +1357,7 @@ function gallDto(g) {
 async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/site' || path.startsWith('/api/admin/site/')) return site.admin(req, res, path, url);
   if (path === '/api/admin/me')
-    return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null,
+    return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null, brandName: CFG.brandName || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
                             uploadMaxVideoMb: CFG.uploadMaxVideoMb,
                             defaultSort: (q.setGet.get('default_sort') || {}).value === 'oldest' ? 'oldest' : 'newest',

@@ -7,8 +7,6 @@ var W = { state:null, rev:0, screen:"galleries", gid:null, publishes:[], dirty:f
 
 var css = document.createElement("style");
 css.textContent = [
-".wbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0 16px;border-bottom:1px solid var(--line);margin-bottom:20px}",
-".wbar .st{flex:1;font-size:14px;color:var(--muted)}.wbar .st b{color:var(--warn);font-weight:600}",
 ".wtabs{display:flex;gap:4px;margin-bottom:20px;flex-wrap:wrap;border-bottom:1px solid var(--line)}",
 ".wtabs button{border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);padding:10px 14px;min-height:44px;cursor:pointer;font:inherit;font-size:14px}",
 ".wtabs button:hover{color:var(--fg)}",
@@ -65,10 +63,14 @@ function settled(){
   if (!W.active) return;
   if (!W.dirtyForm || (W.screen !== "pages" && W.screen !== "style")){ changed(); return; }
   load().then(function(){
-    var st = document.querySelector(".wbar .st"); if (st) st.innerHTML = statusHtml();
+    var st = document.querySelector(".wbar"); if (st) st.outerHTML = statusHtml();
   }, function(e){ toast(e.message); });
 }
-function statusHtml(){ return W.dirty ? "<b>Unpublished changes</b>" : "Everything is live"; }
+/* the status banner under the header: warn while there is something to publish */
+function statusHtml(){
+  return W.dirty ? '<div class="wbar warn" role="status"><b>Unpublished changes</b> — publish to put them on the live site</div>'
+                 : '<div class="wbar ok" role="status">Everything is live</div>';
+}
 function gal(id){ return (W.state.galleries || []).filter(function(g){ return g.id === id; })[0]; }
 function allPhotos(){ return W.state.pagePhotos.concat.apply(W.state.pagePhotos, W.state.galleries.map(function(g){ return g.photos; })); }
 function photoById(id){ return allPhotos().filter(function(p){ return p.id === id; })[0]; }
@@ -166,28 +168,34 @@ function sortable(container, itemSel, onDone){
 window.websiteView = function(screen, gid){
   W.active = true;
   W.screen = screen || W.screen || "galleries"; W.gid = gid || null;
-  chrome({ title:"Website", section:"website", sub: W.liveUrl ? W.liveUrl.replace(/^https?:\/\//, "") : "" });
+  wchrome();
   $("root").innerHTML = '<div class="wrap" style="padding-top:22px"><div class="spin"></div></div>';
   load().then(render, function(e){ $("root").innerHTML = '<div class="wrap"><p class="empty">'+esc(e.message)+'</p></div>'; });
 };
+/* the header: Preview, Versions and Publish are its actions; publishing that isn't set up says why */
+function wchrome(){
+  chrome({ title:"Website", section:"website", summary: W.liveUrl ? W.liveUrl.replace(/^https?:\/\//, "") : "",
+    actions: [
+      { label:"Preview", onClick:function(){ window.open("/admin/site-preview/", "_blank", "noopener"); } },
+      { label: W.showVersions ? "Hide versions" : "Versions", onClick:function(){ W.showVersions = !W.showVersions; render(); } },
+      { label:"Publish", primary:true, id:"wpub", onClick:function(){
+        if (!W.canPublish) return toast(W.missing || "Publishing isn’t set up on this server");
+        publish();
+      } }
+    ] });
+}
 function render(){
   if (!W.active) return;
+  wchrome();
   var tabs = [["galleries","Galleries"],["pages","Pages"],["style","Style"]].map(function(t){
     return '<button data-s="'+t[0]+'" class="'+(W.screen===t[0]?"on":"")+'">'+t[1]+'</button>'; }).join("");
-  var status = statusHtml();
   $("root").innerHTML = '<div class="wrap" style="padding-top:22px">'
-    + '<div class="wbar"><span class="st">'+status+'</span>'
-    +   '<button class="btn sm ghost" id="wprev">Preview</button>'
-    +   '<button class="btn sm ghost" id="wvers">Versions</button>'
-    +   '<button class="btn sm" id="wpub"'+(W.canPublish?"":" disabled title=\""+esc(W.missing||"")+"\"")+'>Publish</button></div>'
+    + statusHtml()
     + (W.showVersions ? versionsHtml() : "")
     + '<div class="wtabs">'+tabs+'</div><div id="wbody"></div></div>';
   Array.prototype.forEach.call(document.querySelectorAll(".wtabs button"), function(b){
     b.onclick = function(){ W.screen = b.dataset.s; W.gid = null; render(); };
   });
-  $("wprev").onclick = function(){ window.open("/admin/site-preview/", "_blank", "noopener"); };
-  $("wvers").onclick = function(){ W.showVersions = !W.showVersions; render(); };
-  $("wpub").onclick = publish;
   wireVersions();
   W.dirtyForm = false;
   $("wbody").addEventListener("input", function(){ W.dirtyForm = true; });
@@ -196,10 +204,10 @@ function render(){
   return W.gid ? galleryScreen(gal(W.gid)) : galleriesScreen();
 }
 function publish(){
-  var b = $("wpub"); b.disabled = true; b.textContent = "Publishing…";
+  var b = $("wpub"); if (b){ b.disabled = true; b.textContent = "Publishing…"; }
   send("/publish", "POST").then(function(r){
     if (r) changed("Published — live in about a minute");
-    else { b.disabled = false; b.textContent = "Publish"; }
+    else if ((b = $("wpub"))){ b.disabled = false; b.textContent = "Publish"; }
   });
 }
 function versionsHtml(){
@@ -401,5 +409,5 @@ function styleScreen(){
 }
 
 /* one entry in the heading's section menu; leaving stops background repaints */
-K.addSection("website", "Website", function(){ websiteView("galleries"); }, function(){ W.active = false; });
+K.addSection("website", "Website", K.icons.globe, function(){ websiteView("galleries"); }, function(){ W.active = false; }, 30);
 })();

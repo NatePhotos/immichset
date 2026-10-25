@@ -40,10 +40,6 @@ body{font-size:14px}
 .back:hover{background:var(--raised)}
 .ttl h1{font-size:21px;font-weight:600;letter-spacing:0;text-transform:none}
 .ttl .sub{font-size:12px}
-.secmenu{background:var(--panel);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.5)}
-.secmenu button{font-size:14px;font-weight:500;letter-spacing:0;text-transform:none}
-.secmenu button:hover{background:var(--raised)}
-.secmenu button.on{font-weight:600}
 .pill{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;padding:3px 10px;border:0;background:var(--raised);color:var(--muted-on-raised)}
 .pill.live{background:var(--ok-bg);color:var(--ok)}
 .pill.draft{background:var(--warn-bg);color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn-line)}
@@ -193,5 +189,100 @@ td{border-bottom:1px solid var(--line)}
   input[type=time],input[type=tel],input[type=number],input[type=url],input[type=search],input[type=color]{min-height:44px}
   input[type=file]::file-selector-button{min-height:44px}
   .field input[type=text],.field input[type=date],.field input[type=password],.field input[type=email],.field select,.tplrow select{min-height:44px}
-  .secmenu button{padding:12px}
+}
+
+/* =====================================================================================
+   shell: sidebar (>= 900px), bottom bar + More sheet (< 900px), page header, word tabs
+   ===================================================================================== */
+#sidebar,#tabbar{display:none}
+.sbname{font-size:16px;font-weight:600;padding:4px 10px 18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbitems{display:flex;flex-direction:column;gap:2px;flex:1 1 auto}
+.sbitem,.msitem{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:8px 10px;border:0;border-radius:var(--r);
+  background:none;color:var(--muted);font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.sbitem svg,.msitem svg,.tbitem svg{flex:0 0 auto}
+.sbitem span,.msitem span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbitem:hover{color:var(--fg);background:rgba(255,255,255,.05)}
+.sbitem.on{background:var(--raised);color:var(--fg);font-weight:500}
+.sbout{margin-top:12px}
+.sbitem:focus-visible,.msitem:focus-visible,.tbitem:focus-visible,.crumbbtn:focus-visible,.gtabs button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+
+/* page header: crumb, title + pill (+ cover thumbnail), summary; actions on the right */
+.top{position:static;background:var(--bg);border-bottom:0;backdrop-filter:none;-webkit-backdrop-filter:none}
+.topin{max-width:1400px;margin:0;height:auto;min-height:60px;padding:22px 28px 16px;gap:14px;align-items:center}
+.ttl .crumb{font-size:12px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumbbtn{border:0;background:none;padding:0;margin:0;font:inherit;color:var(--muted);cursor:pointer}
+.crumbbtn:hover{color:var(--fg)}
+.ttlrow{display:flex;align-items:center;gap:10px;min-width:0}
+.ttlrow h1{min-width:0}
+.tcov{width:44px;height:30px;flex:0 0 auto;border-radius:6px;background:var(--raised) center/cover no-repeat}
+.ttl .sub{font-size:14px;color:var(--muted);margin-top:4px}
+.tacts{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.tmore{display:none}
+.tmore svg{display:block}
+
+/* gallery: word tabs across the top, the sub-pane rail on the left */
+.wrap{margin:0;padding:0 28px 90px}
+.detail{margin:0;grid-template-columns:220px minmax(0,1fr)}
+.gtabs{grid-column:1/-1;display:flex;gap:4px;padding:0 28px;border-bottom:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch}
+.gtabs button{border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;color:var(--muted);font:inherit;font-size:14px;
+  padding:10px 12px;min-height:44px;cursor:pointer;white-space:nowrap}
+.gtabs button:hover{color:var(--fg)}
+.gtabs button.on{color:var(--fg);border-bottom-color:var(--primary)}
+.detail .side{background:transparent;min-height:calc(100vh - 150px)}
+.pane{top:20px}
+
+/* the Website section's status line, a banner under the header */
+.wbar{padding:10px 14px;border-radius:var(--r);margin:0 0 18px;font-size:14px;border:1px solid transparent}
+.wbar b{font-weight:600}
+.wbar.warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.wbar.ok{background:var(--ok-bg);color:var(--ok)}
+
+/* More sheet (phones only) */
+#moresheet{position:fixed;inset:0;z-index:70}
+.mshade{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.mpanel{position:absolute;left:0;right:0;bottom:0;max-height:80vh;overflow-y:auto;background:var(--panel);
+  border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding:10px 10px calc(14px + env(safe-area-inset-bottom));
+  box-shadow:0 -12px 34px rgba(0,0,0,.5)}
+.msitem{min-height:48px;padding:10px 12px;gap:12px;color:var(--fg)}
+.msitem.on{background:var(--raised);font-weight:500}
+.msout{margin-top:6px;border-top:1px solid var(--line);border-radius:0}
+
+@media(min-width:900px){
+  #app:not([hidden]){display:flex;align-items:flex-start}
+  #sidebar{display:flex;flex-direction:column;flex:0 0 200px;width:200px;position:sticky;top:0;height:100vh;height:100dvh;
+    overflow-y:auto;background:var(--panel);border-right:1px solid var(--line);padding:18px 10px 14px}
+  #appmain{flex:1 1 auto;min-width:0}
+  .top.hascrumb .back{display:none}
+  #moresheet{display:none !important}
+}
+@media(max-width:899px){
+  .top{position:sticky;top:0;z-index:20;background:rgba(20,20,26,.96);border-bottom:1px solid var(--line);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .topin{padding:8px 12px;gap:8px}
+  .ttl{min-width:0}
+  .ttl .crumb,.tcov{display:none !important}
+  .tacts .sec{display:none}
+  .tmore{display:inline-flex;min-width:44px;padding:8px 10px}
+  #appmain{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--panel);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom)}
+  .tbitem{flex:1 1 0;min-width:0;min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    padding:6px 4px;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
+  .tbitem span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tbitem.on{color:var(--primary)}
+  #toast{bottom:calc(76px + env(safe-area-inset-bottom))}
+  .wrap{padding:0 16px 90px}
+  /* the gallery's sub-panes become the chip row under the word tabs (the inline sheet switches at 860px) */
+  .detail{grid-template-columns:1fr}
+  .gtabs{padding:0 8px}
+  .detail .side{border-right:none;border-bottom:1px solid var(--line);min-height:0;padding-bottom:0}
+  .navrow{display:flex;overflow-x:auto;gap:4px;padding:10px 12px;-webkit-overflow-scrolling:touch}
+  .navhead{display:none}
+  .navitem{width:auto;white-space:nowrap;padding:9px 14px}
+  .navset{flex:0 0 auto}
+  .navset .navitem{border:0}
+  .navset .sdots{opacity:1;padding:9px 10px 9px 0}
+  .addset{width:auto;white-space:nowrap;padding:9px 14px}
+  .sethead{flex-wrap:wrap}
+  .main{padding:22px 16px 90px}
 }
