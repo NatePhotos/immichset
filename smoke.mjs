@@ -206,6 +206,16 @@ try {
     const html = await (await fetch(`${BASE}/${SLUG}`)).text();
     ok(html.includes('og:title') && html.includes('og:image'), 'og tags missing');
   });
+  await check('the lightbox can always be closed', async () => {
+    const html = await (await fetch(`${BASE}/${SLUG}`)).text();
+    // A phone browser's chrome can leave the visible area offset inside the viewport that
+    // `position:fixed` measures against, which once put the close button off the top of the
+    // screen. The overlay follows the visible area now, and there are two other ways out.
+    ok(html.includes('--lbt'), 'the lightbox is pinned to the top of the layout viewport again');
+    ok(html.includes('vv.offsetTop'), 'nothing reads visualViewport.offsetTop');
+    ok(html.includes('e.key==="Escape"'), 'Escape no longer closes the lightbox');
+    ok(html.includes('e.target.id==="lbStage"'), 'a tap on the surround no longer closes the lightbox');
+  });
   await check('a slug that does not exist is a 404', async () => {
     const r = await fetch(`${BASE}/definitely-not-a-gallery-here`);
     is(r.status, 404, 'status');

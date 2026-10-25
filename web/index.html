@@ -140,8 +140,12 @@ footer a:hover{color:var(--page-fg)}
 
 /* ---------- lightbox ---------- */
 /* A phone browser's toolbars overlap a fixed, full-height overlay, which used to hide the
-   close and download buttons. --lbh follows the visible viewport; svh is the fallback. */
-#lb{position:fixed;left:0;right:0;top:0;height:100vh;height:100svh;height:var(--lbh,100svh);
+   close and download buttons. --lbh follows the visible viewport; svh is the fallback.
+   `position:fixed` is measured against the layout viewport, and on iOS the visible area can
+   end up sitting lower inside it -- after a keyboard closes, or when locking the body
+   collapses the page. The overlay then renders above the screen and takes the close button
+   with it, so --lbt pushes it back down to where the visible area actually starts. */
+#lb{position:fixed;left:0;right:0;top:var(--lbt,0px);height:100vh;height:100svh;height:var(--lbh,100svh);
   z-index:50;overscroll-behavior:contain;touch-action:none;background:#0d0d0d;display:none;opacity:0;transition:opacity .28s}
 #lb.on{display:block}
 #lb.vis{opacity:1}
@@ -799,6 +803,10 @@ function open(i){
   cur = i; document.body.classList.add("lb-open"); $("lb").classList.add("on");
   requestAnimationFrame(function(){ $("lb").classList.add("vis"); });
   lockScroll();
+  /* Locking the body leaves the page unscrollable, which brings a phone's toolbars back and
+     moves the visible area. Re-read it, and again once that has settled. */
+  syncViewport();
+  setTimeout(syncViewport, 150); setTimeout(syncViewport, 500);
   show();
 }
 function close(){
@@ -962,17 +970,20 @@ var lbZoomReset = function(){};
 })();
 
 /* The toolbars on a phone browser slide in and out; visualViewport is the only thing
-   that reports what is actually on screen while they do. */
+   that reports what is actually on screen while they do. --lbh is how tall the visible
+   area is, --lbt how far down it starts. */
+function syncViewport(){
+  var vv = window.visualViewport;
+  var s = document.documentElement.style;
+  s.setProperty("--lbh", Math.round(vv ? vv.height : window.innerHeight) + "px");
+  s.setProperty("--lbt", Math.round(vv ? vv.offsetTop : 0) + "px");
+}
 (function(){
   var vv = window.visualViewport;
-  function sync(){
-    var h = vv ? vv.height : window.innerHeight;
-    document.documentElement.style.setProperty("--lbh", Math.round(h) + "px");
-  }
-  sync();
-  if (vv){ vv.addEventListener("resize", sync); vv.addEventListener("scroll", sync); }
-  window.addEventListener("orientationchange", function(){ setTimeout(sync, 250); });
-  window.addEventListener("resize", sync);
+  syncViewport();
+  if (vv){ vv.addEventListener("resize", syncViewport); vv.addEventListener("scroll", syncViewport); }
+  window.addEventListener("orientationchange", function(){ setTimeout(syncViewport, 250); });
+  window.addEventListener("resize", syncViewport);
 })();
 
 /* ---------- slideshow ---------- */
