@@ -411,9 +411,12 @@ function coverOf(g){
   if (g.coverFile) return "/api/g/" + encodeURIComponent(g.slug) + "/cover?v=" + encodeURIComponent(g.coverFile);
   if (g.coverAssetId) return imgSrc(g.coverAssetId,"preview");
   /* no cover chosen: borrow the first set's album thumbnail */
-  var first = (g.sets && g.sets[0]) ? g.sets[0].albumId : g.albumId;
-  var a = S.albums.filter(function(x){return x.id===first;})[0];
-  return (a && a.thumb) ? imgSrc(a.thumb,"preview") : "";
+  var ids = (g.sets && g.sets.length) ? g.sets.map(function(x){ return x.albumId; }) : [g.albumId];
+  for (var i = 0; i < ids.length; i++){
+    var a = S.albums.filter(function(x){return x.id===ids[i];})[0];
+    if (a && a.thumb) return imgSrc(a.thumb,"preview");
+  }
+  return "";
 }
 /* empty-state and placeholder icon: 40px by default, muted by the theme */
 function emptyIcon(inner, px){
@@ -435,8 +438,9 @@ function daysLeft(g){
 function statusLine(g){
   var d = daysLeft(g);
   if (g.expired) return '<div class="status">Expired</div>';
-  if (d !== null && d <= 7) return '<div class="status warn">'+(d <= 0 ? "Expires today" : "Expires in "+d+(d===1?" day":" days"))+'</div>';
   if (!g.publishedAt) return '<div class="status">Draft</div>';
+  if (d !== null && d <= 7) return '<div class="status warn">'+(d <= 0 ? "Expires today" : "Expires in "+d+(d===1?" day":" days"))+'</div>';
+  if (!g.views && !g.downloads) return '<div class="status">No views yet</div>';
   return '<div class="status">'+g.views+(g.views===1?" view":" views")+' \u00b7 '+g.downloads+(g.downloads===1?" download":" downloads")+'</div>';
 }
 function galleryUrl(g){ return (S.publicUrl || location.origin) + "/" + g.slug; }
@@ -627,7 +631,11 @@ function chrome(opts){
   $("tCov").className = "tcov" + (g && !cov ? " none" : "");
   $("tCov").innerHTML = g && !cov ? emptyIcon(EI_PHOTO, 16) : "";
   $("tCov").title = g && !cov ? "Choose a cover" : "";
-  $("tCov").onclick = g && !cov ? function(){ openGallery(g.id, "settings", "cover"); } : null;
+  var goCov = function(){ openGallery(g.id, "settings", "cover"); };
+  $("tCov").onclick = g && !cov ? goCov : null;
+  $("tCov").onkeydown = g && !cov ? function(ev){ if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); goCov(); } } : null;
+  if (g && !cov){ $("tCov").setAttribute("role","button"); $("tCov").tabIndex = 0; }
+  else { $("tCov").removeAttribute("role"); $("tCov").removeAttribute("tabindex"); }
   var acts = opts.actions || [], more = [];
   $("tActs").innerHTML = acts.map(function(a, i){
     if (!a.primary) more.push(a);
@@ -667,7 +675,7 @@ function listView(){
           actions:[{ label:"New gallery", primary:true, onClick:function(){ editorView(null); } }]});
   var h = '<div class="wrap" style="padding-top:26px">';
   if (!S.galleries.length){
-    h += emptyState(EI_STACK, "Create your first gallery", "emptyNew", "Create your first gallery");
+    h += emptyState(EI_STACK, "Galleries you create show up here", "emptyNew", "Create your first gallery");
   } else {
     h += '<div class="cards">' + S.galleries.map(function(g){
       var pill = g.expired ? '<span class="pill exp">Expired</span>'
@@ -678,7 +686,7 @@ function listView(){
       if (!g.allowDownload) tags.push('<span class="tag2">No downloads</span>');
       var img = coverOf(g)
         ? '<div class="ph" style="' + coverCss(g) + '"></div>'
-        : '<div class="ph nocov" data-cover="1">'+emptyIcon(EI_PHOTO, 28)+'<span>Choose a cover</span></div>';
+        : '<div class="ph nocov" data-cover="1" role="button" tabindex="0">'+emptyIcon(EI_PHOTO, 28)+'<span>Choose a cover</span></div>';
       return '<div class="card" data-id="'+g.id+'">'
         + '<div class="phwrap">' + img + pill + '</div>'
         + '<div class="body"><h3>'+esc(g.title)+'</h3>'
@@ -693,6 +701,11 @@ function listView(){
       var id = Number(c.dataset.id);
       if (ev.target.closest("[data-cover]")) return openGallery(id, "settings", "cover");
       openGallery(id);   /* photos first, like Pixieset */
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".nocov"), function(e){
+    e.onkeydown = function(ev){
+      if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); ev.stopPropagation(); openGallery(Number(e.closest(".card").dataset.id), "settings", "cover"); }
     };
   });
   if ($("emptyNew")) $("emptyNew").onclick = function(){ editorView(null); };
