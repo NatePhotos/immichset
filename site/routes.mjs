@@ -340,5 +340,12 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     if (cfg.siteUrl) setInterval(() => run(watcher.siteTick, 'site check'), 30 * 60_000);
   }
 
-  return { admin, preview, backup, startJobs, store };
+  /* what the admin Home page needs to know about the website, cheaply */
+  const summary = () => ({
+    dirty: store.rev() !== Number(store.meta('publishedRev') ?? -1),
+    pendingImmich: store.pendingImmich().length,
+    check: watcher.lastCheck(),
+  });
+
+  return { admin, preview, backup, startJobs, store, summary };
 }

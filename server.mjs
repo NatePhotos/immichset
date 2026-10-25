@@ -11,6 +11,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createSite } from './site/routes.mjs';
+import { overview } from './admin/overview.mjs';
 
 const CFG = {
   port:       Number(process.env.PORT || 3000),
@@ -1356,6 +1357,9 @@ function gallDto(g) {
 
 async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/site' || path.startsWith('/api/admin/site/')) return site.admin(req, res, path, url);
+  if (path === '/api/admin/overview' && req.method === 'GET')
+    return json(res, 200, overview(db, { now: Date.now(), site: site.summary(), mailReady: mailReady(),
+                                         backups: backupList(), publicUrl: CFG.publicUrl }));
   if (path === '/api/admin/me')
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null, brandName: CFG.brandName || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,

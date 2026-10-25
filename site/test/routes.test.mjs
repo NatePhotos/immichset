@@ -219,3 +219,11 @@ test('restoring a version that does not exist is a 400', async () => {
   const r = await send('POST', '/api/admin/site/restore', { id: 99999 });
   assert.equal(r.status, 400);
 });
+
+test('summary reports unpublished edits, photos waiting for Immich and the last site check', async () => {
+  const s = site.summary();
+  assert.deepEqual(Object.keys(s).sort(), ['check', 'dirty', 'pendingImmich']);
+  assert.equal(typeof s.dirty, 'boolean');
+  assert.equal(s.pendingImmich, site.store.pendingImmich().length);
+  assert.equal(s.check, null);
+});

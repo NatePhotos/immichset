@@ -42,7 +42,7 @@ export function createWatcher({ store, tellAdmin, sendToImmich, siteUrl, fetch: 
     } finally { busy = false; }
   }
 
-  let fails = 0;
+  let fails = 0, last = null;
   async function siteTick() {
     if (!siteUrl) return;
     let ok = false, why = '';
@@ -50,6 +50,7 @@ export function createWatcher({ store, tellAdmin, sendToImmich, siteUrl, fetch: 
       const r = await f(siteUrl, { signal: AbortSignal.timeout(15_000), redirect: 'follow' });
       ok = r.ok; why = `HTTP ${r.status}`;
     } catch (e) { why = e.message; }
+    last = { ok, at: now(), why };
     if (ok) { fails = 0; return resolve('site-down', 'Your website is back', [`${siteUrl} is loading again.`]); }
     if (++fails < 2) return;
     return alert('site-down', 'Your website is not loading', [
@@ -58,5 +59,5 @@ export function createWatcher({ store, tellAdmin, sendToImmich, siteUrl, fetch: 
     ]);
   }
 
-  return { alert, resolve, immichTick, siteTick };
+  return { alert, resolve, immichTick, siteTick, lastCheck: () => last };
 }

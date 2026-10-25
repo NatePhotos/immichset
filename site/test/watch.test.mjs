@@ -81,3 +81,14 @@ test('a photo whose alert is open emails once more when it finally saves', async
   assert.equal(mails.length, 2);
   assert.match(mails[1], /in Immich now/);
 });
+
+test('lastCheck remembers the latest live-site check', async () => {
+  const { w, at } = setup({ site: [200, 503, new Error('timeout')] });
+  assert.equal(w.lastCheck(), null);
+  at(5); await w.siteTick();
+  assert.deepEqual(w.lastCheck(), { ok: true, at: 5, why: 'HTTP 200' });
+  at(9); await w.siteTick();
+  assert.deepEqual(w.lastCheck(), { ok: false, at: 9, why: 'HTTP 503' });
+  at(11); await w.siteTick();
+  assert.deepEqual(w.lastCheck(), { ok: false, at: 11, why: 'timeout' });
+});
