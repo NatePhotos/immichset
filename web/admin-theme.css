@@ -381,3 +381,22 @@ td{border-bottom:1px solid var(--line)}
   #hNew{width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;justify-content:center}
   #hNew span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 }
+
+/* ---------- empty states and cards ---------- */
+.emptyst{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;
+  padding:56px 20px;grid-column:1/-1;width:100%;color:var(--muted)}
+.emptyst svg{color:var(--muted);flex:0 0 auto}
+.emptyst p{margin:0;max-width:32ch;font-size:14px;line-height:1.5;color:var(--muted-on-raised)}
+.grid .emptyst{min-height:260px}
+.phwrap{position:relative}
+.phwrap .pill{position:absolute;top:10px;left:10px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.card .ph.nocov{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  background:var(--raised);color:var(--muted-on-raised);font-size:12px}
+.card .ph.nocov:hover{color:var(--fg)}
+.card .status{font-size:12px;color:var(--muted);margin:4px 0 0}
+.card .status.warn{color:var(--warn)}
+.card .tags{margin:10px 0 0}
+.card .body{padding:12px 14px 14px}
+.tcov.none{display:inline-flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;
+  border:1px dashed var(--input-line)}
+.tcov.none:hover{color:var(--fg)}
