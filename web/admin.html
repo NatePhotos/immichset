@@ -499,7 +499,8 @@ function boot(){
 /* Every section of the panel sits in the sidebar (wide screens) and the bottom bar with its More
    sheet (phones). Other files add theirs with addSection; leave() runs when you switch away from
    a section, and sections are listed by order (lowest first; boot opens the first one). */
-var SECTIONS = [{ key:"galleries", label:"Galleries", icon:IC.photo, order:20, n:0, open:function(){ listView(); } }];
+var SECTIONS = [{ key:"galleries", label:"Galleries", icon:IC.photo, order:20, n:0, open:function(){ listView(); },
+                  top:function(){ if (S.g || S.editing) listView(); } }];
 var curSection = "galleries";
 function addSection(key, label, icon, open, leave, order){
   SECTIONS.push({ key:key, label:label, icon:icon || "", open:open, leave:leave,
@@ -508,11 +509,13 @@ function addSection(key, label, icon, open, leave, order){
   renderNav();
 }
 function sectionOf(key){ return SECTIONS.filter(function(s){ return s.key === key; })[0]; }
-/* picking the section you are in takes you to its top screen (a gallery back to the list) */
+/* Picking the section you are already in only runs its optional top() (Galleries: from a gallery
+   or the editor back to the list); it never reopens it, so nothing typed there is lost. */
 function goSection(key){
   var cur = sectionOf(curSection), next = sectionOf(key);
   if (!next) return;
-  if (key !== curSection && cur && cur.leave) cur.leave();
+  if (key === curSection){ if (next.top) next.top(); return; }
+  if (cur && cur.leave) cur.leave();
   next.open();
 }
 function navItem(s, cls){
@@ -534,24 +537,25 @@ function navClick(ev){
   var b = ev.target.closest("[data-sec]"); if (!b) return;
   closeMore(); goSection(b.dataset.sec);
 }
-function moreKey(ev){ if (ev.key === "Escape") closeMore(); }
+function moreKey(ev){ if (ev.key === "Escape") closeMore(true); }
 function openMore(){
   $("moresheet").hidden = false; renderNav();
   document.addEventListener("keydown", moreKey);
   var f = $("msItems").querySelector("button"); if (f) f.focus();
 }
-function closeMore(){
+function closeMore(refocus){
   if ($("moresheet").hidden) return;
   $("moresheet").hidden = true; renderNav();
   document.removeEventListener("keydown", moreKey);
+  if (refocus && $("tbMore")) $("tbMore").focus();
 }
 $("outBtn").innerHTML = IC.logout + '<span>Sign out</span>';
 $("msOut").innerHTML = IC.logout + '<span>Sign out</span>';
 $("sbItems").onclick = navClick;
 $("msItems").onclick = navClick;
-$("msShade").onclick = closeMore;
+$("msShade").onclick = function(){ closeMore(true); };
 $("tabbar").onclick = function(ev){
-  if (ev.target.closest("#tbMore")) return $("moresheet").hidden ? openMore() : closeMore();
+  if (ev.target.closest("#tbMore")) return $("moresheet").hidden ? openMore() : closeMore(true);
   navClick(ev);
 };
 
@@ -560,7 +564,18 @@ $("tabbar").onclick = function(ev){
    summary (or sub) under the title; back (function); gallery (status pill and cover thumbnail);
    actions [{label, icon, primary, onClick, id}] right-aligned — on phones only the primary stays,
    the rest go in a "⋯" menu; section (which sidebar item is lit; sub-screens pass their parent). */
+/* the header's "⋯" menu (a popMenu); remembered so Escape and a header rebuild close only that one */
+var hdrMenu = null;
+function hdrMenuKey(ev){ if (ev.key === "Escape") closeHdrMenu(true); }
+function closeHdrMenu(refocus){
+  document.removeEventListener("keydown", hdrMenuKey);
+  var m = hdrMenu; hdrMenu = null;
+  if (!m || !m.parentNode) return;
+  closePop();
+  if (refocus && $("tMore")) $("tMore").focus();
+}
 function chrome(opts){
+  closeHdrMenu();
   if (opts.section) curSection = opts.section;
   var back = opts.back || null, crumb = $("tCrumb");
   crumb.hidden = !opts.crumb;
@@ -569,6 +584,7 @@ function chrome(opts){
     if (back) $("crumbBtn").onclick = back;
   }
   $("tBar").classList.toggle("hascrumb", !!(opts.crumb && back));
+  $("tBar").classList.toggle("hasback", !!back);
   $("tTitle").textContent = opts.title;
   $("tSub").textContent = opts.summary || opts.sub || "";
   $("backBtn").hidden = !back;
@@ -594,11 +610,16 @@ function chrome(opts){
     b.onclick = function(){ a.onClick(); };
   });
   if (more.length) $("tMore").onclick = function(){
+    closeHdrMenu();
     popMenu($("tMore"), more.map(function(a){ return { label:a.label, run:a.onClick }; }));
+    hdrMenu = document.getElementById("pmenu");
+    if (hdrMenu) document.addEventListener("keydown", hdrMenuKey);
   };
   renderNav();
 }
+/* only while that gallery is the open screen: a late save or refresh must not repaint another section */
 function galleryChrome(g){
+  if (curSection !== "galleries" || !g || g !== S.g) return;
   chrome({title:g.title, crumb:"Galleries", summary:g.subtitleText || galleryUrl(g).replace(/^https?:\/\//,""),
           back:listView, gallery:g, section:"galleries", actions:[
     { label:"Preview", onClick:function(){ window.open(galleryUrl(g), "_blank", "noopener"); } },
@@ -611,6 +632,7 @@ function galleryChrome(g){
 
 /* ---------- gallery list ---------- */
 function listView(){
+  S.g = null; S.editing = false;   /* no gallery is open: late refreshes for one paint nothing */
   var n = S.galleries.length;
   chrome({title:"Galleries", section:"galleries", summary: n ? n + (n === 1 ? " gallery" : " galleries") : "",
           actions:[{ label:"New gallery", primary:true, onClick:function(){ editorView(null); } }]});
@@ -664,7 +686,8 @@ function firstPane(tab){
 function openGallery(id, tab, pane){
   var g = S.galleries.filter(function(x){return x.id===id;})[0];
   if (!g) return listView();
-  S.g = g; S.tab = tab || "photos"; S.pane = pane || firstPane(S.tab);
+  S.g = g; S.editing = false; S.tab = tab || "photos"; S.pane = pane || firstPane(S.tab);
+  curSection = "galleries";
   galleryChrome(g);
   renderShell();
 }
@@ -727,6 +750,7 @@ function renderPane(){
 function refreshGalleries(then){
   api("/galleries").then(function(r){
     S.galleries = r.body || [];
+    if (!S.g) return;   /* back on the list (or another section) since this was asked for */
     var g = S.galleries.filter(function(x){return x.id===S.g.id;})[0];
     if (g) S.g = g;
     if (then) then();
@@ -1681,6 +1705,7 @@ function paneActivity(g){
 /* ---------- create / edit ---------- */
 function editorView(g){
   var isNew = !g;
+  S.editing = true;
   chrome({title:isNew?"New gallery":"Edit", crumb:isNew?"Galleries":g.title, section:"galleries",
           back:function(){ isNew ? listView() : openGallery(g.id); }});
   $("root").innerHTML = '<div class="wrap" style="padding-top:26px">'

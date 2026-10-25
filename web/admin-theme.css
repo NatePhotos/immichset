@@ -258,9 +258,17 @@ td{border-bottom:1px solid var(--line)}
 @media(max-width:899px){
   .top{position:sticky;top:0;z-index:20;background:rgba(20,20,26,.96);border-bottom:1px solid var(--line);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-  .topin{padding:8px 12px;gap:8px}
-  .ttl{min-width:0}
+  /* the title gets its own row (up to 2 lines, back arrow on its left); the pill and actions go below */
+  .topin{padding:8px 12px 10px;gap:8px;row-gap:6px;flex-wrap:wrap}
+  .ttl,.ttlrow{display:contents}
   .ttl .crumb,.tcov{display:none !important}
+  .back{order:0}
+  .ttl h1{order:1;flex:1 1 calc(100% - 52px);min-width:0;white-space:normal;line-height:1.25;overflow:hidden;
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow-wrap:anywhere}
+  .top:not(.hasback) .ttl h1{flex-basis:100%}
+  .ttl .sub{order:2;flex:1 1 100%;margin-top:0}
+  #tPill{order:3}
+  .tacts{order:4;margin-left:auto}
   .tacts .sec{display:none}
   .tmore{display:inline-flex;min-width:44px;padding:8px 10px}
   #appmain{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
