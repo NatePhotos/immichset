@@ -294,3 +294,90 @@ td{border-bottom:1px solid var(--line)}
   .sethead{flex-wrap:wrap}
   .main{padding:22px 16px 90px}
 }
+
+/* =====================================================================================
+   home: greeting header, stat tiles, needs attention, recent activity, health, recent galleries
+   (web/home.js). Desktop is a two-column grid; below 900px one column in a phone order.
+   ===================================================================================== */
+.hm{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;padding-top:6px;
+  grid-template-areas:"stats stats" "att act" "health health" "recent recent"}
+.hm-stats{grid-area:stats}.hm-att{grid-area:att}.hm-act{grid-area:act}.hm-health{grid-area:health}.hm-recent{grid-area:recent}
+.hm-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0}
+.hm-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.hm-head h2{font-size:15px;font-weight:600;letter-spacing:0;text-transform:none;margin:0;flex:1 1 auto}
+.hm-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.hm-stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.hm-lbl{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-num{font-size:22px;font-weight:600;margin-top:6px;display:flex;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums}
+.hm-up{font-size:13px;font-weight:500;color:var(--ok)}
+.hm-down{font-size:13px;font-weight:500;color:var(--muted)}
+.hm-badge{font-size:12px;font-weight:600;min-width:22px;height:22px;padding:0 7px;border-radius:11px;display:none;
+  align-items:center;justify-content:center;background:var(--warn-bg);color:var(--warn)}
+.hm-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);min-height:44px}
+.hm-head + .hm-row{border-top:0}
+.hm-ic{flex:0 0 auto;width:34px;height:34px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:var(--raised)}
+.hm-ic svg{display:block}
+.hm-ic.ok{color:var(--ok);background:var(--ok-bg)}
+.hm-ic.warn{color:var(--warn);background:var(--warn-bg)}
+.hm-ic.bad{color:var(--bad);background:var(--bad-bg)}
+.hm-ic.info{color:var(--primary);background:rgba(89,166,255,.14)}
+.hm-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.hm-t{font-size:14px;font-weight:500;color:var(--fg);overflow-wrap:anywhere}
+.hm-d{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.hm-row .btn{flex:0 0 auto}
+.hm-none{display:flex;align-items:center;gap:10px;padding:14px 0 6px;color:var(--muted)}
+.hm-none svg{color:var(--ok);flex:0 0 auto}
+.hm-more{display:none}
+.hm-empty{color:var(--muted);font-size:13px;margin:6px 0 0}
+.hm-arow{display:flex;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:14px;align-items:baseline}
+.hm-head + .hm-arow{border-top:0}
+.hm-time{flex:0 0 72px;color:var(--muted);font-size:13px;white-space:nowrap}
+.hm-what{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.hm-gal{color:var(--muted)}
+.hm-hsum{display:none}
+.hm-hcards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.hm-hcard{display:flex;align-items:center;gap:12px}
+.hm-recent .hm-head{margin-bottom:10px}
+.hm-link{border:0;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;padding:6px 4px;min-height:36px}
+.hm-link:hover{color:var(--fg)}
+.hm-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.hm-tile{display:flex;flex-direction:column;align-items:stretch;text-align:left;border:0;padding:0;background:none;color:var(--fg);
+  font:inherit;cursor:pointer;min-width:0}
+.hm-cov{display:flex;align-items:center;justify-content:center;aspect-ratio:3/2;border-radius:10px;background:var(--raised) center/cover no-repeat;
+  border:1px solid var(--line)}
+.hm-tt{font-size:13px;font-weight:500;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-ts{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-warn{color:var(--warn)}
+.hm-tile:hover .hm-cov{filter:brightness(1.08)}
+.hm-newtile .hm-cov{background:transparent;border:1px dashed var(--input-line);color:var(--muted)}
+.hm-newtile:hover .hm-cov{color:var(--fg);border-color:var(--muted);filter:none}
+.hm-tile:focus-visible,.hm-link:focus-visible,.hm-hsum:focus-visible,.hm-more:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:10px}
+
+@media(max-width:899px){
+  .hm{grid-template-columns:minmax(0,1fr);gap:14px;padding-top:12px;
+    grid-template-areas:"stats" "att" "health" "recent" "act"}
+  .hm-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .hm-card{padding:14px}
+  .hm-badge{display:inline-flex}
+  .hm-row{min-height:56px}
+  .hm-att:not(.all) .hm-row.extra{display:none}
+  .hm-more{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin-top:6px;border:0;border-top:1px solid var(--line);
+    background:none;color:var(--primary);font:inherit;font-size:14px;cursor:pointer}
+  .hm-arow{min-height:44px;align-items:center}
+  .hm-hsum{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 14px;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+  .hm-chev{flex:0 0 auto;color:var(--muted);transition:transform .15s}
+  .hm-chev svg{display:block}
+  .hm-health.open .hm-chev{transform:rotate(90deg)}
+  .hm-hcards{display:none;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}
+  .hm-health.open .hm-hcards{display:grid}
+  .hm-link{min-height:44px}
+  .hm-tiles{display:flex;overflow-x:auto;gap:10px;margin:0 -16px;padding:0 16px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+  .hm-tile{flex:0 0 160px;scroll-snap-align:start}
+  /* header: the greeting and a round blue + on one row; Website is in the bottom bar, so no ⋯ */
+  .top:has(#hNew) .ttl h1{flex:1 1 0}
+  .top:has(#hNew) .tacts{order:1}
+  .top:has(#hNew) .tmore{display:none}
+  #hNew{width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;justify-content:center}
+  #hNew span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+}

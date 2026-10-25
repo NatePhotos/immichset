@@ -491,7 +491,8 @@ function boot(){
   renderNav();
   Promise.all([api("/galleries"), api("/albums")]).then(function(rs){
     S.galleries = rs[0].body || []; S.albums = rs[1].body || [];
-    SECTIONS[0].open();   /* the lowest-order section; Galleries until a Home section exists */
+    curSection = SECTIONS[0].key;
+    SECTIONS[0].open();   /* the lowest-order section: Home (home.js) */
   });
 }
 
@@ -1784,9 +1785,25 @@ function editorView(g){
   };
 }
 /* the Website section (site-admin.js) is a separate classic script and uses these */
-window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC };
+/* another section jumping into a gallery or the editor leaves itself first, as goSection does */
+function leaveFor(key){ var cur = sectionOf(curSection); if (curSection !== key && cur && cur.leave) cur.leave(); }
+function kitOpenGallery(id, tab, pane){
+  var from = curSection;
+  leaveFor("galleries");
+  if (S.galleries.some(function(x){ return x.id === id; })) return openGallery(id, tab, pane);
+  api("/galleries").then(function(r){   /* made since the list was loaded */
+    if (curSection !== from) return;      /* went somewhere else meanwhile */
+    if (r.ok && r.body) S.galleries = r.body;
+    openGallery(id, tab, pane);
+  });
+}
+function kitNewGallery(){ leaveFor("galleries"); editorView(null); }
+window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC,
+  goSection:goSection, openGallery:kitOpenGallery, openNewGallery:kitNewGallery, coverCss:coverCss,
+  galleryById:function(id){ return S.galleries.filter(function(x){ return x.id === id; })[0] || null; } };
 })();
 </script>
 <script src="/site-admin.js"></script>
+<script src="/home.js"></script>
 </body>
 </html>
