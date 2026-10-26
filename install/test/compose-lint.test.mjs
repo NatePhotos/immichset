@@ -77,3 +77,10 @@ test('the compose files in the image-less folder are all covered by the installe
   const inst = read('install/install.sh');
   for (const f of readdirSync(join(ROOT, 'install')).filter(n => n.endsWith('.yml'))) assert.ok(inst.includes(f), `${f} is never fetched by install.sh`);
 });
+
+test('the tunnel block in the quickstart file lands under services when uncommented', () => {
+  const text = read('docker-compose.quickstart.yml');
+  const on = text.replace(/^( *)# (cloudflared:|  \S.*)$/gm, '$1$2');
+  assert.match(on, /^ {2}cloudflared:$/m, 'indented as a service');
+  assert.match(on, /^ {4}image: cloudflare\/cloudflared/m);
+});

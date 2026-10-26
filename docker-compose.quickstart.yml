@@ -1,8 +1,5 @@
-# The short version. Save this as docker-compose.yml, run `docker compose up -d`, then follow docs/SETUP.md:
-# the first thing the app does is ask you, in your browser, for the keys it needs.
-#
-# docker-compose.example.yml lists every setting as an environment variable, for people who prefer that.
-# Anything set there always wins over what the setup page saved.
+# Save as docker-compose.yml and run `docker compose up -d`, then open the setup page (see docs/SETUP.md).
+# Every setting is listed in docker-compose.example.yml; anything set there wins over the setup page.
 
 services:
   immichset:
@@ -17,22 +14,19 @@ services:
     environment:
       # Your time zone is filled in for you on the setup page. To force one here instead: TZ: America/Chicago
       BACKUP_DIR: /backups
+      # CLIENT_IP_HEADER: cf-connecting-ip   # only behind a Cloudflare Tunnel
     restart: unless-stopped
-    # Immich in another compose project on this computer? Either use its network address in setup
-    # (http://192.168.x.x:2283), or join its network by uncommenting this and the networks block below.
+    # Immich in another compose project? Use its network address in setup, or join its network by uncommenting this line and the networks block at the bottom.
     # networks: [immich_default]
 
-    # Not in your own home network only: reach it from anywhere over https without opening your router. Make a tunnel in
-    # Cloudflare (see docs/ONLINE.md), put its token in a file called tunnel.env containing TUNNEL_TOKEN=..., then remove the
-    # # from the next block and from the "profiles" line, and run: docker compose --profile tunnel up -d
-    # Also set CLIENT_IP_HEADER: cf-connecting-ip above, so the sign-in limits see real visitor addresses.
-
-# cloudflared:
-#   image: cloudflare/cloudflared:2026.10.4
-#   command: ["tunnel", "--no-autoupdate", "run"]
-#   env_file: [tunnel.env]
-#   profiles: ["tunnel"]
-#   restart: unless-stopped
+  # To reach it over https from anywhere, see docs/ONLINE.md. For a Cloudflare Tunnel, remove the "# " from the next
+  # block, put TUNNEL_TOKEN=... in tunnel.env, and uncomment CLIENT_IP_HEADER above.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:2026.10.4
+  #   command: ["tunnel", "--no-autoupdate", "run"]
+  #   env_file: [tunnel.env]
+  #   profiles: ["tunnel"]
+  #   restart: unless-stopped
 
 volumes:
   immichset-data:

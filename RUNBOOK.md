@@ -1,6 +1,6 @@
 # Runbook
 
-For whoever keeps this running — including an AI agent picking it up cold.
+For whoever keeps this running, including someone picking it up cold.
 Read this before changing anything.
 
 Site-specific values (hostnames, paths, which album is which) are deliberately **not**
@@ -28,7 +28,7 @@ nothing without a session.
 
 | File | What it is |
 |---|---|
-| `server.mjs` | The whole server. Node built-ins only — `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
+| `server.mjs` | The whole server. Node built-ins only: `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
 | `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`; everything: `node --test admin/test health/test zip/test mail/test config/test setup/test site/test`). |
 | `config/settings.mjs`, `config/store.mjs` | Every setting in one list, and where it comes from (environment, then the settings file, then the default). `config/test` includes a golden test that the same environment always builds the same config as before. |
 | `setup/*.mjs`, `web/setup.html` | The first-run setup page and its server, the setup-code protection, and the tests behind every Test button (also used by Connections). `setup/test/fresh-install.test.mjs` walks a whole new install. |
@@ -38,7 +38,7 @@ nothing without a session.
 | `web/admin.html` | The admin panel. Same. |
 
 **There is no build step and no `node_modules`.** That is the point: nothing to update,
-nothing to rot. Keep it that way — adding a dependency is a decision about the next five
+nothing to rot. Keep it that way: adding a dependency is a decision about the next five
 years, not about this afternoon.
 
 ### Finding your way around `server.mjs`
@@ -61,7 +61,7 @@ write one used only by the admin panel. Keeping them apart is deliberate.
 ./deploy.sh --rollback   put the previous files back
 ```
 
-Settings live in `.deploy.env` beside the script — copy `.deploy.env.example` and fill it
+Settings live in `.deploy.env` beside the script. Copy `.deploy.env.example` and fill it
 in. That file names your server, so it is gitignored.
 
 What it does, in order: parses `server.mjs` and the script inside each HTML file, so a
@@ -70,7 +70,7 @@ typo never reaches the server; snapshots the three files currently on the host i
 the smoke test. If the tests fail it says so and exits non-zero, and `--rollback` puts
 back exactly the set that was running before.
 
-Only `server.mjs` needs the restart — the two HTML files are read per request — but the
+Only `server.mjs` needs the restart (the two HTML files are read per request), but the
 script restarts anyway, which costs a couple of seconds and removes a thing to remember.
 
 **Do not skip the test.** It takes ninety seconds and it is the only thing standing between
@@ -86,7 +86,7 @@ Copy `server.mjs` and `web/*.html` to the app's directory on the host, then
 
 Environment variables live in the container's compose file, not in this repo.
 `docker-compose.example.yml` lists every one with a comment. Changing any of them means
-editing the compose and redeploying the container — a restart is not enough.
+editing the compose and redeploying the container; a restart is not enough.
 
 ---
 
@@ -103,7 +103,7 @@ said without shell access to the host.
 
 ### A gallery link is dead
 
-Check DNS first — `dig +short <host>` against the connection's current address. For a
+Check DNS first: `dig +short <host>` against the connection's current address. For a
 home connection the address moves; if `HOSTINGER_TOKEN`/`CLOUDFLARE_TOKEN` and
 `DNS_DOMAIN`/`DNS_HOST` are set the app corrects it within two checks and emails you,
 and the boot line says which provider it is using. If it is not set, fix the A record by
@@ -150,13 +150,13 @@ app proves both at once. A 401 from Immich means the key; a timeout means Immich
 
 Mail. `GET /api/admin/mail-status` says whether it is configured. The log ring carries
 the provider's own error. If the provider is fine, check SPF, DKIM and DMARC still
-resolve — a domain move silently breaks them.
+resolve, so a domain move silently breaks them.
 
 ### Locked out of the admin panel
 
 Two-factor mails a code; if mail is broken the code never arrives. Set `ADMIN_2FA: "off"`
 in the compose and redeploy to get back in, then turn it on again. `ADMIN_TOKEN` also
-works as an `x-admin-token` header and bypasses two-factor entirely — that is how every
+works as an `x-admin-token` header and bypasses two-factor entirely. That is how every
 command in this runbook authenticates, and it is why the token is a secret.
 
 ### The app will not start
@@ -174,7 +174,7 @@ supplied them. Otherwise read the log ring from the container.
 stop the container, put the chosen `gallery-YYYY-MM-DD.db` in place of `gallery.db` in
 `DATA_DIR`, copy the cover files back into `DATA_DIR/covers`, start it again.
 
-The photos are not in there and do not need to be — they are Immich's. **Immich has its
+The photos are not in there and do not need to be. They are Immich's. **Immich has its
 own database, and this backup does not cover it.** Turn on Immich's scheduled backup
 separately; without it the photos survive but the albums do not, and galleries point at
 albums.
@@ -210,7 +210,7 @@ Anything pasted into a chat, a ticket or a log is burned. Rotate it.
 was already broken. After, so you know what you broke. `./deploy.sh` runs it for you at
 the end; running it at the start is on you.
 
-**Commit before handing over, and commit after.** If two people — or two agents — have
+**Commit before handing over, and commit after.** If two people, or two sessions, have
 this open at once, `git add -A` sweeps up whatever the other one left uncommitted and
 ships it under your message. That has already happened here once.
 
@@ -277,14 +277,14 @@ that never ran. Snapshot the whole set every time.
 id and never changes; a cover is addressed by gallery and can be swapped.
 
 **`position: fixed` is measured against the layout viewport, not what is on screen.** On
-iOS the visible area can sit lower inside that viewport — after a keyboard closes, or when
-locking the body collapses the page — and a full-screen overlay then renders above the
+iOS the visible area can sit lower inside that viewport (after a keyboard closes, or when
+locking the body collapses the page), and a full-screen overlay then renders above the
 screen, taking its top bar with it. `visualViewport.offsetTop` is the only thing that
 reports the gap; the lightbox follows it through `--lbt`. The same applies in Chrome on
 iPhone, which is WebKit underneath.
 
 **There are three ways out of the lightbox and they are easy to break.** The X in the top
-bar, Escape on a desktop, and a tap on the dark surround — which works because `.bar` is
+bar, Escape on a desktop, and a tap on the dark surround, which works because `.bar` is
 `pointer-events:none`, so a tap over it falls through to the stage, and because the
 `touchmove` handler calls `preventDefault`, so a swipe between photos never synthesises the
 click that would dismiss it. Change either of those and the gesture quietly stops working,

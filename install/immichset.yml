@@ -1,7 +1,5 @@
-# Layered on top of Immich's OWN docker-compose.yml (downloaded by install.sh, never edited).
-# The two files are joined by COMPOSE_FILE in .env, so `docker compose up -d` in this folder starts everything.
-# Compose merges the lists in this file with Immich's; nothing here uses features newer than Compose 2.x basics,
-# because NAS makers (Synology, Ugreen, QNAP) often ship an older Docker Compose.
+# Layered on top of Immich's own docker-compose.yml (downloaded by install.sh, never edited) through COMPOSE_FILE in .env.
+# Kept to basic Compose features because NAS makers (Synology, Ugreen, QNAP) often ship an older Docker Compose.
 
 services:
   # Machine learning (smart search, face grouping) is heavy. It only starts when COMPOSE_PROFILES includes "ml".

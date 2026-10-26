@@ -75,5 +75,4 @@ On a NAS, run the installer with `sudo` if it says it can't create folders, and 
 suggests sensible ones). If your NAS has no SSH, or you'd rather not use it, install Immich with its own guide and then add
 immichset from a **Project**, as in [Add immichset to your Immich](HAVE-IMMICH.md).
 
-> The menu names above are from memory of how these systems usually work and the official pages; NAS makers rename things.
-> If a name doesn't match, search the NAS's help for "Docker" or "SSH".
+> NAS makers rename menus between versions. If a name doesn't match, search the NAS's help for "Docker" or "SSH".
