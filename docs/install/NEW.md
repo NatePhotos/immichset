@@ -74,6 +74,14 @@ Setup code:  K7Q2-M9XD-4RTB
 > ones on your own screen, not the ones above.** The address starts with your computer's number on your home network
 > (often `192.168...` or `10...`). If it doesn't open, and you're on the same computer that's running it, try
 > `http://localhost:3000/setup`.
+>
+> **Finding the address from a terminal.** Run the command for the computer that is running immichset (not the one you are
+> typing on):
+>
+> - NAS or Linux (over SSH): `hostname -I` prints the address, such as `192.168.1.20`. `hostname` prints its name.
+> - Mac: `ipconfig getifaddr en0` (try `en1` if it prints nothing).
+>
+> The installer prints both the address and the name when it finishes.
 
 > **If it stops with "Cannot continue"**, read the sentence after it. It tells you exactly what to fix (Docker missing,
 > not enough memory, database on a network share), and nothing was changed. Fix it and run the same command again.

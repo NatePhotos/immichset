@@ -267,6 +267,8 @@ NOTES
   CODE=""; if [ -r "$DATA/setup-code.txt" ]; then CODE=$(cat "$DATA/setup-code.txt"); fi
   step "Done"
   say "Open this in your web browser:  http://$(lan_ip):$PORT/setup"
+  name=$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)
+  case "$name" in ""|localhost) ;; *) say "  Or by this computer's name (works on many home networks):  http://$name.local:$PORT/setup" ;; esac
   say "  (On this same computer you can also use  http://localhost:$PORT/setup  if that address doesn't open.)"
   [ -z "$CODE" ] || say "Setup code:  $CODE"
   [ "$WANT_IMMICH" = yes ] && say "Do the setup page FIRST. It creates your Immich account for you. Immich itself can take a few minutes to start."
