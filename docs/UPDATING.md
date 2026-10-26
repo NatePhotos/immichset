@@ -8,8 +8,9 @@ In the install folder:
 sh install.sh update
 ```
 
-It downloads the new versions and restarts. Your photos and settings are not touched. It stops and asks if Immich has a
-major new release, because those can need extra steps; read Immich's release notes, then run it again with `--allow-major`.
+It downloads the newer versions and restarts. Your photos and settings are not touched. Immich stays on its current
+major version (`v3`), so this never jumps you across a big change by itself. When Immich announces a new major version, read
+its release notes first (and update the Immich phone app before the server).
 
 It's good to **back up first** ([Backups](BACKUPS.md)) and to update about once a month.
 

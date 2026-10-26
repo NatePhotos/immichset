@@ -26,14 +26,13 @@ warn() { printf '! %s\n' "$*" >&2; }
 die()  { printf '\nCannot continue: %s\n' "$*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
 
-EXTRA=""; DRY=0; YES=0; DIR=""; CMD=""; WANT_IMMICH=""; WANT_ML=""; PHOTOS=""; DBDIR=""; IMPORT=""; PORT=""; ALLOW_MAJOR=0
+EXTRA=""; DRY=0; YES=0; DIR=""; CMD=""; WANT_IMMICH=""; WANT_ML=""; PHOTOS=""; DBDIR=""; IMPORT=""; PORT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;  --yes|-y) YES=1 ;;  --dir) DIR="$2"; shift ;;
     --immich) WANT_IMMICH=yes ;;  --no-immich) WANT_IMMICH=no ;;
     --ml) WANT_ML=yes ;;  --no-ml) WANT_ML=no ;;
     --photos) PHOTOS="$2"; shift ;;  --db) DBDIR="$2"; shift ;;  --import) IMPORT="$2"; shift ;;  --port) PORT="$2"; shift ;;
-    --allow-major) ALLOW_MAJOR=1 ;;
     stop) if [ "$CMD" = try-online ]; then EXTRA=stop; else CMD=stop; fi ;;
     install|tunnel|try-online|status|start|update|uninstall) CMD="$1" ;;
     -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -109,7 +108,7 @@ compose() { ( cd "$DIR" && docker compose "$@" ); }
 setenv() {  # setenv KEY VALUE FILE : replace KEY=, else un-comment # KEY=, else append
   awk -v k="$1" -v v="$2" 'BEGIN{d=0} { if ($0 ~ "^"k"=" ) { print k"="v; d=1 } else if (!d && $0 ~ "^# *"k"=") { print k"="v; d=1 } else print } END { if (!d) print k"="v }' "$3" >"$3.tmp" && mv "$3.tmp" "$3" && chmod 600 "$3"
 }
-getenv() { [ -f "$2" ] && sed -n "s/^$1=//p" "$2" | head -n1 || true; }
+getenv() { if [ -f "$2" ]; then sed -n "s/^$1=//p" "$2" | head -n1; fi; }
 fetch() {  # fetch URL DEST : to a temporary name, then moved into place
   tmp="$2.part"
   if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$tmp" || { rm -f "$tmp"; die "Couldn't download $1"; }
@@ -195,7 +194,7 @@ do_install() {
   if [ "$WANT_IMMICH" = yes ]; then
     mkdir -p "$UPLOAD" "$DBF" || die "Couldn't create your photo folders."
     fetch "$SRC_IMMICH/docker-compose.yml" "$DIR/docker-compose.yml"
-    grep -q 'immich-server' "$DIR/docker-compose.yml" && grep -q 'UPLOAD_LOCATION' "$DIR/docker-compose.yml" || die "The Immich file I downloaded doesn't look right. Nothing was started."
+    if ! { grep -q 'immich-server' "$DIR/docker-compose.yml" && grep -q 'UPLOAD_LOCATION' "$DIR/docker-compose.yml"; }; then die "The Immich file I downloaded doesn't look right. Nothing was started."; fi
     [ -f "$DIR/.env" ] || fetch "$SRC_IMMICH/example.env" "$DIR/.env"
     fetch "$SRC_OURS/immichset.yml" "$DIR/immichset.yml"
     [ -z "$IMPORT" ] || fetch "$SRC_OURS/immichset.import.yml" "$DIR/immichset.import.yml"
@@ -254,7 +253,7 @@ NOTES
     step "Waiting for it to come up"
     i=0; until curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; do i=$((i + 1)); [ $i -gt 90 ] && { warn "Still not answering. Check: cd $DIR && docker compose logs immichset"; break; }; printf '.'; sleep 2; done; echo
   fi
-  CODE=""; [ -r "$DATA/setup-code.txt" ] && CODE=$(cat "$DATA/setup-code.txt") || true
+  CODE=""; if [ -r "$DATA/setup-code.txt" ]; then CODE=$(cat "$DATA/setup-code.txt"); fi
   step "Done"
   say "Open this in your web browser:  http://$(lan_ip):$PORT/setup"
   [ -z "$CODE" ] || say "Setup code:  $CODE"
