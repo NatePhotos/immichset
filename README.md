@@ -69,7 +69,8 @@ You need Immich running, and about ten minutes.
 
 That's the whole install. The step-by-step guide, with exactly which permissions to tick in Immich,
 how to verify an email domain, and how to put it on the internet over https, is
-**[docs/SETUP.md](docs/SETUP.md)**.
+**[docs/SETUP.md](docs/SETUP.md)**, which has a screenshot for every step and starts from nothing
+(installing Docker and Immich).
 
 Prefer environment variables? [`docker-compose.example.yml`](docker-compose.example.yml) lists every
 setting; anything set there wins over what the setup page saved. Running from a clone of this repo

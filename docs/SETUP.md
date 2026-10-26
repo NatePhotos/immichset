@@ -3,6 +3,31 @@
 This takes about ten minutes. You install one container, open a page in your browser, and paste in a few
 keys. The page tests each one and tells you in plain words what to fix.
 
+> The pictures of immichset in this guide are real screenshots from a demo install with sample photos and a made-up
+> studio ("Maple Street Photo"), so your own values will differ. Docker, your NAS and Immich look different on every
+> device and version, so for those this guide says where to click and links the official instructions instead of
+> showing a picture that might be wrong for you.
+
+## Starting from nothing
+
+If you have never done this before, there are three things to put in place first. Each takes a few minutes, and
+the first two have excellent official guides:
+
+1. **A computer that stays on and can run Docker.** A NAS (Synology, Ugreen, QNAP, Unraid, TrueNAS), a mini PC, or a
+   Raspberry Pi 4/5 all work. Docker is an app that runs programs in tidy boxes.
+   - *NAS:* open its app store (Synology: **Package Center**, search **Container Manager**; Ugreen, QNAP and Unraid
+     have a **Docker** app) and install it.
+   - *Any other computer:* follow [docs.docker.com/get-docker](https://docs.docker.com/get-docker/).
+2. **Immich**, which keeps your photos and makes the thumbnails. Install it with its own guide:
+   [immich.app/docs/install/requirements](https://immich.app/docs/install/requirements), then create your account,
+   and upload (or import) a few photos into an **album**. immichset shows albums, so a gallery needs one.
+   Note the address you open Immich at, for example `http://192.168.1.20:2283`. You'll need it in a minute.
+3. **A way for clients to reach the gallery over the internet** (only when you're ready to share). This is a
+   domain name plus either a Cloudflare Tunnel or your router and a reverse proxy. You can do everything else
+   first and add this last; section 5 explains it.
+
+You do **not** need a domain, Resend or Cloudflare to try it at home. Those only matter once clients are involved.
+
 **What you need first**
 
 - **Immich**, already running, with at least one album. immichset reads your photos from it; it does not
@@ -35,6 +60,8 @@ docker logs immichset
 Open `http://<your server>:3000/setup` and enter the code. It stops anyone else on your network from
 setting up your server before you do. The page disappears for good when you finish.
 
+![The setup page asks for the code printed in the log](images/setup-01-code.jpg)
+
 ## 2. Immich: your read key
 
 In Immich, click your picture › **Account Settings** › **API Keys** › **New API Key**. Name it
@@ -46,6 +73,18 @@ In Immich, click your picture › **Account Settings** › **API Keys** › **Ne
 Do **not** choose "All". The key is shown once, so copy it straight into the setup page. The page's
 **Test connection** button tries everything the app does and, if a permission is missing, names the exact one
 to tick.
+
+![The Immich step: address and key, with a Test connection button](images/setup-02-immich.jpg)
+
+Press **Test connection**. It tries everything the app does and shows a tick for each:
+
+![Every check passed: reach Immich, list albums, thumbnails, downloads, read-only key](images/setup-05-immich-ok.jpg)
+
+If something's wrong it says what, in plain words. Two you're most likely to meet:
+
+![Couldn't reach Immich: localhost means the container itself](images/setup-03-immich-localhost.jpg)
+
+![A missing permission is named exactly, with what to tick in Immich](images/setup-04-immich-permission.jpg)
 
 **Immich address.** Use the address *this server* can reach, such as `http://192.168.1.20:2283`. Inside a
 container, `localhost` is the container itself, so it won't work. If Immich runs in another compose project on
@@ -68,6 +107,8 @@ in your library.
 3. In the setup page, paste the key, set **Send from** to something like `Your Studio <hello@yourdomain.com>`,
    enter an address to send a test to, and press **Send test email**.
 
+![Email step: a sending-only key is recognised, and a test email is sent](images/setup-06-email.jpg)
+
 No domain yet? **Skip** this step. You can add it later under **Connections**. Until then there are no
 invites, reminders or mailings, and the emailed sign-in code stays off (the page does this for you so you can
 never lock yourself out).
@@ -81,6 +122,8 @@ Choose the email and password you will sign in with (12 characters or more). You
 galleries and emails. A **postal address or PO box** is required by law in the footer of every marketing
 email, so mailings stay locked until you add one. You can add it later.
 
+![You and your business: your sign-in, name, address and website](images/setup-07-you.jpg)
+
 **Emailed sign-in code.** Once email has been tested, every sign-in also asks for a code emailed to you.
 
 ## 5. Your public address
@@ -92,6 +135,8 @@ emails are built from it. To make it work, put a reverse proxy or a Cloudflare T
 - **Caddy:** `galleries.yourstudio.com { reverse_proxy localhost:3000 }`
 - **Synology / Ugreen / QNAP:** use the built-in reverse proxy (Control Panel › Login Portal › Advanced ›
   Reverse Proxy) to send your hostname to port 3000, with a certificate.
+
+![The public address step](images/setup-08-address.jpg)
 
 The page can't always confirm the address from the inside (many home routers can't reach their own public
 address). If it says so, check it from your phone on mobile data.
@@ -109,10 +154,51 @@ Each of these can be skipped and added later.
   `email.bounced` and `email.complained`, and paste the signing secret. Addresses that bounce or complain are
   then never mailed again.
 
+![Optional extras are collapsed so you can skip them](images/setup-09-extras.jpg)
+
+Then **Review**, and **Finish setup**:
+
+![Review everything, then finish](images/setup-10-review.jpg)
+
+![Setup is done and the gallery server is running](images/setup-11-done.jpg)
+
 ## 7. First sign-in
 
-Open `/admin` on your public address, sign in, enter the emailed code, and press **New gallery**: pick an album,
-choose whether it needs an email or a password, and publish.
+Open `/admin`, sign in with your email and password, and enter the code that was emailed to you.
+
+![Admin sign-in](images/admin-01-signin.jpg)
+
+![The emailed six-digit code](images/admin-02-code.jpg)
+
+You land on **Home**: your galleries, this week's numbers, and a health strip for backups and email.
+
+![The admin home](images/admin-03-home.jpg)
+
+## 8. Your first gallery
+
+Press **New gallery**. Pick the Immich album, give it a title (the web address fills itself in), and choose
+whether clients need to leave an email, whether they can download, and whether to publish it now. Add a password
+if you want one. Email and password are independent: use either, both, or neither.
+
+![Creating a gallery from an Immich album](images/admin-04-new-gallery.jpg)
+
+The gallery opens on its photos. Add or remove photos in Immich and the gallery follows. **Preview** shows what
+clients see, and **Copy link** gives you the address to send them.
+
+![The gallery's photos in the admin](images/admin-05-gallery.jpg)
+
+Everything about a gallery lives under **Settings**:
+
+![Gallery settings: title, date, address, expiry and photo order](images/admin-06-settings.jpg)
+
+![Access: ask for an email, allow downloads, publish, password](images/admin-07-access.jpg)
+
+This is what a client sees: a cover, then the photos in a justified grid with favourites, a slideshow and a
+download-all button.
+
+![The client's view: the cover](images/client-01-cover.jpg)
+
+![The client's view: the photo grid](images/client-02-grid.jpg)
 
 ---
 
@@ -153,7 +239,11 @@ undone. To go back, restore that copy and run the older image.
 ## Changing a key later
 
 Open **Connections** in the admin. Every key has a Test button, and changes to keys, addresses and branding
-apply at once. Anything you set in the compose file is shown as such and is changed there. Changing settings
+apply at once.
+
+![Connections: every key, with a Test button](images/admin-08-connections.jpg)
+
+Anything you set in the compose file is shown as such and is changed there. Changing settings
 needs you to be signed in in the browser; the API token can't do it.
 
 ---
