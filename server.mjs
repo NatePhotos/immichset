@@ -15,6 +15,7 @@ import { overview } from './admin/overview.mjs';
 import { createZipWriter } from './zip/writer.mjs';
 import { DownloadQueue } from './zip/queue.mjs';
 import { createWatchdog } from './health/watchdog.mjs';
+import { render, cleanDesign, IMAGE_FILE, scanVars, unsubToken, readUnsubToken, maskEmail, selectRecipients, planHash, classify, verifySvix, isReservedAddress } from './mail/blast.mjs';
 
 const CFG = {
   port:       Number(process.env.PORT || 3000),
@@ -63,6 +64,13 @@ const CFG = {
   zipSettleMin: Number(process.env.ZIP_SETTLE_MINUTES || 10),
   zipStallSec:  Number(process.env.ZIP_STALL_SECONDS || 120),
   healthMinutes: Number(process.env.HEALTH_MINUTES || 30),
+  brandAddress:  process.env.BRAND_ADDRESS || '',
+  mailingMax:    Number(process.env.MAILING_MAX || 500),
+  mailingDayMax: Number(process.env.MAILING_DAY_MAX || 500),
+  mailingIntervalMs: Number(process.env.MAILING_INTERVAL_MS || 600),
+  mailSend:     (process.env.MAIL_SEND || 'on').toLowerCase() !== 'off',
+  resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET || '',
+  resendBase:  (process.env.RESEND_API_URL || 'https://api.resend.com').replace(/\/+$/, ''),
   healthFirstSec: Number(process.env.HEALTH_FIRST_SECONDS || 120),
   healthMinFreeGb: Number(process.env.HEALTH_MIN_FREE_GB || 20),
 };
@@ -238,6 +246,52 @@ CREATE TABLE IF NOT EXISTS email_templates (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+/* A mailing: one template sent to a list. The subject and body are copied in when it is made, so
+   editing the template later changes nothing that is already queued. */
+CREATE TABLE IF NOT EXISTS mailings (
+  id           INTEGER PRIMARY KEY,
+  request_key  TEXT UNIQUE NOT NULL,
+  template_id  INTEGER,
+  template_name TEXT NOT NULL,
+  subject      TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  audience     TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'queued',   -- queued | sending | paused | cancelled | done
+  dry_run      INTEGER NOT NULL DEFAULT 0,
+  total        INTEGER NOT NULL DEFAULT 0,
+  error        TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at   TEXT,
+  finished_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS mailing_recipients (
+  id            INTEGER PRIMARY KEY,
+  mailing_id    INTEGER NOT NULL REFERENCES mailings(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL,
+  name          TEXT,
+  gallery_id    INTEGER REFERENCES galleries(id) ON DELETE SET NULL,
+  status        TEXT NOT NULL DEFAULT 'queued',  -- queued | sending | sent | failed | skipped | cancelled | simulated
+  attempts      INTEGER NOT NULL DEFAULT 0,
+  next_at       INTEGER NOT NULL DEFAULT 0,
+  sending_since INTEGER,
+  resend_id     TEXT,
+  error         TEXT,
+  sent_at       TEXT,
+  UNIQUE (mailing_id, email)
+);
+CREATE INDEX IF NOT EXISTS ix_mrcpt ON mailing_recipients(mailing_id, status, next_at);
+CREATE INDEX IF NOT EXISTS ix_mrcpt_sent ON mailing_recipients(status, sent_at);
+/* people who asked not to be mailed. scope 'marketing' stops mailings; 'all' also stops gallery
+   notices and reminders (set by the second button on the page, or by a bounce or complaint) */
+CREATE TABLE IF NOT EXISTS suppressions (
+  email      TEXT PRIMARY KEY,
+  scope      TEXT NOT NULL DEFAULT 'marketing',
+  reason     TEXT NOT NULL,                       -- unsubscribed | bounced | complained | manual
+  mailing_id INTEGER,
+  detail     TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -245,7 +299,10 @@ CREATE TABLE IF NOT EXISTS settings (
 `);
 
 /* forward-only migrations, for databases created before a column existed */
-for (const [table, col, decl] of [['galleries', 'cover_file', 'TEXT'],
+for (const [table, col, decl] of [['email_templates', 'kind', "TEXT NOT NULL DEFAULT 'ready'"],
+                                  ['email_templates', 'design', 'TEXT'],
+                                  ['mailings', 'design', 'TEXT'],
+                                  ['galleries', 'cover_file', 'TEXT'],
                                   ['galleries', 'cover_focus', 'TEXT'],
                                   ['galleries', 'sort_order', 'TEXT'],
                                   ['events', 'detail', 'TEXT']]) {
@@ -348,12 +405,41 @@ const q = {
   remIns:     db.prepare('INSERT OR IGNORE INTO reminders (gallery_id,days_before,audience,email) VALUES (?,?,?,?)'),
   remDel:     db.prepare('DELETE FROM reminders WHERE id = ? AND gallery_id = ?'),
   setGet:     db.prepare('SELECT value FROM settings WHERE key = ?'),
-  tplAll:     db.prepare('SELECT * FROM email_templates ORDER BY built_in DESC, name'),
+  tplAll:     db.prepare('SELECT * FROM email_templates WHERE kind = ? ORDER BY built_in DESC, name'),
   tplGet:     db.prepare('SELECT * FROM email_templates WHERE id = ?'),
-  tplIns:     db.prepare('INSERT INTO email_templates (name,subject,body,built_in) VALUES (?,?,?,?)'),
-  tplUpd:     db.prepare('UPDATE email_templates SET name=?, subject=?, body=? WHERE id=?'),
+  tplIns:     db.prepare('INSERT INTO email_templates (name,subject,body,built_in,kind,design) VALUES (?,?,?,?,?,?)'),
+  tplDesign:  db.prepare('UPDATE email_templates SET design = ? WHERE id = ?'),
+  tplByName:  db.prepare('SELECT * FROM email_templates WHERE name = ? AND kind = ?'),
+  tplUpd:     db.prepare('UPDATE email_templates SET name=?, subject=?, body=?, design=? WHERE id=?'),
   tplDel:     db.prepare('DELETE FROM email_templates WHERE id = ? AND built_in = 0'),
-  tplCount:   db.prepare('SELECT COUNT(*) n FROM email_templates'),
+  tplCount:   db.prepare("SELECT COUNT(*) n FROM email_templates WHERE kind = 'ready'"),
+  mlIns:      db.prepare('INSERT INTO mailings (request_key,template_id,template_name,subject,body,design,audience,status,dry_run,total) VALUES (?,?,?,?,?,?,?,?,?,?)'),
+  mlGet:      db.prepare('SELECT * FROM mailings WHERE id = ?'),
+  mlByKey:    db.prepare('SELECT * FROM mailings WHERE request_key = ?'),
+  mlList:     db.prepare('SELECT * FROM mailings ORDER BY id DESC LIMIT 100'),
+  mlActive:   db.prepare("SELECT * FROM mailings WHERE status IN ('queued','sending') ORDER BY id LIMIT 1"),
+  mlStatus:   db.prepare('UPDATE mailings SET status = ?, error = ? WHERE id = ?'),
+  mlStarted:  db.prepare("UPDATE mailings SET started_at = COALESCE(started_at, datetime('now')) WHERE id = ?"),
+  mlFinished: db.prepare("UPDATE mailings SET finished_at = datetime('now') WHERE id = ?"),
+  mlPrune:    db.prepare("DELETE FROM mailings WHERE created_at < datetime('now', '-730 days')"),
+  mrIns:      db.prepare('INSERT INTO mailing_recipients (mailing_id,email,name,gallery_id,status,error) VALUES (?,?,?,?,?,?)'),
+  mrNext:     db.prepare("SELECT * FROM mailing_recipients WHERE mailing_id = ? AND status = 'queued' AND next_at <= ? ORDER BY id LIMIT 1"),
+  mrPending:  db.prepare("SELECT COUNT(*) n, MIN(next_at) minNext FROM mailing_recipients WHERE mailing_id = ? AND status IN ('queued','sending')"),
+  mrCounts:   db.prepare('SELECT status, COUNT(*) n FROM mailing_recipients WHERE mailing_id = ? GROUP BY status'),
+  mrFor:      db.prepare(`SELECT r.email, r.name, r.status, r.error, r.sent_at, g.title gallery FROM mailing_recipients r
+                          LEFT JOIN galleries g ON g.id = r.gallery_id WHERE r.mailing_id = ? ORDER BY r.id LIMIT 3000`),
+  mrSet:      db.prepare('UPDATE mailing_recipients SET status = ?, attempts = ?, next_at = ?, sending_since = ?, resend_id = ?, error = ?, sent_at = COALESCE(?, sent_at) WHERE id = ?'),
+  mrCancel:   db.prepare("UPDATE mailing_recipients SET status = 'cancelled' WHERE mailing_id = ? AND status = 'queued'"),
+  mrRetry:    db.prepare("UPDATE mailing_recipients SET status = 'queued', attempts = 0, next_at = 0, error = NULL WHERE mailing_id = ? AND status = 'failed'"),
+  mrStaleSending:  db.prepare("UPDATE mailing_recipients SET status = 'failed', error = 'Outcome unknown after a restart; it may have been sent' WHERE status = 'sending' AND sending_since < ?"),
+  mrRecentSending: db.prepare("UPDATE mailing_recipients SET status = 'queued', next_at = 0 WHERE status = 'sending' AND sending_since >= ?"),
+  sentLast24h: db.prepare("SELECT COUNT(*) n FROM mailing_recipients WHERE status = 'sent' AND sent_at >= datetime('now', '-1 day')"),
+  supGet:     db.prepare('SELECT * FROM suppressions WHERE email = ?'),
+  supAll:     db.prepare('SELECT * FROM suppressions ORDER BY created_at DESC'),
+  supPut:     db.prepare(`INSERT INTO suppressions (email,scope,reason,mailing_id,detail) VALUES (?,?,?,?,?)
+                          ON CONFLICT(email) DO UPDATE SET scope = CASE WHEN suppressions.scope = 'all' OR excluded.scope = 'all' THEN 'all' ELSE 'marketing' END`),
+  supDel:     db.prepare('DELETE FROM suppressions WHERE email = ?'),
+  supCount:   db.prepare('SELECT COUNT(*) n FROM suppressions WHERE mailing_id = ?'),
   setPut:     db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
   admGet:     db.prepare('SELECT * FROM admin_users WHERE email = ?'),
   admAny:     db.prepare('SELECT COUNT(*) n FROM admin_users'),
@@ -373,11 +459,33 @@ function seedTemplates() {
   q.tplIns.run('Default',
     'Your photos are ready \u2014 {{title}}',
     "Hi,\n\nYour photos from {{title}} are ready to view and download.\n\nTake your time looking through them, and let me know if you have any questions.",
-    1);
+    1, 'ready', null);
   q.tplIns.run('Short and warm',
     '{{title}} \u2014 your gallery is live',
     "Hi,\n\nHere are your photos. I hope you love them as much as I enjoyed taking them.",
-    0);
+    0, 'ready', null);
+}
+/* starters for mailings, added once; deleting them all does not bring them back */
+const STARTER_DESIGNS = {
+  'New work': { image: { mode: 'none' }, button: { text: 'See the new work', mode: 'site' } },
+  'Seasonal check-in': { image: { mode: 'none' }, button: { text: '', mode: 'none' } },
+  'Your gallery is closing soon': { image: { mode: 'cover' }, button: { text: 'View your gallery', mode: 'gallery' }, showExpiry: true },
+};
+function seedMailingTemplates() {
+  /* starters made before mailings had a design get one, once, and only if still untouched */
+  if (q.setGet.get('mailing_tpl_seeded') && !q.setGet.get('mailing_design_seeded')) {
+    for (const [name, d] of Object.entries(STARTER_DESIGNS)) { const t = q.tplByName.get(name, 'mailing'); if (t && !t.design) q.tplDesign.run(JSON.stringify(cleanDesign(d)), t.id); }
+    q.setPut.run('mailing_design_seeded', '1');
+  }
+  if (q.setGet.get('mailing_tpl_seeded')) return;
+  q.setPut.run('mailing_design_seeded', '1');
+  q.tplIns.run('New work', 'New from {{brand}}',
+    "Hi {{name}},\n\nI've just finished a new set of work and thought of you. You can see it here:\n\n{{site}}\n\nThank you for being part of it.", 0, 'mailing', JSON.stringify(cleanDesign(STARTER_DESIGNS['New work'])));
+  q.tplIns.run('Seasonal check-in', 'Booking for the season ahead',
+    "Hi {{name}},\n\nIt's that time of year again, and my calendar is starting to fill. If you'd like to plan a session, just reply to this email and we'll find a date.\n\nWarmly,\n{{brand}}", 0, 'mailing', JSON.stringify(cleanDesign(STARTER_DESIGNS['Seasonal check-in'])));
+  q.tplIns.run('Your gallery is closing soon', '{{title}} closes on {{expiry}}',
+    "Hi {{name}},\n\nA gentle note that your gallery is available until {{expiry}}. After that it will no longer be online, so please download anything you'd like to keep.\n\n{{link}}", 0, 'mailing', JSON.stringify(cleanDesign(STARTER_DESIGNS['Your gallery is closing soon'])));
+  q.setPut.run('mailing_tpl_seeded', '1');
 }
 
 function syncAdminUser() {
@@ -443,6 +551,17 @@ function setAdminCookie(res, req) {
     `adm=${encodeURIComponent(tok)}; Path=/; Max-Age=${14 * 86400}; HttpOnly; SameSite=Lax` +
     (isHttps(req) ? '; Secure' : ''));
 }
+/* Real mailings need the browser sign-in (password and emailed code), never just the API token:
+   a leaked token must not be able to mail every client. */
+function sessionOnly(req) {
+  const p = unsign(cookies(req)['adm'] || '');
+  return !!(p && p.adm === true);
+}
+function originOk(req) {
+  const o = req.headers.origin;
+  if (!o) return true;
+  try { return new URL(o).host === new URL(CFG.publicUrl).host; } catch { return false; }
+}
 function adminOk(req) {
   const hdr = req.headers['x-admin-token'];
   if (hdr && constEq(hdr, CFG.adminToken)) return true;
@@ -471,7 +590,7 @@ function prettyDate(v) {
 /* Galleries live at the root, so a slug may not be a path the app already answers. */
 const RESERVED = new Set(['g', 's', 'share', 'api', 'admin', 'healthz', 'brand', 'static', 'assets',
                           'favicon.ico', 'robots.txt', 'sitemap.xml', 'index.html', 'admin.html',
-                          'well-known', 'login', 'logout']);
+                          'well-known', 'login', 'logout', 'unsubscribe', 'u', 'mail']);
 const slugShape = s => /^[a-z0-9][a-z0-9-]{1,60}$/i.test(String(s));
 const slugFree  = s => !RESERVED.has(String(s).toLowerCase());
 
@@ -655,7 +774,7 @@ async function sendLoginCode(email, code) {
     <div style="font-size:34px;font-weight:700;letter-spacing:.32em;padding:18px 0;border-top:1px solid #e6e6e6;border-bottom:1px solid #e6e6e6">${code}</div>
     <p style="font-size:12.5px;color:#8a8a8a;line-height:1.7;margin:22px 0 0">
       It expires in 10 minutes. If you didn't try to sign in, someone has your password — change it.</p></div>`;
-  const r = await fetch('https://api.resend.com/emails', {
+  const r = await fetch(`${CFG.resendBase}/emails`, {
     method: 'POST',
     headers: { 'authorization': `Bearer ${CFG.resendKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -668,9 +787,10 @@ async function sendLoginCode(email, code) {
 
 async function sendMailKind(g, email, kind, logKind, extra) {
   if (!mailReady()) throw new Error('email is not configured');
+  if (suppressedFor(email, 'service')) throw new Error('unsubscribed from all email');
   const t = tmpl(kind, g, extra);
   try {
-    const r = await fetch('https://api.resend.com/emails', {
+    const r = await fetch(`${CFG.resendBase}/emails`, {
       method: 'POST',
       headers: { 'authorization': `Bearer ${CFG.resendKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -714,6 +834,7 @@ async function expirySweep() {
         : audience(g.id);
       for (const email of to) {
         if (q.mailSent.get(g.id, email, kind).n) continue; /* already sent this one */
+        if (suppressedFor(email, 'service')) continue;      /* asked for nothing at all */
         try {
           await sendMailKind(g, email, 'expiring', kind, { days: rule.days_before });
           console.log(`reminder (${rule.days_before}d) -> ${email} [${g.slug}]`);
@@ -745,7 +866,7 @@ function runBackup(force = false) {
       .sort().reverse().slice(CFG.backupKeep);
     for (const f of old) { try { unlinkSync(join(CFG.backupDir, f)); } catch {} }
 
-    const cov = backupCovers();
+    const cov = backupCovers(); backupMailImages();
     const siteCopy = site.backup(CFG.backupDir);
     const size = statSync(final).size;
     console.log(`backup written: ${final} (${(size / 1024).toFixed(0)} KB)`
@@ -756,6 +877,19 @@ function runBackup(force = false) {
     console.error('backup failed:', e.message);
     return { error: e.message };
   }
+}
+
+/* pictures in sent mailings must outlive the box they were uploaded to; they are small and never change */
+function backupMailImages() {
+  if (!CFG.backupDir || !existsSync(MAIL_IMG_DIR)) return;
+  try {
+    const dst = join(CFG.backupDir, 'mail-images');
+    if (!existsSync(dst)) mkdirSync(dst, { recursive: true });
+    for (const f of readdirSync(MAIL_IMG_DIR)) {
+      if (f.startsWith('.') || existsSync(join(dst, f))) continue;
+      copyFileSync(join(MAIL_IMG_DIR, f), join(dst, f));
+    }
+  } catch (e) { console.error('mail picture backup failed:', e.message); }
 }
 
 /* An uploaded cover lives on disk, not in the database, so a snapshot of the
@@ -1121,6 +1255,11 @@ const server = createServer(async (req, res) => {
   try {
     /* ---- health ---- */
     if (path === '/healthz') return json(res, 200, { ok: true });
+
+    /* ---- mailing: the unsubscribe page and the bounce webhook, both public ---- */
+    if (path.startsWith('/mail/img/') && (req.method === 'GET' || req.method === 'HEAD')) return mailImageRoute(req, res, path.slice('/mail/img/'.length));
+    if (path.startsWith('/unsubscribe/')) return unsubscribeRoute(req, res, path.slice('/unsubscribe/'.length));
+    if (path === '/api/mail/webhook' && req.method === 'POST') return mailWebhook(req, res);
 
     /* ---- admin (token in header) ---- */
     if (path === '/api/admin/login' && req.method === 'POST') {
@@ -2377,7 +2516,9 @@ async function adminRoutes(req, res, path, url) {
   }
 
   if (path === '/api/admin/mail-status')
-    return json(res, 200, { configured: mailReady(), from: CFG.mailFrom || null, replyTo: CFG.mailReplyTo || null, remindDays: CFG.remindDays });
+    return json(res, 200, { configured: mailReady(), from: CFG.mailFrom || null, replyTo: CFG.mailReplyTo || null, remindDays: CFG.remindDays,
+                            brandAddress: !!CFG.brandAddress, mailingMax: CFG.mailingMax, mailingDayMax: CFG.mailingDayMax,
+                            sendOn: CFG.mailSend, webhook: !!CFG.resendWebhookSecret, signedIn: sessionOnly(req) });
 
   if (path === '/api/admin/default-reminders') {
     if (req.method === 'GET') return json(res, 200, { reminders: defaultReminders() });
@@ -2447,15 +2588,17 @@ async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/templates') {
     if (req.method === 'GET') {
       const row = q.setGet.get('last_template');
-      return json(res, 200, { templates: q.tplAll.all(), lastUsed: row ? Number(row.value) : null });
+      const kind = url.searchParams.get('kind') === 'mailing' ? 'mailing' : 'ready';
+      return json(res, 200, { templates: tplList(kind), lastUsed: row ? Number(row.value) : null });
     }
     if (req.method === 'POST') {
       const b = await readJson(req);
       const name = String(b.name || '').trim();
       if (!name) return json(res, 400, { error: 'Give the template a name' });
-      try { q.tplIns.run(name, String(b.subject || ''), String(b.body || ''), 0); }
+      const kind = b.kind === 'mailing' ? 'mailing' : 'ready';
+      try { q.tplIns.run(name, String(b.subject || ''), String(b.body || ''), 0, kind, kind === 'mailing' ? JSON.stringify(cleanDesign(b.design)) : null); }
       catch { return json(res, 409, { error: 'A template with that name already exists' }); }
-      return json(res, 201, { templates: q.tplAll.all() });
+      return json(res, 201, { templates: tplList(kind) });
     }
   }
 
@@ -2467,14 +2610,15 @@ async function adminRoutes(req, res, path, url) {
       const b = await readJson(req);
       try {
         q.tplUpd.run(String(b.name ?? t.name).trim(), String(b.subject ?? t.subject),
-                     String(b.body ?? t.body), t.id);
+                     String(b.body ?? t.body),
+                     t.kind === 'mailing' ? (b.design !== undefined ? JSON.stringify(cleanDesign(b.design)) : t.design) : null, t.id);
       } catch { return json(res, 409, { error: 'A template with that name already exists' }); }
-      return json(res, 200, { templates: q.tplAll.all() });
+      return json(res, 200, { templates: tplList(t.kind) });
     }
     if (req.method === 'DELETE') {
       if (t.built_in) return json(res, 400, { error: 'The built-in template cannot be deleted' });
       q.tplDel.run(t.id);
-      return json(res, 200, { templates: q.tplAll.all() });
+      return json(res, 200, { templates: tplList(t.kind) });
     }
   }
 
@@ -2565,7 +2709,7 @@ async function adminRoutes(req, res, path, url) {
   /* everyone who left an email: registered, downloaded, or either, across one gallery or all of
      them; one row per address with the galleries it came from. ?format=csv for a file. */
   /* hidden addresses stay in the database; they are only left out of the list, copy and CSV */
-  const hiddenSet = () => { try { return new Set(JSON.parse((q.setGet.get('hidden_contacts') || {}).value || '[]')); } catch { return new Set(); } };
+  const hiddenSet = hiddenContacts;
   if (path === '/api/admin/contacts/hide' && req.method === 'POST') {
     const b = await readJson(req);
     const set = hiddenSet();
@@ -2581,12 +2725,7 @@ async function adminRoutes(req, res, path, url) {
     const gid = url.searchParams.get('gallery') === 'all' || !url.searchParams.get('gallery')
       ? null : Number(url.searchParams.get('gallery'));
     const who = ['registered', 'downloaded'].includes(url.searchParams.get('who')) ? url.searchParams.get('who') : 'any';
-    const rows = db.prepare(`
-      SELECT r.email, r.name, r.created_at AS reg_at, g.id AS gid, g.title,
-             (SELECT MAX(e.created_at) FROM events e WHERE e.reg_id = r.id AND e.type IN ('download','download_all')) AS dl_at
-        FROM registrations r JOIN galleries g ON g.id = r.gallery_id
-       WHERE (? IS NULL OR g.id = ?)
-       ORDER BY r.created_at DESC`).all(gid, gid);
+    const rows = contactRows(gid);
     const by = new Map();
     for (const r of rows) {
       const downloaded = !!r.dl_at;
@@ -2610,6 +2749,140 @@ async function adminRoutes(req, res, path, url) {
       return res.end('﻿' + csv);
     }
     return json(res, 200, { contacts: list });
+  }
+
+
+  /* ---- mailings: a template sent to people from Contacts ---- */
+  const mlWarnings = () => [
+    ...(CFG.brandAddress ? [] : ['Add BRAND_ADDRESS (your postal address or PO box) before sending for real. It goes in every mailing’s footer, as the law requires.']),
+    ...(CFG.mailSend ? [] : ['Sending is switched off (MAIL_SEND=off). Mailings are only simulated.']),
+    ...(mailReady() ? [] : ['Email is not set up, so nothing can be sent.']),
+  ];
+  const sampleFor = (plan, wanted) => {
+    const send = plan.sel.send;
+    const pick = send.find(s => s.email === String(wanted || '').toLowerCase()) || send[0];
+    if (pick) return { email: pick.email, name: pick.name, gallery_id: pick.galleryId };
+    const g = q.gallAll.all().find(x => x.published_at && !isExpired(x));
+    return { email: 'sam@example.com', name: 'Sam Lee', gallery_id: g ? g.id : null };
+  };
+  if (path === '/api/admin/mailings/preview' && req.method === 'POST') {
+    const b = await readJson(req, 512 * 1024);
+    const plan = mailingPlan(b);
+    if (plan.error) return json(res, 400, { error: plan.error });
+    const sample = sampleFor(plan, b.sampleEmail);
+    const out = render(plan.snapshot, recipientView(sample), mailCtx(`${CFG.publicUrl}/unsubscribe/preview`));
+    return json(res, 200, { subject: out.subject, html: out.html, text: out.text, unresolved: out.unresolved,
+      noGallery: !recipientView(sample).gallery,
+      sample: { email: sample.email, name: sample.name }, sampleOptions: plan.sel.send.slice(0, 20).map(s => s.email),
+      count: plan.count, warnings: mlWarnings() });
+  }
+  if (path === '/api/admin/mailings/test' && req.method === 'POST') {
+    if (tooManyAttempts('mltest', 20)) return json(res, 429, { error: 'Too many test sends. Wait a few minutes.' });
+    if (!mailReady() || !CFG.adminEmail) return json(res, 409, { error: 'Email is not set up' });
+    if (!CFG.mailSend) return json(res, 409, { error: 'Sending is switched off (MAIL_SEND=off)' });
+    const b = await readJson(req, 512 * 1024);
+    const plan = mailingPlan(b);
+    if (plan.error) return json(res, 400, { error: plan.error });
+    const sample = sampleFor(plan, b.sampleEmail);
+    const url = unsubUrl(CFG.adminEmail, null);
+    const out = render(plan.snapshot, recipientView(sample), mailCtx(url));
+    const r = await resendSend({ to: CFG.adminEmail, subject: `[Test] ${out.subject}`, html: out.html, text: out.text, headers: listHeaders(url) });
+    q.mailIns.run(null, CFG.adminEmail, 'mailing-test', r.ok ? 'sent' : 'failed', r.ok ? null : r.body);
+    if (!r.ok) return json(res, 502, { error: `The mail service refused it (${r.status})` });
+    return json(res, 200, { sentTo: CFG.adminEmail, unresolved: out.unresolved });
+  }
+  if (path === '/api/admin/mailings/plan' && req.method === 'POST') {
+    const plan = mailingPlan(await readJson(req, 512 * 1024));
+    if (plan.error) return json(res, 400, { error: plan.error });
+    return json(res, 200, { count: plan.count, skipped: plan.skipped, planHash: plan.hash, templateName: plan.snapshot.name,
+      cap: CFG.mailingMax, overCap: plan.count > CFG.mailingMax, dayCap: CFG.mailingDayMax,
+      daysNeeded: Math.max(1, Math.ceil((plan.count + sentLast24()) / CFG.mailingDayMax)), warnings: mlWarnings() });
+  }
+  if (path === '/api/admin/mailings' && req.method === 'POST') {
+    const b = await readJson(req, 512 * 1024);
+    const key = String(b.key || '');
+    if (!/^[\w-]{8,64}$/.test(key)) return json(res, 400, { error: 'Missing request key' });
+    const dup = q.mlByKey.get(key);
+    if (dup) return json(res, 200, { mailing: mailingDto(dup) });          /* a double click, or a retry after a dropped reply */
+    const dry = b.dryRun === true || !CFG.mailSend;
+    if (!dry) {
+      if (!sessionOnly(req)) return json(res, 403, { error: 'Sign in to the admin panel in your browser to send real mail' });
+      if (!originOk(req)) return json(res, 403, { error: 'Request came from somewhere else' });
+      if (!mailReady()) return json(res, 409, { error: 'Email is not set up' });
+      if (!CFG.brandAddress) return json(res, 409, { error: 'Set BRAND_ADDRESS (your postal address or PO box) first. It must appear in every mailing.' });
+    }
+    const plan = mailingPlan(b);
+    if (plan.error) return json(res, 400, { error: plan.error });
+    if (plan.hash !== b.planHash) return json(res, 409, { error: 'The list changed since you reviewed it. Review it again.' });
+    if (!plan.count) return json(res, 400, { error: 'There is nobody to send this to' });
+    if (plan.count > CFG.mailingMax) return json(res, 400, { error: `That is ${plan.count} people, over this app’s limit of ${CFG.mailingMax} per mailing. Narrow the list.` });
+    let id;
+    db.exec('BEGIN');
+    try {
+      id = Number(q.mlIns.run(key, b.templateId ? Number(b.templateId) : null, plan.snapshot.name, plan.snapshot.subject, plan.snapshot.body, JSON.stringify(plan.snapshot.design),
+                              JSON.stringify(plan.audience), 'queued', dry ? 1 : 0, plan.count).lastInsertRowid);
+      for (const r of plan.sel.send) q.mrIns.run(id, r.email, r.name, r.galleryId, 'queued', null);
+      for (const r of plan.sel.skipped) { try { q.mrIns.run(id, r.email, null, null, 'skipped', r.reason); } catch {} }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); console.error('mailing create:', e.message); return json(res, 500, { error: 'Could not create the mailing' }); }
+    console.log(`mailing ${id} created: "${plan.snapshot.name}" to ${plan.count}${dry ? ' (dry run)' : ''}`);
+    mailerStart(0);
+    return json(res, 201, { mailing: mailingDto(q.mlGet.get(id)) });
+  }
+  if (path === '/api/admin/mailings' && req.method === 'GET') return json(res, 200, { mailings: q.mlList.all().map(mailingDto) });
+  const mlOne = path.match(/^\/api\/admin\/mailings\/(\d+)(?:\/(cancel|retry|resume))?$/);
+  if (mlOne) {
+    const m = q.mlGet.get(Number(mlOne[1]));
+    if (!m) return json(res, 404, { error: 'not_found' });
+    const act = mlOne[2];
+    if (!act && req.method === 'GET') return json(res, 200, { mailing: mailingDto(m), recipients: q.mrFor.all(m.id) });
+    if (act && req.method === 'POST') {
+      if (act === 'cancel') {
+        if (!['queued', 'sending', 'paused'].includes(m.status)) return json(res, 409, { error: 'That mailing is already finished' });
+        q.mlStatus.run('cancelled', null, m.id); q.mrCancel.run(m.id); q.mlFinished.run(m.id);
+      } else if (act === 'retry') {
+        if (['cancelled'].includes(m.status)) return json(res, 409, { error: 'That mailing was cancelled' });
+        q.mrRetry.run(m.id); q.mlStatus.run('sending', null, m.id); mailerState.fails.set(m.id, 0); mailerStart(0);
+      } else if (act === 'resume') {
+        if (m.status !== 'paused') return json(res, 409, { error: 'That mailing is not paused' });
+        q.mlStatus.run('sending', null, m.id); mailerState.fails.set(m.id, 0); mailerStart(0);
+      }
+      return json(res, 200, { mailing: mailingDto(q.mlGet.get(m.id)) });
+    }
+  }
+  if (path === '/api/admin/mail-images' && req.method === 'POST') {
+    if (Number(req.headers['content-length'] || 0) > MAIL_IMG_MAX) { req.destroy(); return json(res, 413, { error: 'Pictures must be under 4 MB' }, { connection: 'close' }); }
+    let buf; try { buf = await readBuffer(req, MAIL_IMG_MAX); } catch { return json(res, 413, { error: 'Pictures must be under 4 MB' }, { connection: 'close' }); }
+    const ext = sniffImage(buf);
+    if (!ext) return json(res, 415, { error: 'Use a JPEG, PNG or WebP picture' });
+    const file = `${randomBytes(10).toString('hex')}.${ext}`;
+    const tmp = join(MAIL_IMG_DIR, '.' + file);
+    await writeFile(tmp, buf); renameSync(tmp, join(MAIL_IMG_DIR, file));
+    console.log(`mailing picture: ${file} ${(buf.length / 1024).toFixed(0)} KB`);
+    return json(res, 201, { file, url: `${CFG.publicUrl}/mail/img/${file}` });
+  }
+  if (path === '/api/admin/mailings/token' && req.method === 'GET') {
+    /* for the smoke test only, and only for addresses that can never receive real mail */
+    const e = String(url.searchParams.get('email') || '').toLowerCase();
+    if (!isReservedAddress(e)) return json(res, 400, { error: 'Only reserved test addresses' });
+    return json(res, 200, { token: unsubToken(e, null, CFG.secret) });
+  }
+  if (path === '/api/admin/suppressions') {
+    if (req.method === 'GET') return json(res, 200, { suppressions: q.supAll.all() });
+    const b = await readJson(req);
+    const email = String(b.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(res, 400, { error: 'That is not an email address' });
+    if (req.method === 'POST') {
+      q.supPut.run(email, b.scope === 'all' ? 'all' : 'marketing', 'manual', null, null);
+      return json(res, 200, { suppressions: q.supAll.all() });
+    }
+    if (req.method === 'DELETE') {
+      if (b.confirm !== true) return json(res, 400, { error: 'Confirm first' });
+      /* test addresses can never receive mail, so the smoke test may clean up after itself */
+      if (!sessionOnly(req) && !isReservedAddress(email)) return json(res, 403, { error: 'Sign in to the admin panel in your browser to do that' });
+      q.supDel.run(email); log(null, null, 'unsuppress', null, req, { email });
+      return json(res, 200, { suppressions: q.supAll.all() });
+    }
   }
 
   const st = path.match(/^\/api\/admin\/galleries\/(\d+)\/stats$/);
@@ -2636,7 +2909,250 @@ process.on('uncaughtException',  e => console.error('uncaughtException:',  e?.st
 
 syncAdminUser();
 seedTemplates();
+seedMailingTemplates();
 if (!q.admAny.get().n) console.warn('WARNING: no admin account. Set ADMIN_EMAIL and ADMIN_PASSWORD.');
+
+/* ------------------------------------------------------------------ mailings
+   One template sent to many of the people in Contacts. Everything that can go wrong with a mass
+   email is handled here on purpose: nobody is mailed without an unsubscribe link that works, a
+   confirmation can only authorise the exact list it was shown, the sender survives a restart
+   without mailing anyone twice, and a mailing can be stopped. */
+const hiddenContacts = () => { try { return new Set(JSON.parse((q.setGet.get('hidden_contacts') || {}).value || '[]')); } catch { return new Set(); } };
+
+/* one row per registration, newest first; the Contacts list and every mailing read from here */
+function contactRows(gid) {
+  return db.prepare(`
+    SELECT r.email, r.name, r.created_at AS reg_at, g.id AS gid, g.title, g.subtitle, g.slug, g.expires_at, g.published_at,
+           (SELECT MAX(e.created_at) FROM events e WHERE e.reg_id = r.id AND e.type IN ('download','download_all')) AS dl_at
+      FROM registrations r JOIN galleries g ON g.id = r.gallery_id
+     WHERE (? IS NULL OR g.id = ?)
+     ORDER BY r.created_at DESC`).all(gid, gid);
+}
+
+/* an address that unsubscribed ('marketing') still gets the mail it asked for by registering;
+   one that opted out of everything, bounced or complained gets nothing at all */
+const suppressionMap = () => new Map(q.supAll.all().map(s => [s.email, s]));
+function suppressedFor(email, purpose) {
+  const s = q.supGet.get(String(email).trim().toLowerCase());
+  return !!s && (purpose === 'marketing' || s.scope === 'all');
+}
+
+const parseDesign = v => { try { return cleanDesign(v ? JSON.parse(v) : null); } catch { return cleanDesign(null); } };
+const tplList = kind => q.tplAll.all(kind).map(t => ({ ...t, design: kind === 'mailing' ? parseDesign(t.design) : null }));
+const unsubUrl = (email, mailingId) => `${CFG.publicUrl}/unsubscribe/${unsubToken(email, mailingId, CFG.secret)}`;
+const mailCtx = unsubscribe => ({ brand: CFG.brandName, site: CFG.brandUrl, address: CFG.brandAddress, unsubscribe, logo: `${CFG.publicUrl}/brand/logo`,
+  social: CFG.brandSocial ? { url: CFG.brandSocial, label: CFG.brandSocialLabel } : null, replyTo: !!CFG.mailReplyTo, imageBase: `${CFG.publicUrl}/mail/img/` });
+function recipientView(r) {
+  const g = r.gallery_id ? q.gallById.get(r.gallery_id) : null;
+  const live = g && g.published_at && !isExpired(g) ? g : null;
+  return { name: r.name, gallery: live ? {
+    title: live.title, subtitle: prettyDate(live.subtitle), link: galleryUrl(live), cover: `${CFG.publicUrl}/api/g/${encodeURIComponent(live.slug)}/cover`,
+    expiry: live.expires_at ? new Date(live.expires_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : null,
+  } : null };
+}
+
+/* one call to the mail service; never throws */
+async function resendSend({ to, subject, html, text, headers, idemKey }) {
+  try {
+    const r = await fetch(`${CFG.resendBase}/emails`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${CFG.resendKey}`, 'content-type': 'application/json', ...(idemKey ? { 'idempotency-key': idemKey } : {}) },
+      body: JSON.stringify({ from: CFG.mailFrom, to: [to], subject, html, text, ...(headers ? { headers } : {}),
+                             ...(CFG.mailReplyTo ? { reply_to: CFG.mailReplyTo } : {}) }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const raw = await r.text();
+    let id = null; try { id = JSON.parse(raw).id || null; } catch {}
+    return { ok: r.ok, status: r.status, id, retryAfter: r.headers.get('retry-after'), body: raw.slice(0, 300) };
+  } catch (e) { return { ok: false, status: 0, id: null, retryAfter: null, body: String(e.message).slice(0, 300) }; }
+}
+const listHeaders = url => ({ 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' });
+
+/* work out who a request would mail, without mailing anyone */
+function mailingPlan(b) {
+  const tpl = b.templateId ? q.tplGet.get(Number(b.templateId)) : null;
+  const subject = String(b.subject ?? tpl?.subject ?? '').trim();
+  const body = String(b.body ?? tpl?.body ?? '');
+  if (!subject || !body.trim()) return { error: 'Add a subject and a message' };
+  if (subject.length > 200) return { error: 'The subject is too long' };
+  const design = b.design !== undefined ? cleanDesign(b.design) : parseDesign(tpl?.design);
+  const scan = scanVars(subject, body, design.title, design.preheader, design.button.text);
+  if (scan.unknown.length) return { error: `Unknown placeholder${scan.unknown.length > 1 ? 's' : ''}: ${scan.unknown.map(u => `{{${u}}}`).join(', ')}` };
+  const a = b.audience || {};
+  const gallery = a.gallery && a.gallery !== 'all' ? Number(a.gallery) : null;
+  const who = a.who === 'downloaded' ? 'downloaded' : 'any';
+  const picked = Array.isArray(a.emails) ? a.emails.map(String) : null;
+  const sel = selectRecipients({ rows: contactRows(gallery), hidden: hiddenContacts(), suppressed: suppressionMap(),
+                                 gallery, who, picked, usesGallery: scan.usesGallery, needsExpiry: scan.used.includes('expiry') });
+  const snapshot = { subject, body, design, name: tpl?.name || 'Untitled' };
+  const skipped = {};
+  for (const s of sel.skipped) skipped[s.reason] = (skipped[s.reason] || 0) + 1;
+  return { snapshot, scan, audience: { gallery: gallery ?? 'all', who, emails: picked }, sel, skipped,
+           count: sel.send.length, hash: planHash(snapshot, sel.send) };
+}
+
+const mailerState = { running: false, timer: null, fails: new Map() };
+const sentLast24 = () => q.sentLast24h.get().n;
+const mailingDto = m => {
+  const counts = { queued: 0, sending: 0, sent: 0, failed: 0, skipped: 0, cancelled: 0, simulated: 0 };
+  for (const c of q.mrCounts.all(m.id)) counts[c.status] = c.n;
+  return { id: m.id, status: m.status, template: m.template_name, subject: m.subject, total: m.total, dryRun: !!m.dry_run,
+           createdAt: m.created_at, startedAt: m.started_at, finishedAt: m.finished_at, error: m.error, counts,
+           unsubscribed: q.supCount.get(m.id).n,
+           waitingForDailyLimit: m.status === 'sending' && !m.dry_run && sentLast24() >= CFG.mailingDayMax };
+};
+
+function mailerStart(delay = 0) {
+  clearTimeout(mailerState.timer);
+  mailerState.timer = setTimeout(mailerTick, delay);
+}
+async function mailerTick() {
+  if (mailerState.running) return;
+  mailerState.running = true;
+  let next = CFG.mailingIntervalMs;
+  try {
+    const m = q.mlActive.get();
+    if (!m) { next = null; return; }
+    if (m.status === 'queued') q.mlStatus.run('sending', null, m.id);
+    q.mlStarted.run(m.id);
+    if (!m.dry_run && sentLast24() >= CFG.mailingDayMax) { next = 300_000; return; }   /* the daily limit: carry on when it lifts */
+    const r = q.mrNext.get(m.id, Date.now());
+    if (!r) {
+      const p = q.mrPending.get(m.id);
+      if (!p.n) { await finishMailing(m); next = 0; return; }
+      next = Math.min(300_000, Math.max(1000, (p.minNext || 0) - Date.now())); return;
+    }
+    await sendOne(m, r);
+    if (m.dry_run) next = 20;
+  } catch (e) { console.error('mailer:', e.message); next = 10_000; }
+  finally { mailerState.running = false; if (next !== null) mailerStart(next); }
+}
+
+async function sendOne(m, r) {
+  const mark = (status, o = {}) => q.mrSet.run(status, o.attempts ?? r.attempts, o.nextAt ?? 0, o.since ?? null, o.id ?? r.resend_id, o.error ?? null,
+                                              status === 'sent' ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null, r.id);
+  const log = (status, detail) => q.mailIns.run(r.gallery_id || null, r.email, 'mailing', status, detail ? `mailing ${m.id}: ${detail}` : `mailing ${m.id}`);
+  if (suppressedFor(r.email, 'marketing')) return mark('skipped', { error: 'unsubscribed' });
+  if (isReservedAddress(r.email)) return mark('skipped', { error: 'reserved' });
+  const url = unsubUrl(r.email, m.id);
+  const out = render({ subject: m.subject, body: m.body, design: parseDesign(m.design) }, recipientView(r), mailCtx(url));
+  if (out.unresolved.length) return mark('skipped', { error: 'no_live_gallery' });
+  if (m.dry_run || !CFG.mailSend) return mark('simulated');
+
+  const attempts = r.attempts + 1;
+  q.mrSet.run('sending', attempts, 0, Date.now(), r.resend_id, null, null, r.id);
+  let res;
+  try {
+    res = await resendSend({ to: r.email, subject: out.subject, html: out.html, text: out.text,
+                             headers: listHeaders(url), idemKey: `mailing-${m.id}-${r.id}` });
+  } catch (e) { res = { ok: false, status: 0, body: e.message }; }
+  const c = classify(res.status, res.retryAfter, attempts);
+  if (c.action === 'sent') {
+    mailerState.fails.set(m.id, 0);
+    mark('sent', { attempts, id: res.id }); log('sent'); return;
+  }
+  if (c.action === 'retry') {
+    mark('queued', { attempts: c.count ? attempts : r.attempts, nextAt: Date.now() + c.delayMs, error: res.body });
+    return;
+  }
+  if (c.action === 'pause') {
+    mark('queued', { attempts: r.attempts, error: res.body });
+    q.mlStatus.run('paused', `The mail service refused the request (${res.status}). Check the Resend key, then resume.`, m.id);
+    await tellAdmin('A mailing was paused', [`The mail service answered ${res.status} to "${m.template_name}", so it has been paused. Check the Resend API key and domain, then resume it from Contacts › Mailings.`]);
+    return;
+  }
+  mark('failed', { attempts, error: res.body }); log('failed', res.body);
+  const n = (mailerState.fails.get(m.id) || 0) + 1; mailerState.fails.set(m.id, n);
+  if (n >= 10) {
+    q.mlStatus.run('paused', 'Ten sends in a row failed, so this was paused.', m.id);
+    await tellAdmin('A mailing was paused', [`Ten sends in a row failed for "${m.template_name}", so it has been paused. Last error: ${res.body}`]);
+  }
+}
+async function finishMailing(m) {
+  const c = {}; for (const x of q.mrCounts.all(m.id)) c[x.status] = x.n;
+  q.mlStatus.run('done', null, m.id); q.mlFinished.run(m.id);
+  console.log(`mailing ${m.id} done: ${c.sent || 0} sent, ${c.simulated || 0} simulated, ${c.failed || 0} failed, ${c.skipped || 0} skipped`);
+  if (!m.dry_run) await tellAdmin(`Mailing finished: ${m.template_name}`, [
+    `${c.sent || 0} sent, ${c.failed || 0} failed, ${c.skipped || 0} left out.` + (c.failed ? ' Open Contacts › Mailings to retry the failed ones.' : '')]);
+}
+/* after a restart: a send that was in flight is handed to the idempotency key if it is recent
+   (the mail service will not send it twice), and flagged if it is too old to trust that */
+function mailerRecover() {
+  q.mrStaleSending.run(Date.now() - 23 * 3600_000);
+  q.mrRecentSending.run(Date.now() - 23 * 3600_000);
+  if (q.mlActive.get()) mailerStart(5000);
+}
+
+/* ---- pictures for mailings ----
+   A mailing's image has to be reachable by anyone who opens the email, for as long as the email
+   exists, so it lives in its own folder under an unguessable name and is never deleted. */
+const MAIL_IMG_DIR = join(CFG.dataDir, 'mail-images');
+if (!existsSync(MAIL_IMG_DIR)) mkdirSync(MAIL_IMG_DIR, { recursive: true });
+const MAIL_IMG_MAX = 4 * 1024 * 1024;
+const MAIL_IMG_MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+function sniffImage(b) {
+  if (b.length > 12 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if (b.length > 12 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (b.length > 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp';
+  return null;
+}
+async function mailImageRoute(req, res, name) {
+  if (!IMAGE_FILE.test(name)) return json(res, 404, { error: 'not_found' });
+  const fp = join(MAIL_IMG_DIR, name);
+  if (!existsSync(fp)) return json(res, 404, { error: 'not_found' });
+  const buf = await readFile(fp);
+  res.writeHead(200, { 'content-type': MAIL_IMG_MIME[name.split('.')[1]], 'content-length': buf.length,
+                       'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
+/* ---- the public unsubscribe page and the bounce webhook ---- */
+const pageHtml = (title, inner) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>${esc(title)}</title><style>
+body{margin:0;background:#f4f4f4;font-family:Helvetica,Arial,sans-serif;color:#1a1a1a}main{max-width:440px;margin:12vh auto;background:#fff;padding:40px 32px;text-align:center}
+h1{font-size:17px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 14px}p{font-size:14px;line-height:1.7;color:#444;margin:0 0 18px}
+button{font:inherit;font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;padding:14px 30px;background:#1a1a1a;color:#fff;border:0;cursor:pointer}
+button.alt{background:none;color:#777;border:1px solid #ccc;margin-top:10px}</style></head><body><main>${inner}</main></body></html>`;
+function sendPage(res, code, title, inner) {
+  res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' });
+  res.end(pageHtml(title, inner));
+}
+async function unsubscribeRoute(req, res, tok) {
+  if (tooManyAttempts(`unsub:${clientIp(req)}`, 30)) return sendPage(res, 429, 'Slow down', '<h1>Too many tries</h1><p>Please wait a few minutes and try again.</p>');
+  const info = readUnsubToken(tok, CFG.secret);
+  const bad = () => sendPage(res, 400, 'Link not valid', `<h1>This link isn’t valid</h1><p>Reply to the email and ${esc(CFG.brandName || 'we')} will take you off the list by hand.</p>`);
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    if (!info) return bad();
+    return sendPage(res, 200, 'Unsubscribe', `<h1>Unsubscribe</h1><p>Stop emails from ${esc(CFG.brandName || 'us')} to <b>${esc(maskEmail(info.email))}</b>?</p>
+      <form method="post" action="/unsubscribe/${esc(tok)}"><button type="submit" name="scope" value="marketing">Unsubscribe</button><br>
+      <button type="submit" name="scope" value="all" class="alt">Stop all emails, including gallery notices</button></form>`);
+  }
+  if (req.method !== 'POST') return json(res, 405, { error: 'method' });
+  if (!info) return bad();
+  let scope = 'marketing';
+  try { scope = new URLSearchParams((await readBuffer(req, 2048)).toString()).get('scope') === 'all' ? 'all' : 'marketing'; } catch {}
+  q.supPut.run(info.email, scope, 'unsubscribed', info.mailing, null);
+  console.log(`unsubscribed (${scope}) from mailing ${info.mailing || '-'}`);
+  return sendPage(res, 200, 'Unsubscribed', `<h1>You’re unsubscribed</h1><p>${scope === 'all' ? 'You won’t get any more email from us, including gallery notices.' : 'You won’t get any more mailings from us. Gallery notices you ask for may still arrive.'}</p>`);
+}
+const webhookSeen = new Set();
+async function mailWebhook(req, res) {
+  if (!CFG.resendWebhookSecret) return json(res, 404, { error: 'not_found' });
+  let raw;
+  try { raw = (await readBuffer(req, 65536)).toString('utf8'); } catch { return json(res, 413, { error: 'too_large' }); }
+  if (!verifySvix(req.headers, raw, CFG.resendWebhookSecret)) return json(res, 401, { error: 'bad_signature' });
+  const id = req.headers['svix-id'];
+  if (webhookSeen.has(id)) return json(res, 200, { ok: true, duplicate: true });
+  webhookSeen.add(id); if (webhookSeen.size > 1000) webhookSeen.delete(webhookSeen.values().next().value);
+  let ev; try { ev = JSON.parse(raw); } catch { return json(res, 400, { error: 'bad_json' }); }
+  const d = ev.data || {}, to = (Array.isArray(d.to) ? d.to : [d.to]).filter(Boolean).map(x => String(x).toLowerCase());
+  const permanent = !d.bounce?.type || /permanent|hard/i.test(String(d.bounce.type));
+  if ((ev.type === 'email.bounced' && permanent) || ev.type === 'email.complained') {
+    const reason = ev.type === 'email.complained' ? 'complained' : 'bounced';
+    for (const e of to) { q.supPut.run(e, 'all', reason, null, String(d.bounce?.message || '').slice(0, 200) || null); console.log(`suppressed ${reason}: ${e}`); }
+  }
+  return json(res, 200, { ok: true });
+}
 
 /* ---- the watchdog: things worth an email when they stay wrong ---- */
 const fmtGB = n => n >= 1e12 ? `${(n / 1e12).toFixed(1)} TB` : `${(n / 1e9).toFixed(0)} GB`;
@@ -2707,12 +3223,15 @@ function watchdogHealth() {
 }
 
 zipRecover();
+mailerRecover();
 
 server.listen(CFG.port, '0.0.0.0', () => {
   console.log(`gallery app listening on ${CFG.port}; immich=${CFG.immichUrl}`);
   console.log(CFG.prezip
     ? `downloads: zips kept in ${ZIP_DIR} (up to ${CFG.zipMaxGb} GB), ${CFG.zipMaxActive} at a time, ${CFG.zipTotalMbit || 'unlimited'} Mbit/s shared`
     : `downloads: prepared zips off, ${CFG.zipMaxActive} at a time`);
+  console.log(`mailings: ${CFG.mailSend ? 'on' : 'OFF (MAIL_SEND=off, simulated)'}, up to ${CFG.mailingMax} per mailing and ${CFG.mailingDayMax} per day, `
+    + `${CFG.brandAddress ? 'footer address set' : 'NO BRAND_ADDRESS (real sends refused)'}, bounce webhook ${CFG.resendWebhookSecret ? 'on' : 'off'}`);
   console.log(`backups: ${CFG.backupDir ? CFG.backupDir + ' (keep ' + CFG.backupKeep + ')' : 'off - set BACKUP_DIR'}`);
   console.log(`admin sign-in: ${CFG.adminEmail || '(none)'}${CFG.admin2fa ? ' + emailed code' : ''}`);
   console.log(mailReady()
@@ -2835,7 +3354,7 @@ async function tellAdmin(subject, lines) {
   try {
     const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.7;color:#1a1a1a">`
       + lines.map(l => `<p style="margin:0 0 12px">${esc(l)}</p>`).join('') + `</div>`;
-    const r = await fetch('https://api.resend.com/emails', {
+    const r = await fetch(`${CFG.resendBase}/emails`, {
       method: 'POST',
       headers: { authorization: `Bearer ${CFG.resendKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({ from: CFG.mailFrom, to: [CFG.adminEmail], subject, html }),
@@ -2925,7 +3444,7 @@ if (CFG.healthMinutes > 0) {
 }
 /* old download figures are not worth keeping past a year */
 setInterval(() => {
-  try { q.statsPrune.run(); q.peaksPrune.run(new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 13)); } catch {}
+  try { q.mlPrune.run(); q.statsPrune.run(); q.peaksPrune.run(new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 13)); } catch {}
 }, 6 * 3600_000);
 
 site.startJobs();

@@ -151,6 +151,38 @@ busiest moment, and how many hours the line backed up. If the line keeps backing
 is the limit. Album photo lists are cached for a minute, so opening a gallery no longer costs a dozen
 Immich calls; changes made from the admin panel clear the cache at once.
 
+### Emailing your contacts
+
+**Contacts** lists everyone who registered for a gallery. Tick some people (or none, for everyone in the
+current filter) and choose **Email**: pick a mailing template, edit it, preview it as any recipient, send a
+test to yourself, then review and send. The starter templates are New work, Seasonal check-in and Your
+gallery is closing soon; make your own under **Mailing templates**. Placeholders: `{{name}}` (first name),
+`{{title}}`, `{{subtitle}}`, `{{link}}`, `{{expiry}}` (the person's most recent live gallery), `{{brand}}`,
+`{{site}}`. A template that uses a gallery placeholder skips anyone without a live gallery.
+
+The editor works like a campaign editor: **subject** and **preview text** (the line shown in the inbox),
+an optional **title**, an **image** (each person's own gallery cover, a picture you upload, or none), the
+**message** with bold, italic, underline and links, a **button** that goes to each person's gallery, your
+website or any address, and an optional "Available until" line from their gallery's expiry date. Uploaded
+pictures are shrunk in your browser, stored in `DATA_DIR/mail-images` under unguessable names, and kept
+forever so old emails keep working; they are included in the nightly backup. Gallery passwords can't be
+included, because only a hash of them is stored.
+
+What keeps this safe to use on real clients:
+- **Every mailing carries your postal address and a working unsubscribe link**, and sets the one-click
+  unsubscribe headers mail apps look for. Set `BRAND_ADDRESS` before sending; until then only previews and
+  tests work. Registering for a gallery is not the same as agreeing to marketing, so for clients in the EU
+  or Canada consider asking first.
+- **Unsubscribing** stops mailings but not the gallery notices and reminders that person asked for; a second
+  button on the page stops everything. Bounces and spam complaints (via the optional webhook) stop everything.
+  **Unsubscribed** in Contacts lists them; removing someone is a deliberate, confirmed action.
+- **Nothing sends by accident**: the review step states the exact count, a confirmation only authorises the
+  exact list it showed, a double click makes one mailing, and a mailing can be cancelled or paused. Real
+  mailings need your browser sign-in (password and emailed code), never the API token, and are capped by
+  `MAILING_MAX` and `MAILING_DAY_MAX`. A mailing survives a restart without mailing anyone twice.
+- Reserved addresses (`.invalid`, `.test`, `example.com`) are never mailed, and `MAIL_SEND=off` turns every
+  mailing into a simulation.
+
 ### Email
 
 Verify your domain in Resend and add the DNS records it gives you, including DMARC. Mail sent from

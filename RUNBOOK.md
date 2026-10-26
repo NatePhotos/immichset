@@ -30,6 +30,7 @@ nothing without a session.
 |---|---|
 | `server.mjs` | The whole server. Node built-ins only — `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
 | `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`). |
+| `mail/blast.mjs` | Fills a mailing template for one person, signs unsubscribe links, picks recipients, and decides how to react to the mail service. Pure, tested in `mail/test`. |
 | `health/watchdog.mjs` | Runs the self-checks and decides when to email. Pure, tested in `health/test`. |
 | `web/index.html` | The client gallery. One file: markup, CSS, script. |
 | `web/admin.html` | The admin panel. Same. |
@@ -118,6 +119,17 @@ or on **Rebuild now**; "over_budget" means `ZIP_MAX_GB` or `ZIP_MIN_FREE_GB` lea
 download is built as it is sent instead. If the reverse proxy buffers responses (nginx: `proxy_buffering off`),
 it will drain a zip into its own storage and bypass the speed limit; the app sends `X-Accel-Buffering: no`
 to prevent that.
+
+### A mailing is paused, stuck, or someone says they still get email
+
+**Paused**: the mail service refused a request (usually the Resend key or domain), or ten sends in a row
+failed. Fix it, then **Resume** from Contacts › Mailings. **Failed rows** can be retried from the same page.
+**"Still getting email"**: if they unsubscribed from mailings they still get gallery notices and reminders by
+design; the second button on the unsubscribe page, or adding them under Unsubscribed with "Everything", stops
+those too. **Nothing sends at all**: check `BRAND_ADDRESS` is set, that you are signed in in the browser (the API
+token cannot send mailings), and that `MAIL_SEND` is not `off`. **Emergency stop**: set `MAIL_SEND=off` and
+restart; every mailing is then simulated. Rotating `APP_SECRET` breaks every unsubscribe link already sent;
+they show a page asking the person to reply instead.
 
 ### An email says "needs attention"
 

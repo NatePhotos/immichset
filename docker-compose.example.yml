@@ -46,6 +46,18 @@ services:
       MAIL_REPLY_TO: "you@example.com"
       REMIND_DAYS: "7"
 
+      # --- mailings (email everyone in Contacts) ---
+      # BRAND_ADDRESS is required before any real mailing: a postal address or PO box, printed in every
+      # mailing's footer next to the unsubscribe link. Previews and test sends work without it.
+      BRAND_ADDRESS: ""             # e.g. "PO Box 123, Brooklyn, NY 11201"
+      MAILING_MAX: "500"            # most people in one mailing; a longer list is refused, not cut short
+      MAILING_DAY_MAX: "500"        # most sent per rolling 24 hours; a bigger mailing carries on the next day
+                                    #   (Resend's free plan allows 100 a day: set this to 100 if you are on it)
+      MAILING_INTERVAL_MS: "600"    # pause between sends, to stay under Resend's rate limit
+      MAIL_SEND: "on"               # "off" is a kill switch: every mailing is only simulated
+      RESEND_WEBHOOK_SECRET: ""     # optional: Resend dashboard > Webhooks > https://<your host>/api/mail/webhook,
+                                    #   events email.bounced and email.complained; bounces are then never mailed again
+
       # --- branding (optional) ---
       BRAND_NAME: "Your Studio"
       BRAND_URL: "https://example.com"

@@ -428,6 +428,67 @@ try {
     await patch(`/api/admin/galleries/${galleryId}`, { allowDownload: true });
   });
 
+  section('mailings (nothing is sent)');
+  const mailPost = (path, data) => adminFetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data || {}) });
+  let mailTpl = null;
+  await check('mailing templates are kept apart from gallery-ready ones', async () => {
+    const mt = (await adminJson('/api/admin/templates?kind=mailing')).templates;
+    const rt = (await adminJson('/api/admin/templates')).templates;
+    ok(mt.length >= 1, 'no mailing templates');
+    ok(!mt.some(t => rt.some(x => x.id === t.id)), 'the two lists overlap');
+    mailTpl = mt[0];
+  });
+  await check('a preview fills the template and adds the footer and unsubscribe link', async () => {
+    const r = await mailPost('/api/admin/mailings/preview', { templateId: mailTpl.id, audience: { gallery: String(galleryId), who: 'any' } });
+    is(r.status, 200, 'status');
+    const d = await r.json();
+    ok(d.html.includes('Unsubscribe') && d.subject.length > 0, 'footer or subject missing');
+    ok(!/\{\{\s*(name|brand)\s*\}\}/.test(d.html), 'a placeholder was left unfilled');
+  });
+  await check('the design (title, preview line, button) shows in the preview', async () => {
+    const r = await mailPost('/api/admin/mailings/preview', { subject: 'x', body: '**Hi** {{name}}', audience: { gallery: String(galleryId), who: 'any' },
+      design: { title: 'Smoke Title', preheader: 'Smoke preview line', button: { text: 'Go', mode: 'custom', url: 'https://example.com/x' } } });
+    is(r.status, 200, 'status');
+    const d = await r.json();
+    ok(d.html.includes('Smoke Title') && d.html.includes('Smoke preview line') && d.html.includes('https://example.com/x') && d.html.includes('<strong>Hi</strong>'), 'design missing from the preview');
+  });
+  await check('a picture that is not a picture is refused', async () => {
+    const r = await adminFetch('/api/admin/mail-images', { method: 'POST', headers: { 'content-type': 'image/png' }, body: Buffer.from('not an image at all, just text') });
+    is(r.status, 415, 'status');
+    await r.arrayBuffer();
+  });
+  await check('an unknown placeholder is refused', async () => {
+    is((await mailPost('/api/admin/mailings/preview', { subject: 'x', body: 'Hi {{nope}}', audience: {} })).status, 400, 'status');
+  });
+  await check('the plan leaves out reserved test addresses and counts nobody here', async () => {
+    const d = await (await mailPost('/api/admin/mailings/plan', { subject: 'x', body: 'Hi {{name}}', audience: { gallery: String(galleryId), who: 'any' } })).json();
+    ok(typeof d.planHash === 'string' && typeof d.cap === 'number', 'plan shape');
+    is(d.count, 0, 'the smoke gallery has only a test address');
+    ok((d.skipped.reserved || 0) >= 1, 'the test address was not marked reserved');
+  });
+  await check('the API token can never send a real mailing', async () => {
+    const r = await mailPost('/api/admin/mailings', { key: 'smoke-' + Date.now(), planHash: 'x', subject: 'x', body: 'Hi', audience: { gallery: String(galleryId), who: 'any' } });
+    is(r.status, 403, 'status');
+  });
+  await check('unsubscribing works from the link, and only on a POST', async () => {
+    const email = `smoke+${Date.now()}@example.invalid`;
+    const { token } = await adminJson(`/api/admin/mailings/token?email=${encodeURIComponent(email)}`);
+    const page = await fetch(`${BASE}/unsubscribe/${token}`);
+    is(page.status, 200, 'page status');
+    ok(!(await page.text()).includes(email), 'the page showed the full address');
+    ok(!(await adminJson('/api/admin/suppressions')).suppressions.some(s => s.email === email), 'a GET unsubscribed someone');
+    const post1 = await fetch(`${BASE}/unsubscribe/${token}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
+    is(post1.status, 200, 'one-click status');
+    ok((await adminJson('/api/admin/suppressions')).suppressions.some(s => s.email === email), 'not recorded');
+    const clean = await adminFetch('/api/admin/suppressions', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, confirm: true }) });
+    is(clean.status, 200, 'cleanup status');
+  });
+  await check('a forged unsubscribe link is refused', async () => {
+    const r = await fetch(`${BASE}/unsubscribe/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`, { method: 'POST' });
+    is(r.status, 400, 'status');
+    await r.arrayBuffer();
+  });
+
   section('visibility');
   await check('an unpublished gallery is not found', async () => {
     await patch(`/api/admin/galleries/${galleryId}`, { published: false });

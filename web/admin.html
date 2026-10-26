@@ -1972,7 +1972,10 @@ function ctCopy(text, n){
 }
 function contactsView(){
   var seq = ++CT.seq;
-  chrome({ title:"Contacts", summary:"Everyone who left an email address", section:"contacts", actions:[] });
+  chrome({ title:"Contacts", summary:"Everyone who left an email address", section:"contacts", actions:[
+    { label:"Mailings", onClick:mailingsView }, { label:"Unsubscribed", onClick:suppressionsView },
+    { label:"Mailing templates", onClick:mailTemplatesView } ] });
+  api("/mail-status").then(function(r){ CT.mail = r.body || {}; if (seq === CT.seq && curSection === "contacts" && $("ctOut") && CT.list.length) paintContacts(); });
   var opts = '<option value="all">All galleries</option>' + S.galleries.map(function(g){
     return '<option value="'+g.id+'"'+(String(g.id) === String(CT.gallery) ? " selected" : "")+'>'+esc(g.title)+'</option>'; }).join("");
   $("root").innerHTML = '<div class="wrap" style="padding-top:26px">'
@@ -2005,8 +2008,10 @@ function paintContacts(){
     return;
   }
   var all = k === n;
+  var canMail = !!(CT.mail && CT.mail.configured && !CT.hidden);
   out.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">'
-    + '<button class="btn sm" id="ctCopy" type="button">'+(k ? "Copy "+k+" selected" : "Copy all "+n)+'</button>'
+    + (canMail ? '<button class="btn sm pri" id="ctMail" type="button">'+(k ? "Email "+k+" selected" : "Email all "+n)+'</button>' : '')
+    + '<button class="btn sm '+(canMail ? "ghost" : "")+'" id="ctCopy" type="button">'+(k ? "Copy "+k+" selected" : "Copy all "+n)+'</button>'
     + '<button class="btn sm ghost" id="ctHide" type="button"'+(k ? "" : " disabled")+'>'+(CT.hidden ? "Unhide" : "Hide")+(k ? " "+k : "")+'</button>'
     + '<a class="btn sm ghost" id="ctCsv" href="/api/admin/contacts'+contactsQs("&format=csv")+'" download="contacts.csv">Download CSV</a>'
     + toggle + '</div>'
@@ -2020,6 +2025,9 @@ function paintContacts(){
   Array.prototype.forEach.call(document.querySelectorAll(".ctRow"), function(b){
     b.onchange = function(){ if (this.checked) CT.sel[this.dataset.e] = true; else delete CT.sel[this.dataset.e]; paintContacts(); };
   });
+  if ($("ctMail")) $("ctMail").onclick = function(){
+    ctComposeView({ gallery: CT.gallery, who: CT.who === "downloaded" ? "downloaded" : "any", emails: k ? picked : null }, k ? k + " selected" : "all " + n);
+  };
   $("ctCopy").onclick = function(){
     var pick = k ? picked : CT.list.map(function(c){ return c.email; });
     ctCopy(pick.join(", "), pick.length);
@@ -2034,7 +2042,356 @@ function paintContacts(){
   };
   $("ctHidden").onclick = function(){ CT.hidden = !CT.hidden; CT.sel = {}; contactsView(); };
 }
-addSection("contacts", "Contacts", IC.users, contactsView, function(){ CT.seq++; }, 25);
+
+/* ---------- mailings: one template to many of the people in Contacts ---------- */
+var MAILVARS = ["name","title","subtitle","link","expiry","brand","site","unsubscribe"];
+var SKIP_WHY = { unsubscribed:"unsubscribed", bounced:"bounced or complained", reserved:"test addresses",
+                 no_live_gallery:"no matching live gallery for the placeholders used", not_a_contact:"not in your contacts" };
+function mailChrome(title, summary, back){
+  chrome({ title:title, summary:summary || "", section:"contacts", crumb:"Contacts", back:back || contactsView, actions:[] });
+}
+function mailKey(){
+  try { return window.crypto.randomUUID(); } catch(e){ return "k" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+}
+
+/* shrink a chosen picture in the browser before it is uploaded: an email image never needs more than ~1200px */
+function mailPicture(file){
+  return new Promise(function(resolve, reject){
+    var img = new Image(), u = URL.createObjectURL(file);
+    img.onload = function(){
+      var w = img.naturalWidth, hgt = img.naturalHeight, s = Math.min(1, 1200 / w);
+      var c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(hgt * s);
+      var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      c.toBlob(function(b){ b ? resolve(b) : reject(new Error("blob")); }, "image/jpeg", 0.86);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(u); reject(new Error("load")); };
+    img.src = u;
+  });
+}
+
+function ctComposeView(aud, label){
+  mailChrome("Email contacts", "To " + label);
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px"><div id="mcBody"><div class="spin"></div></div></div>';
+  Promise.all([api("/templates?kind=mailing"), api("/mail-status")]).then(function(rs){
+    var tpls = (rs[0].body && rs[0].body.templates) || [], mail = rs[1].body || {};
+    if (!mail.configured){ $("mcBody").innerHTML = '<p class="empty">Email isn’t set up yet, so nothing can be sent.</p>'; return; }
+    var pic = "";                                           /* the uploaded picture's file name, if any */
+    $("mcBody").innerHTML =
+        '<div id="mcWarn"></div><div class="compose"><div>'
+      +   '<div class="tplrow"><select id="mTpl">'
+      +     (tpls.length ? "" : '<option value="">No templates yet</option>')
+      +     tpls.map(function(t){ return '<option value="'+t.id+'">'+esc(t.name)+'</option>'; }).join("")
+      +   '</select><button class="btn sm ghost" id="mUpd" type="button">Save changes</button>'
+      +   '<button class="btn sm ghost" id="mSave" type="button">Save as new</button></div>'
+      +   '<h3 class="sec" style="margin-top:4px">Subject</h3>'
+      +   '<div class="field"><label>Subject line</label><input type="text" id="mSubj" maxlength="200"></div>'
+      +   '<div class="field"><label>Preview text</label><input type="text" id="mPre" maxlength="200" placeholder="Optional">'
+      +     '<div class="hint">Shows in the inbox right after the subject line.</div></div>'
+      +   '<h3 class="sec">Content</h3>'
+      +   '<div class="field"><label>Title</label><input type="text" id="mTitle" maxlength="120" placeholder="Optional"></div>'
+      +   '<div class="field"><label>Image</label><select id="mImg"><option value="cover">Each person’s gallery cover</option>'
+      +     '<option value="custom">My own picture</option><option value="none">No image</option></select>'
+      +     '<div id="mImgOwn" hidden style="margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+      +       '<img id="mImgThumb" alt="" style="width:96px;height:64px;object-fit:cover;border:1px solid var(--line);display:none">'
+      +       '<label class="btn sm ghost" style="cursor:pointer">Choose a picture<input type="file" id="mImgFile" accept="image/*" hidden></label>'
+      +       '<span class="hint" id="mImgNote" style="margin:0"></span></div></div>'
+      +   '<div class="field"><label>Message</label>'
+      +     '<div style="display:flex;gap:6px;margin-bottom:6px"><button class="btn sm ghost mFmt" data-f="b" type="button" title="Bold"><b>B</b></button>'
+      +     '<button class="btn sm ghost mFmt" data-f="i" type="button" title="Italic"><i>I</i></button>'
+      +     '<button class="btn sm ghost mFmt" data-f="u" type="button" title="Underline"><u>U</u></button>'
+      +     '<button class="btn sm ghost mFmt" data-f="l" type="button" title="Link">Link</button></div>'
+      +     '<textarea id="mBody" rows="11"></textarea>'
+      +     '<div class="hint vars">Placeholders: ' + MAILVARS.map(function(v){ return '<code>{{'+v+'}}</code>'; }).join(" ") + '</div></div>'
+      +   '<div class="row2"><div class="field"><label>Button text</label><input type="text" id="mBtnT" maxlength="40" placeholder="Optional"></div>'
+      +   '<div class="field"><label>Button link</label><select id="mBtnM"><option value="gallery">Each person’s gallery</option>'
+      +     '<option value="site">My website</option><option value="custom">A web address</option><option value="none">No button</option></select></div></div>'
+      +   '<div class="field" id="mBtnUWrap" hidden><label>Web address</label><input type="text" id="mBtnU" placeholder="https://"></div>'
+      +   '<h3 class="sec">Additional info</h3>'
+      +   tog("mExp", "Expiry date", "Adds “Available until …” under the button, for people whose gallery has one.", false)
+      +   '<div class="field" style="margin-top:14px"><label>Preview as</label><select id="mAs"></select></div>'
+      +   '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px">'
+      +     '<button class="btn ghost" id="mTest" type="button">Send a test to me</button>'
+      +     '<button class="btn" id="mReview" type="button">Review and send</button></div>'
+      +   '<div id="mReviewBox"></div>'
+      + '</div><div class="pane"><h4>Preview</h4><div class="subjline" id="mPrevSubj">&nbsp;</div>'
+      +   '<iframe id="mPrev" title="Email preview"></iframe><div class="hint" id="mPrevNote"></div></div></div>';
+
+    function design(){
+      var mode = $("mImg").value;
+      return { preheader:$("mPre").value, title:$("mTitle").value,
+               image:{ mode: mode === "custom" && !pic ? "none" : mode, file: pic },
+               button:{ text:$("mBtnT").value, mode:$("mBtnM").value, url:$("mBtnU").value.trim() }, showExpiry:$("mExp").checked };
+    }
+    function body(extra){
+      return Object.assign({ subject:$("mSubj").value, body:$("mBody").value, design:design(),
+                             templateId:$("mTpl").value ? Number($("mTpl").value) : null,
+                             audience:aud, sampleEmail:$("mAs").value || undefined }, extra || {});
+    }
+    function syncControls(){
+      $("mImgOwn").hidden = $("mImg").value !== "custom";
+      $("mImgOwn").style.display = $("mImg").value === "custom" ? "flex" : "none";
+      $("mBtnUWrap").hidden = $("mBtnM").value !== "custom";
+      $("mBtnT").disabled = $("mBtnM").value === "none";
+      $("mImgThumb").style.display = pic ? "block" : "none";
+      if (pic) $("mImgThumb").src = "/mail/img/" + pic;
+      $("mImgNote").textContent = pic ? "Picture added." : ($("mImg").value === "custom" ? "Choose a JPEG, PNG or WebP picture." : "");
+    }
+    var timer, seeded = false;
+    function changed(){ $("mReviewBox").innerHTML = ""; syncControls(); refresh(); }
+    function refresh(){
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        post("/mailings/preview", body()).then(function(r){
+          if (!$("mPrev")) return;
+          if (!r.ok){ $("mPrevNote").textContent = (r.body && r.body.error) || "Can’t preview that yet"; return; }
+          var d = r.body;
+          $("mPrevSubj").textContent = d.subject || "";
+          $("mPrev").srcdoc = d.html;
+          $("mPrevNote").textContent = d.unresolved && d.unresolved.length
+            ? "This person has no live gallery, so " + d.unresolved.map(function(v){ return "{{"+v+"}}"; }).join(", ") + " would be empty. People like this are left out."
+            : (d.noGallery && ($("mImg").value === "cover" || ($("mBtnM").value === "gallery" && $("mBtnT").value)))
+              ? "This person has no live gallery, so the gallery cover and gallery button are left off their copy." : "";
+          if (!seeded || !$("mAs").options.length){
+            $("mAs").innerHTML = (d.sampleOptions || []).map(function(e){ return '<option value="'+esc(e)+'"'+(e === d.sample.email ? " selected" : "")+'>'+esc(e)+'</option>'; }).join("")
+              || '<option value="">A made-up person</option>';
+            seeded = true;
+          }
+          $("mcWarn").innerHTML = (d.warnings || []).map(function(w){ return '<p class="hint" style="color:var(--bad);margin:0 0 12px">'+esc(w)+'</p>'; }).join("");
+        });
+      }, 320);
+    }
+    function apply(){
+      var t = tpls.filter(function(x){ return String(x.id) === $("mTpl").value; })[0];
+      if (!t) return;
+      var d = t.design || {}, im = d.image || {}, bt = d.button || {};
+      $("mSubj").value = t.subject; $("mBody").value = t.body;
+      $("mPre").value = d.preheader || ""; $("mTitle").value = d.title || "";
+      $("mImg").value = im.mode || "none"; pic = im.file || "";
+      $("mBtnT").value = bt.text || ""; $("mBtnM").value = bt.mode || "none"; $("mBtnU").value = bt.url || "";
+      $("mExp").checked = !!d.showExpiry;
+      changed();
+    }
+    $("mTpl").onchange = apply;
+    ["mSubj","mPre","mTitle","mBody","mBtnT","mBtnU"].forEach(function(id){ $(id).addEventListener("input", changed); });
+    ["mImg","mBtnM","mExp","mAs"].forEach(function(id){ $(id).addEventListener("change", changed); });
+
+    /* bold, italic, underline and link wrap whatever is selected */
+    Array.prototype.forEach.call(document.querySelectorAll(".mFmt"), function(b){
+      b.onclick = function(){
+        var ta = $("mBody"), s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || "text", f = b.dataset.f, out;
+        if (f === "l"){ var u = prompt("Link address (https://…)"); if (!u) return; out = "[" + sel + "](" + u.trim() + ")"; }
+        else { var m = f === "b" ? "**" : f === "i" ? "*" : "__"; out = m + sel + m; }
+        ta.value = ta.value.slice(0, s) + out + ta.value.slice(e);
+        ta.focus(); ta.selectionStart = s; ta.selectionEnd = s + out.length; changed();
+      };
+    });
+    $("mImgFile").onchange = function(){
+      var f = this.files && this.files[0]; if (!f) return;
+      $("mImgNote").textContent = "Uploading…";
+      mailPicture(f).then(function(blob){
+        return fetch("/api/admin/mail-images", { method:"POST", credentials:"same-origin", headers:{ "Content-Type":"image/jpeg" }, body:blob })
+          .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, body:j }; }); });
+      }).then(function(r){
+        if (!r.ok){ $("mImgNote").textContent = (r.body && r.body.error) || "Couldn’t upload that"; return; }
+        pic = r.body.file; changed();
+      }).catch(function(){ $("mImgNote").textContent = "That picture couldn’t be read"; });
+    };
+
+    function saveBody(name){ return { name:name, subject:$("mSubj").value, body:$("mBody").value, kind:"mailing", design:design() }; }
+    $("mSave").onclick = function(){
+      var name = prompt("Name this template:"); if (!name) return;
+      post("/templates", saveBody(name)).then(function(r){
+        toast(r.ok ? "Template saved" : ((r.body && r.body.error) || "Couldn’t save"));
+        if (r.ok) ctComposeView(aud, label);
+      });
+    };
+    $("mUpd").onclick = function(){
+      var id = $("mTpl").value; if (!id) return toast("Choose a template first");
+      var t = tpls.filter(function(x){ return String(x.id) === id; })[0];
+      post("/templates/" + id, saveBody(t ? t.name : ""), "PATCH").then(function(r){
+        toast(r.ok ? "Template updated" : ((r.body && r.body.error) || "Couldn’t save"));
+        if (r.ok) (r.body.templates || []).forEach(function(n){ for (var i = 0; i < tpls.length; i++) if (tpls[i].id === n.id) tpls[i] = n; });
+      });
+    };
+    $("mTest").onclick = function(){
+      $("mTest").disabled = true; $("mTest").textContent = "Sending…";
+      post("/mailings/test", body()).then(function(r){
+        $("mTest").disabled = false; $("mTest").textContent = "Send a test to me";
+        toast(r.ok ? "Test sent to " + r.body.sentTo : ((r.body && r.body.error) || "Couldn’t send the test"));
+      });
+    };
+    $("mReview").onclick = function(){ review(); };
+    apply();
+
+    function review(){
+      var box = $("mReviewBox");
+      box.innerHTML = '<div class="spin"></div>';
+      post("/mailings/plan", body()).then(function(r){
+        if (!r.ok){ box.innerHTML = '<p class="hint" style="color:var(--bad)">'+esc((r.body && r.body.error) || "Can’t send that yet")+'</p>'; return; }
+        var d = r.body, left = Object.keys(d.skipped || {}).map(function(k){ return d.skipped[k] + " " + (SKIP_WHY[k] || k); });
+        var leftN = Object.keys(d.skipped || {}).reduce(function(n, k){ return n + d.skipped[k]; }, 0);
+        var blockers = [];
+        if (!d.count) blockers.push("There is nobody to send this to.");
+        if (d.overCap) blockers.push("That is " + d.count + " people, over the limit of " + d.cap + " per mailing. Narrow the list by gallery, or tick fewer people.");
+        if (!mail.brandAddress) blockers.push("Set BRAND_ADDRESS (your postal address or PO box) first. It must appear in every mailing’s footer.");
+        if (!mail.signedIn) blockers.push("Sign in to the admin panel in your browser to send real mail.");
+        if (!mail.sendOn) blockers.push("Sending is switched off (MAIL_SEND=off), so this would only be a simulation.");
+        box.innerHTML = '<div style="border:1px solid var(--line);padding:16px;margin-top:20px;max-width:620px">'
+          + '<p style="margin:0 0 10px;font-size:14px;line-height:1.6">Send <b>'+esc(d.templateName)+'</b> to <b>'+d.count+' '+(d.count === 1 ? "person" : "people")+'</b>.'
+          + (leftN ? ' '+leftN+' left out: '+esc(left.join(", "))+'.' : '')+' <b>This can’t be undone.</b></p>'
+          + (d.daysNeeded > 1 ? '<p class="hint" style="margin:0 0 10px">The daily sending limit is '+d.dayCap+', so this will run over about '+d.daysNeeded+' days on its own.</p>' : '')
+          + blockers.map(function(b){ return '<p class="hint" style="color:var(--bad);margin:0 0 10px">'+esc(b)+'</p>'; }).join("")
+          + '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="mGo" type="button"'+(blockers.length ? " disabled" : "")+'>Send to '+d.count+'</button>'
+          + '<button class="btn ghost" id="mNo" type="button">Not yet</button></div></div>';
+        $("mNo").onclick = function(){ box.innerHTML = ""; };
+        if (blockers.length) return;
+        var key = mailKey();
+        $("mGo").onclick = function(){
+          $("mGo").disabled = true; $("mGo").textContent = "Sending…";
+          post("/mailings", body({ key:key, planHash:d.planHash }))
+            .then(function(rr){
+              if (rr.status === 409 && rr.body && /changed/i.test(rr.body.error || "")){ toast(rr.body.error); return review(); }
+              if (!rr.ok){ $("mGo").disabled = false; $("mGo").textContent = "Send to " + d.count; return toast((rr.body && rr.body.error) || "Couldn’t send"); }
+              toast("Sending started");
+              mailingView(rr.body.mailing.id);
+            });
+        };
+      });
+    }
+  });
+}
+
+var MV = { seq:0, timer:null };
+function mailingView(id){
+  var seq = ++MV.seq; clearTimeout(MV.timer);
+  mailChrome("Mailing", "", mailingsView);
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px"><div id="mvBody"><div class="spin"></div></div></div>';
+  function load(){
+    api("/mailings/" + id).then(function(r){
+      if (seq !== MV.seq || !$("mvBody")) return;
+      if (!r.ok){ $("mvBody").innerHTML = '<p class="empty">Couldn’t load that mailing.</p>'; return; }
+      var m = r.body.mailing, c = m.counts, recips = r.body.recipients || [];
+      var active = m.status === "queued" || m.status === "sending";
+      var done = c.sent + c.failed + c.simulated + c.cancelled, pct = m.total ? Math.min(100, Math.round(done / m.total * 100)) : 100;
+      var STATUS = { queued:"Waiting", sending:"Sending", sent:"Sent", failed:"Failed", skipped:"Left out", cancelled:"Cancelled", simulated:"Simulated" };
+      var head = { queued:"Starting", sending:"Sending", paused:"Paused", cancelled:"Cancelled", done:"Finished" }[m.status] || m.status;
+      $("tSub").textContent = m.template + " · " + head;
+      $("mvBody").innerHTML =
+          (m.dryRun ? '<p class="hint" style="margin:0 0 14px">Dry run: nothing was actually sent.</p>' : '')
+        + (m.status === "paused" ? '<p class="hint" style="color:var(--bad);margin:0 0 14px">'+esc(m.error || "Paused.")+'</p>' : '')
+        + (m.waitingForDailyLimit ? '<p class="hint" style="margin:0 0 14px">Waiting for the daily sending limit to lift. It will carry on by itself.</p>' : '')
+        + '<p style="margin:0 0 6px;font-size:14px"><b>'+esc(m.subject)+'</b></p>'
+        + '<div class="kpis" style="margin-top:14px">'
+        +   [["Sent", c.sent + c.simulated],["Waiting", c.queued + c.sending],["Failed", c.failed],["Left out", c.skipped],["Unsubscribed", m.unsubscribed]]
+              .map(function(k){ return '<div class="kpi"><b>'+k[1]+'</b><span>'+k[0]+'</span></div>'; }).join("")
+        + '</div>'
+        + (active || m.status === "paused" ? '<div class="qbar big" style="max-width:520px;margin:0 0 18px"><i style="width:'+pct+'%"></i></div>' : '')
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">'
+        +   (active || m.status === "paused" ? '<button class="btn sm ghost danger" id="mvCancel" type="button">Cancel the rest</button>' : '')
+        +   (m.status === "paused" ? '<button class="btn sm" id="mvResume" type="button">Resume</button>' : '')
+        +   (c.failed && m.status !== "cancelled" ? '<button class="btn sm ghost" id="mvRetry" type="button">Retry '+c.failed+' failed</button>' : '')
+        + '</div>'
+        + '<div class="scroll"><table><tr><th>Email</th><th>Name</th><th>Gallery</th><th>Status</th><th></th></tr>'
+        + recips.map(function(x){ return '<tr><td>'+esc(x.email)+'</td><td>'+esc(x.name || "—")+'</td><td class="muted">'+esc(x.gallery || "")+'</td>'
+            + '<td>'+esc(STATUS[x.status] || x.status)+'</td><td class="muted">'+esc(x.status === "skipped" ? (SKIP_WHY[x.error] || x.error || "") : (x.error || ""))+'</td></tr>'; }).join("")
+        + '</table></div>';
+      function act(name){ return post("/mailings/" + id + "/" + name, {}).then(function(rr){ if (!rr.ok) toast((rr.body && rr.body.error) || "Couldn’t do that"); load(); }); }
+      if ($("mvCancel")) $("mvCancel").onclick = function(){ if (confirm("Stop this mailing? People it hasn’t reached yet won’t get it.")) act("cancel"); };
+      if ($("mvResume")) $("mvResume").onclick = function(){ act("resume"); };
+      if ($("mvRetry")) $("mvRetry").onclick = function(){ act("retry"); };
+      if (active) MV.timer = setTimeout(function(){ if (seq === MV.seq) load(); }, 3000);
+    });
+  }
+  load();
+}
+
+function mailingsView(){
+  ++MV.seq; clearTimeout(MV.timer);
+  mailChrome("Mailings", "Everything sent from Contacts");
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px"><div id="mlBody"><div class="spin"></div></div></div>';
+  api("/mailings").then(function(r){
+    if (!$("mlBody")) return;
+    var list = (r.body && r.body.mailings) || [];
+    if (!list.length){ $("mlBody").innerHTML = '<p class="empty">Nothing has been sent yet. Tick people in Contacts and choose Email.</p>'; return; }
+    var NAME = { queued:"Starting", sending:"Sending", paused:"Paused", cancelled:"Cancelled", done:"Finished" };
+    $("mlBody").innerHTML = '<div class="scroll"><table><tr><th>When</th><th>Template</th><th>To</th><th>Sent</th><th>Failed</th><th>Unsubscribed</th><th>Status</th></tr>'
+      + list.map(function(m){ return '<tr><td class="muted">'+fmtWhen(m.createdAt)+'</td><td><button class="link mlOpen" data-id="'+m.id+'">'+esc(m.template)+'</button>'
+          + (m.dryRun ? ' <span class="muted">(dry run)</span>' : '')+'</td><td>'+m.total+'</td><td>'+(m.counts.sent + m.counts.simulated)+'</td><td>'+m.counts.failed+'</td><td>'+m.unsubscribed+'</td><td>'+esc(NAME[m.status] || m.status)+'</td></tr>'; }).join("")
+      + '</table></div>';
+    Array.prototype.forEach.call(document.querySelectorAll(".mlOpen"), function(b){ b.onclick = function(){ mailingView(Number(b.dataset.id)); }; });
+  });
+}
+
+function suppressionsView(){
+  mailChrome("Unsubscribed", "People who won’t be mailed");
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px"><div id="suBody"><div class="spin"></div></div></div>';
+  var WHY = { unsubscribed:"Unsubscribed", bounced:"Bounced", complained:"Marked as spam", manual:"Added by you" };
+  function paint(list){
+    $("suBody").innerHTML =
+        '<p class="lede" style="color:var(--muted);font-size:13px;line-height:1.6;max-width:620px;margin:0 0 18px">These people are left out of every mailing. '
+      + '“Mailings only” still lets them get gallery notices and reminders; “Everything” stops those too. Remove someone only if they asked to be mailed again.</p>'
+      + (list.length ? '<div class="scroll"><table><tr><th>Email</th><th>Why</th><th>Stops</th><th>When</th><th></th></tr>'
+          + list.map(function(x){ return '<tr><td>'+esc(x.email)+'</td><td>'+esc(WHY[x.reason] || x.reason)+'</td><td>'+(x.scope === "all" ? "Everything" : "Mailings only")
+              + '</td><td class="muted">'+fmtWhen(x.created_at)+'</td><td style="text-align:right"><button class="btn sm ghost danger suDel" data-e="'+esc(x.email)+'" data-w="'+esc(WHY[x.reason] || x.reason)+'">Remove</button></td></tr>'; }).join("")
+          + '</table></div>'
+        : '<p class="empty">Nobody has unsubscribed.</p>')
+      + '<h3 class="sec">Add an address</h3><div class="row2"><div class="field"><label>Email</label><input type="text" id="suE" placeholder="someone@example.com"></div>'
+      + '<div class="field"><label>Stop</label><select id="suS"><option value="marketing">Mailings only</option><option value="all">Everything</option></select></div></div>'
+      + '<button class="btn" id="suAdd" type="button">Add</button>';
+    $("suAdd").onclick = function(){
+      post("/suppressions", { email:$("suE").value.trim(), scope:$("suS").value }).then(function(r){
+        if (!r.ok) return toast((r.body && r.body.error) || "Couldn’t add that");
+        toast("Added"); paint(r.body.suppressions);
+      });
+    };
+    Array.prototype.forEach.call(document.querySelectorAll(".suDel"), function(b){
+      b.onclick = function(){
+        if (!confirm("Remove " + b.dataset.e + " (" + b.dataset.w + ")? They will be mailed again.")) return;
+        post("/suppressions", { email:b.dataset.e, confirm:true }, "DELETE").then(function(r){
+          if (!r.ok) return toast((r.body && r.body.error) || "Couldn’t remove that");
+          toast("Removed"); paint(r.body.suppressions);
+        });
+      };
+    });
+  }
+  api("/suppressions").then(function(r){ if ($("suBody")) paint((r.body && r.body.suppressions) || []); });
+}
+
+function mailTemplatesView(){
+  mailChrome("Mailing templates", "Reused for every mailing");
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px"><div id="mtBody"><div class="spin"></div></div></div>';
+  function paint(){
+    api("/templates?kind=mailing").then(function(r){
+      var tpls = (r.body && r.body.templates) || [];
+      $("mtBody").innerHTML = '<p class="hint vars" style="margin:0 0 18px">Placeholders: ' + MAILVARS.map(function(v){ return '<code>{{'+v+'}}</code>'; }).join(" ") + '</p>'
+        + tpls.map(function(t){
+          return '<div style="border:1px solid var(--line);padding:16px;margin-bottom:14px;max-width:660px">'
+            + '<div class="field" style="margin-bottom:10px"><label>Name</label><input type="text" data-f="name" data-id="'+t.id+'" value="'+esc(t.name)+'"></div>'
+            + '<div class="field" style="margin-bottom:10px"><label>Subject</label><input type="text" data-f="subject" data-id="'+t.id+'" value="'+esc(t.subject)+'"></div>'
+            + '<div class="field" style="margin-bottom:12px"><label>Message</label><textarea rows="6" data-f="body" data-id="'+t.id+'">'+esc(t.body)+'</textarea></div>'
+            + '<div style="display:flex;gap:10px"><button class="btn sm mtSave" data-id="'+t.id+'" type="button">Save</button>'
+            + '<button class="btn sm ghost danger mtDel" data-id="'+t.id+'" type="button">Delete</button></div></div>'; }).join("")
+        + '<button class="btn" id="mtNew" type="button">New template</button>';
+      function val(id, f){ return document.querySelector('[data-id="'+id+'"][data-f="'+f+'"]').value; }
+      Array.prototype.forEach.call(document.querySelectorAll(".mtSave"), function(b){
+        b.onclick = function(){ post("/templates/" + b.dataset.id, { name:val(b.dataset.id,"name"), subject:val(b.dataset.id,"subject"), body:val(b.dataset.id,"body") }, "PATCH")
+          .then(function(rr){ toast(rr.ok ? "Saved" : ((rr.body && rr.body.error) || "Couldn’t save")); }); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".mtDel"), function(b){
+        b.onclick = function(){ if (!confirm("Delete this template?")) return; api("/templates/" + b.dataset.id, { method:"DELETE" }).then(paint); };
+      });
+      $("mtNew").onclick = function(){
+        var name = prompt("Name the new template:"); if (!name) return;
+        post("/templates", { name:name, subject:"", body:"Hi {{name}},\n\n", kind:"mailing" }).then(function(rr){
+          if (!rr.ok) return toast((rr.body && rr.body.error) || "Couldn’t add that"); paint();
+        });
+      };
+    });
+  }
+  paint();
+}
+addSection("contacts", "Contacts", IC.users, contactsView, function(){ CT.seq++; MV.seq++; clearTimeout(MV.timer); }, 25);
 
 window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC,
   goSection:goSection, openGallery:kitOpenGallery, openNewGallery:kitNewGallery, coverCss:coverCss,
