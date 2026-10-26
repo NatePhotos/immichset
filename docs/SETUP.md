@@ -57,7 +57,7 @@ zone in it, then:
 docker compose up -d
 ```
 
-(Without Compose: `docker run -d --name immichset --init --restart unless-stopped -p 3000:3000 -e TZ=America/New_York -e BACKUP_DIR=/backups -v immichset-data:/data -v immichset-backups:/backups ghcr.io/natephotos/immichset:latest`)
+(Without Compose: `docker run -d --name immichset --init --restart unless-stopped -p 3000:3000 -e BACKUP_DIR=/backups -v immichset-data:/data -v immichset-backups:/backups ghcr.io/natephotos/immichset:latest`)
 
 The first start prints a **setup code**. Find it with:
 

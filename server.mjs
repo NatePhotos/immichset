@@ -279,10 +279,13 @@ if (!existsSync(COVERS_DIR)) mkdirSync(COVERS_DIR, { recursive: true });
    that already has Immich's address and key (the usual case for one run from a compose file) goes straight
    on. One that does not stays in setup until its owner has filled them in; setup hands this same process
    over when it finishes, so the rest of this file simply carries on. */
-let conf = loadConfig(process.env, DATA_DIR);
+const BOOT_ENV = { ...process.env };   /* the environment as the container gave it: setting TZ below must not look like a compose-file setting */
+const applyTimeZone = z => { if (z) process.env.TZ = z; };
+let conf = loadConfig(BOOT_ENV, DATA_DIR);
 const FIRST_RUN = needsSetup(conf);
-if (FIRST_RUN) conf = await runSetup({ db, env: process.env, dataDir: DATA_DIR, webDir: process.env.WEB_DIR || '/app/web' });
+if (FIRST_RUN) conf = await runSetup({ db, env: BOOT_ENV, dataDir: DATA_DIR, webDir: process.env.WEB_DIR || '/app/web' });
 const CFG = toCfg(conf);
+applyTimeZone(CFG.timeZone);
 for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
   if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
 }
@@ -2516,13 +2519,14 @@ async function adminRoutes(req, res, path, url) {
     }
     if (Object.keys(errors).length) return json(res, 400, { error: Object.values(errors)[0], errors });
     saveFile(DATA_DIR, patch);
-    conf = loadConfig(process.env, DATA_DIR, { generate: false });
+    conf = loadConfig(BOOT_ENV, DATA_DIR, { generate: false });
     /* what can change under a running server does so now; the rest says it needs a restart */
     const next = toCfg(conf), restart = [];
     for (const k of Object.keys(patch)) {
       const x = BY_ENV.get(k);
       if (x.live) CFG[x.key] = next[x.key]; else restart.push(k);
     }
+    if (patch.TZ !== undefined) applyTimeZone(next.timeZone);
     capsCache = null; albumLists.clear();
     console.log(`settings changed from the panel: ${Object.keys(patch).join(', ') || '(none)'}`);
     return json(res, 200, { settings: redact(conf), restartNeeded: restart });

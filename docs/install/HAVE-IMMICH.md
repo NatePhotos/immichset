@@ -20,9 +20,22 @@ its address in the setup page.
 
 ## Option B: a compose file (Synology, Ugreen and other NAS apps with a "Project" screen)
 
-If you would rather paste a file into your NAS's Docker app, use
-[`docker-compose.quickstart.yml`](../../docker-compose.quickstart.yml). Save it as `docker-compose.yml`, set your time
-zone, create the project, and then follow [Docker](DOCKER.md) to find the setup code in the container log.
+If you would rather paste a file into your NAS's Docker app, do this. (Button names differ between NAS brands and
+versions; match them by meaning.)
+
+1. Open [`docker-compose.quickstart.yml`](../../docker-compose.quickstart.yml) and copy the whole file. You don't need to
+   change anything in it; the setup page fills in your time zone for you.
+2. In your NAS's Docker app, go to **Project** (Synology: **Container Manager › Project › Create**; Ugreen: **Docker › Project**)
+   and create a project named `immichset`. If it asks for a folder, use one on your data volume, such as
+   `/volume1/docker/immichset`. Choose to paste or create a `docker-compose.yml` and paste the file. Don't pick a template.
+3. Start (deploy) it. The first time it downloads the program, which takes a minute.
+4. Open the project's or container's **Logs**. You'll see two lines: `Open this in your web browser: ...` and
+   `Setup code: XXXX-XXXX-XXXX`. That code is made for your install; use the one on your screen.
+5. Open `http://<your NAS address>:3000/setup` from a computer on the same network and enter the code. Your NAS address is
+   the one you use to open the NAS's own web page.
+
+This route installs only immichset. On the Immich step choose "I already have Immich" and enter its address
+(`http://<NAS address>:2283`) and an API key.
 
 ## Then, the setup page
 

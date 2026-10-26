@@ -339,6 +339,7 @@ function emailView(){
   if (results.email) showResults("email", results.email);
 }
 
+function browserZone(){ try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { return ""; } }
 function youView(){
   var needAdmin = !S.adminExists && !S.envAdmin;
   frame("You and your business",
@@ -351,11 +352,12 @@ function youView(){
     + field("BRAND_URL", "Your website", { ph: "https://yourstudio.com" })
     + field("BRAND_SOCIAL", "Social link (optional)", { ph: "https://instagram.com/yourstudio" })
     + field("BRAND_SOCIAL_LABEL", "Social label (optional)", { ph: "@yourstudio" })
+    + field("TZ", "Time zone", { value: setting("TZ").value || browserZone(), ph: "America/Chicago", note: "Filled in from this browser, so it is almost certainly right. It sets the dates in emails and logs." })
     + nav(true, true, "Continue"));
   bindBack();
   if ($("showpw")) $("showpw").onchange = function(){ $("pw").type = this.checked ? "text" : "password"; };
   $("next").onclick = function(){
-    var brand = collect(["BRAND_NAME", "BRAND_ADDRESS", "BRAND_URL", "BRAND_SOCIAL", "BRAND_SOCIAL_LABEL"]);
+    var brand = collect(["BRAND_NAME", "BRAND_ADDRESS", "BRAND_URL", "BRAND_SOCIAL", "BRAND_SOCIAL_LABEL", "TZ"]);
     var next = function(){ saveSettings(brand).then(function(ok){ if (ok) go(cur + 1); }); };
     if (!needAdmin) return next();
     $("next").disabled = true;
@@ -422,7 +424,7 @@ function reviewView(){
   };
   add("Immich address", "IMMICH_URL"); add("Immich read key", "IMMICH_API_KEY"); add("Immich write key", "IMMICH_WRITE_KEY");
   add("Resend key", "RESEND_API_KEY"); add("Send from", "MAIL_FROM"); add("Your email", "ADMIN_EMAIL");
-  add("Business name", "BRAND_NAME"); add("Postal address", "BRAND_ADDRESS"); add("Public address", "PUBLIC_URL");
+  add("Business name", "BRAND_NAME"); add("Time zone", "TZ"); add("Postal address", "BRAND_ADDRESS"); add("Public address", "PUBLIC_URL");
   var twoFa = S.emailVerified ? "On. A code is emailed each time you sign in." : "Off, because email isn’t set up and tested yet. You can turn it on later.";
   frame("Ready to finish",
     'Check the details, then finish. Your gallery server will start right away.',

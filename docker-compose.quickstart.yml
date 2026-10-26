@@ -15,7 +15,7 @@ services:
       - immichset-data:/data          # database, covers, and the settings file the setup page writes
       - immichset-backups:/backups    # nightly database copies
     environment:
-      TZ: America/New_York            # your time zone, for reminders and logs
+      # Your time zone is filled in for you on the setup page. To force one here instead: TZ: America/Chicago
       BACKUP_DIR: /backups
     restart: unless-stopped
     # Immich in another compose project on this computer? Either use its network address in setup

@@ -52,6 +52,10 @@ export const SETTINGS = [
     help: 'Behind a Cloudflare Tunnel use cf-connecting-ip. Leave empty to use X-Forwarded-For. This decides what the sign-in limits and activity log see, so set it to a header your own proxy writes.' }),
   S('sessionDays', 'SESSION_DAYS', 'public', 'int', { def: 30, live: true, label: 'Client session, days' }),
 
+  /* time zone: the setup page fills this in from the browser, so nobody has to type it */
+  S('timeZone', 'TZ', 'brand', 'str', { wizard: 'brand', live: true, label: 'Time zone',
+    help: 'For example America/Chicago. Dates in emails and logs use it. Filled in from your browser during setup.' }),
+
   /* brand */
   S('brandName', 'BRAND_NAME', 'brand', 'str', { wizard: 'brand', live: true, label: 'Business name' }),
   S('brandUrl', 'BRAND_URL', 'brand', 'str', { wizard: 'brand', live: true, label: 'Your website' }),
@@ -155,6 +159,7 @@ export function validate(env, raw) {
       if (s.choices && !s.choices.includes(v)) return { ok: false, error: `Use one of: ${s.choices.filter(Boolean).join(', ')}` };
       if (env === 'MAIL_FROM' && !/^([^<>]+<)?[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>?$/.test(v))
         return { ok: false, error: 'Use the form: Your Studio <hello@yourdomain.com>' };
+      if (env === 'TZ') { try { new Intl.DateTimeFormat('en', { timeZone: v }); } catch { return { ok: false, error: 'Not a time zone name. Use a name like America/Chicago' }; } }
       if (/[\r\n]/.test(v)) return { ok: false, error: 'That must be on one line' };
       return { ok: true, value: v };
     }

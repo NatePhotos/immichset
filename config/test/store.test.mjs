@@ -156,3 +156,15 @@ test('the visitor-address header can only be one the app knows how to use', () =
   assert.equal(validate('CLIENT_IP_HEADER', 'x-anything').ok, false);
   assert.equal(validate('CLIENT_IP_HEADER', '').ok, true, 'empty means the default');
 });
+
+test('the time zone: real names pass, nonsense is refused, env beats the saved value, and nothing is set by default', () => {
+  assert.equal(validate('TZ', 'America/Chicago').ok, true);
+  assert.equal(validate('TZ', 'UTC').ok, true);
+  assert.equal(validate('TZ', 'Mars/Olympus').ok, false);
+  assert.equal(validate('TZ', '').value, '');
+  const dir = tmp();
+  saveFile(dir, { TZ: 'America/Denver' });
+  assert.equal(toCfg(loadConfig({ PORT: '3000' }, dir, { generate: false })).timeZone, 'America/Denver');
+  assert.equal(toCfg(loadConfig({ TZ: 'Europe/Paris' }, dir, { generate: false })).timeZone, 'Europe/Paris');
+  assert.equal(toCfg(loadConfig({}, tmp(), { generate: false })).timeZone, '');
+});

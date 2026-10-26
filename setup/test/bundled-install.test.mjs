@@ -69,11 +69,13 @@ test('a bundled install: Immich still starting, then the account and both keys a
   assert.ok(!filesText(data).includes(PW) && !logs.includes(PW), 'the password is stored and logged nowhere');
 
   s = await b.call('GET', '/api/setup/state'); assert.equal(s.body.settings.IMMICH_API_KEY.set, true); assert.ok(!('value' in s.body.settings.IMMICH_API_KEY));
-  await b.call('PUT', '/api/setup/settings', { PUBLIC_URL: B, MAIL_FROM: 'S <a@studio.test>', RESEND_API_KEY: rs.st.key });
+  assert.equal((await b.call('PUT', '/api/setup/settings', { TZ: 'Mars/Olympus' })).status, 400, 'a made-up time zone is refused');
+  await b.call('PUT', '/api/setup/settings', { PUBLIC_URL: B, MAIL_FROM: 'S <a@studio.test>', RESEND_API_KEY: rs.st.key, TZ: 'America/Chicago' });
   assert.equal((await b.call('POST', '/api/setup/admin', { email: 'me@studio.test', password: PW })).status, 200);
   assert.equal((await b.call('POST', '/api/setup/finish', {})).status, 200);
   let h; for (let i = 0; i < 60; i++) { await sleep(200); try { h = await (await fetch(B + '/healthz')).json(); if (!h.setup) break; } catch {} }
   assert.equal(h.setup, undefined, 'the real app took over');
+  assert.equal(JSON.parse(readFileSync(join(data, 'immichset.json'), 'utf8')).settings.TZ, 'America/Chicago', 'the time zone from the browser was saved');
   imm.close();
 });
 
