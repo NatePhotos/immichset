@@ -172,3 +172,29 @@ test('the server\'s own checks are added to the health cards', () => {
   assert.deepEqual(o.health.immich, { ok: false, detail: 'Cannot reach Immich' });
   assert.ok(o.health.site && o.health.nas && o.health.email);
 });
+
+test('the portfolio-website notices vanish until the website is set up', () => {
+  const { db } = mk();
+  const site = { dirty: true, pendingImmich: 2, check: null };
+  const on = overview(db, { now: NOW, site });                                   /* default: configured, as on the live install */
+  assert.ok(on.attention.some(a => a.kind === 'website') && on.health.site);
+  const off = overview(db, { now: NOW, site, siteConfigured: false });
+  assert.ok(!off.attention.some(a => a.kind === 'website' || a.kind === 'immich'));
+  assert.equal(off.health.site, undefined); assert.ok(off.health.nas && off.health.email);
+});
+
+test('the getting-started list appears only after setup, until it is dismissed, and ticks itself', () => {
+  const { db } = mk();
+  assert.equal(overview(db, { now: NOW }).checklist, null, 'an install run from a compose file never sees it');
+  assert.equal(overview(db, { now: NOW, getting: { setupDone: false } }).checklist, null);
+  assert.equal(overview(db, { now: NOW, getting: { setupDone: true, dismissed: true } }).checklist, null);
+  const fresh = overview(db, { now: NOW, publicUrl: 'http://192.168.1.20:3000', getting: { setupDone: true, dismissed: false, albums: 0, offsite: false } }).checklist;
+  assert.deepEqual(fresh.items.map(i => i.id), ['photos', 'gallery', 'email', 'online', 'backup', 'offsite']);
+  assert.equal(fresh.doneCount, 0);
+  const { db: db2, gal } = mk();
+  const more = overview(db2, { now: NOW, mailReady: true, publicUrl: 'https://g.example.com', backups: [{ at: new Date(NOW).toISOString() }],
+    getting: { setupDone: true, dismissed: false, albums: 3, offsite: true } }).checklist;
+  const byId = Object.fromEntries(more.items.map(i => [i.id, i.done]));
+  assert.deepEqual([byId.photos, byId.email, byId.online, byId.backup, byId.offsite], [true, true, true, true, true]);
+  assert.ok(more.items.every(i => i.doc && i.detail));
+});

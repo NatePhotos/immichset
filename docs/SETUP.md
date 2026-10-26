@@ -1,5 +1,13 @@
 # Setting up immichset
 
+> **New here?** Start with [START-HERE.md](START-HERE.md). It picks the right path for you: installing everything
+> including Immich in one command ([install/NEW.md](install/NEW.md)), or adding immichset to an Immich you already have
+> ([install/HAVE-IMMICH.md](install/HAVE-IMMICH.md)). This page is the detailed reference for the setup screens.
+
+If the installer included Immich, the setup page's Immich step looks like this and creates your Immich account for you:
+
+![The Immich step when Immich was installed with immichset](images/setup-12-bundled-immich.jpg)
+
 This takes about ten minutes. You install one container, open a page in your browser, and paste in a few
 keys. The page tests each one and tells you in plain words what to fix.
 

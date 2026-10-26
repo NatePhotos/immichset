@@ -3,6 +3,7 @@
    client relationship: access gates, sessions and the activity log. */
 
 import { createServer } from 'node:http';
+import { clientIp as pickClientIp, isHttps as pickHttps, requestHost } from './config/request.mjs';
 import { loadConfig, toCfg, needsSetup, startupSummary, saveFile, redact, FILE_NAME } from './config/store.mjs';
 import { SETTINGS, BY_ENV, validate as validateSetting } from './config/settings.mjs';
 import { runSetup } from './setup/server.mjs';
@@ -522,7 +523,10 @@ function sessionOnly(req) {
 function originOk(req) {
   const o = req.headers.origin;
   if (!o) return true;
-  try { return new URL(o).host === new URL(CFG.publicUrl).host; } catch { return false; }
+  /* the page's own address counts too: the admin opened at the NAS's home address (or over a private
+     network) must be able to save settings, and an Origin that matches the host asked for is still
+     same-origin, which is all this check is for */
+  try { const h = new URL(o).host; return h === requestHost(req) || (!!CFG.publicUrl && h === new URL(CFG.publicUrl).host); } catch { return false; }
 }
 function adminOk(req) {
   const hdr = req.headers['x-admin-token'];
@@ -564,8 +568,8 @@ function cookies(req) {
   }
   return out;
 }
-const clientIp = req =>
-  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+/* which header to believe for a visitor's address is the owner's choice (CLIENT_IP_HEADER); see config/request.mjs */
+const clientIp = req => pickClientIp(req, CFG.clientIpHeader);
 
 function log(gallery, regId, type, assetId, req, detail) {
   try {
@@ -1126,9 +1130,7 @@ function sessionFor(req, gallery) {
 }
 /* Secure is correct behind the HTTPS proxy, but would make the cookie
    undeliverable when testing over plain http on the LAN. */
-function isHttps(req) {
-  return (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-}
+const isHttps = pickHttps;
 function setSession(res, gallery, regId, req) {
   const exp = Date.now() + CFG.sessionDays * 86400_000;
   const tok = sign({ g: gallery.id, r: regId ?? null, exp });
@@ -1200,7 +1202,7 @@ const server = createServer(async (req, res) => {
 
   try {
     /* ---- health ---- */
-    if (path === '/healthz') return json(res, 200, { ok: true }, { 'x-immichset-instance': INSTANCE });
+    if (path === '/healthz') return json(res, 200, { ok: true, https: isHttps(req) }, { 'x-immichset-instance': INSTANCE });
     /* the setup page exists only until setup is finished; after that these simply are not here */
     if (path === '/setup' || path === '/setup/' || path === '/setup.html' || path.startsWith('/api/setup/')) return json(res, 404, { error: 'not_found' });
 
@@ -2070,10 +2072,26 @@ function gallDto(g) {
 
 async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/site' || path.startsWith('/api/admin/site/')) return site.admin(req, res, path, url);
-  if (path === '/api/admin/overview' && req.method === 'GET')
+  if (path === '/api/admin/overview' && req.method === 'GET') {
+    /* the getting-started list is only for installs made through the setup page, and only until it is dismissed */
+    let getting = null;
+    if (conf.meta.setupCompletedAt && !q.setGet.get('checklist_dismissed')) {
+      let albums = null;
+      try { albums = (await immichJson('/api/albums')).filter(a => a.assetCount > 0).length; } catch {}
+      getting = { setupDone: true, dismissed: false, albums, offsite: !!q.setGet.get('checklist_offsite') };
+    }
     return json(res, 200, overview(db, { now: Date.now(), site: site.summary(), mailReady: mailReady(),
                                          backups: backupList(), publicUrl: CFG.publicUrl,
+                                         siteConfigured: !!(CFG.cfPagesProject || CFG.siteUrl), getting,
                                          extraHealth: watchdogHealth() }));
+  }
+  if (path === '/api/admin/checklist' && req.method === 'POST') {
+    const act = (await readJson(req)).action;
+    if (act === 'dismiss') q.setPut.run('checklist_dismissed', '1');
+    else if (act === 'offsite') q.setPut.run('checklist_offsite', '1');
+    else return json(res, 400, { error: 'bad_action' });
+    return json(res, 200, { ok: true });
+  }
   if (path === '/api/admin/health' && req.method === 'GET') return json(res, 200, watchdog.summary());
 
   if (path === '/api/admin/usage' && req.method === 'GET') {

@@ -81,7 +81,7 @@ test('probeCaps matches what the app has always reported', async () => {
 
 test('permission fallback map covers every endpoint the app uses', () => {
   assert.equal(missingPermission('Missing required permission: asset.view', 'x'), 'asset.view');
-  assert.equal(missingPermission('', 'timeline'), 'timeline.read');
+  assert.equal(missingPermission('', 'timeline'), 'asset.read');   /* Immich v3 guards the photo list with asset.read */
   for (const k of ['albums', 'timeline', 'thumbnail', 'original', 'archive', 'search', 'upload', 'albumCreate', 'albumAdd', 'albumRemove', 'trash', 'restore']) assert.ok(PERMISSION[k], k);
 });
 

@@ -5,7 +5,7 @@ const DAY = 86400_000, HOUR = 3600_000;
 const sqlTime = ms => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-export function overview(db, { now = Date.now(), site = null, mailReady = false, backups = [], publicUrl = '', extraHealth = {} } = {}) {
+export function overview(db, { now = Date.now(), site = null, mailReady = false, backups = [], publicUrl = '', extraHealth = {}, siteConfigured = true, getting = null } = {}) {
   const week = sqlTime(now - 7 * DAY), prev = sqlTime(now - 14 * DAY);
   const count = (sql, ...a) => db.prepare(sql).get(...a).n;
 
@@ -46,9 +46,10 @@ export function overview(db, { now = Date.now(), site = null, mailReady = false,
       detail: f.people === 1 ? `${what} from ${f.name || f.email}` : what, galleryId: f.gid, action: 'gallery' });
   }
 
-  if (site?.dirty) attention.push({ kind: 'website', title: 'Website changes are not published',
+  /* the portfolio website is optional: until someone has set it up there is nothing to publish and nothing to nag about */
+  if (siteConfigured && site?.dirty) attention.push({ kind: 'website', title: 'Website changes are not published',
     detail: 'You have edits that visitors cannot see yet', action: 'website' });
-  if (site?.pendingImmich > 0) attention.push({ kind: 'immich',
+  if (siteConfigured && site?.pendingImmich > 0) attention.push({ kind: 'immich',
     title: `${plural(site.pendingImmich, 'website photo is', 'website photos are')} waiting for Immich`,
     detail: 'They will be saved automatically once Immich answers', action: 'website' });
 
@@ -68,13 +69,32 @@ export function overview(db, { now = Date.now(), site = null, mailReady = false,
   const newest = backups.map(b => Date.parse(b.at)).filter(Number.isFinite).sort((a, b) => b - a)[0];
   const hours = newest == null ? null : Math.max(0, Math.floor((now - newest) / HOUR));
   const health = {
-    site: check ? { ok: !!check.ok, detail: check.ok ? 'Loading normally' : `Not loading (${check.why})` }
-                : { ok: null, detail: 'Not checked yet' },
+    ...(siteConfigured ? { site: check ? { ok: !!check.ok, detail: check.ok ? 'Loading normally' : `Not loading (${check.why})` }
+                                       : { ok: null, detail: 'Not checked yet' } } : {}),
     nas: hours == null ? { ok: false, detail: 'No backup found' }
        : { ok: hours < 36, detail: hours < 1 ? 'Last backup under an hour ago' : `Last backup ${plural(hours, 'hour', 'hours')} ago` },
     email: { ok: !!mailReady, detail: mailReady ? 'Ready to send' : 'Not set up' },
     ...extraHealth,   /* the server's own checks: Immich, disk, zips, downloads */
   };
 
-  return { stats, attention, activity, health, recent };
+  /* A short list for a brand-new install, from "I have a server" to "my first client opened a gallery". It appears only
+     after the setup page has finished (an install run from a compose file never shows it) and until it is dismissed. */
+  let checklist = null;
+  if (getting && getting.setupDone && !getting.dismissed) {
+    const galleries = db.prepare('SELECT COUNT(*) n FROM galleries').get().n;
+    const https = /^https:\/\//i.test(publicUrl || '');
+    const items = [
+      { id: 'photos', title: 'Put photos in an Immich album', done: (getting.albums ?? 0) > 0,
+        detail: 'Immich keeps your photos. Add some to an album there (or upload them from New gallery).', doc: 'PHOTOS' },
+      { id: 'gallery', title: 'Make your first gallery', done: galleries > 0, detail: 'Pick the album, give it a name, and publish.', doc: 'PHOTOS' },
+      { id: 'email', title: 'Set up email', done: !!mailReady, detail: 'So you can send gallery links and reminders. It also turns on the emailed sign-in code.', doc: 'EMAIL' },
+      { id: 'online', title: 'Put it online for your clients', done: https, detail: 'Right now the address only works at home. A Cloudflare Tunnel gives it a real https address.', doc: 'ONLINE' },
+      { id: 'backup', title: 'Check that backups are running', done: backups.length > 0, detail: 'A copy of your database is made every night.', doc: 'BACKUPS' },
+      { id: 'offsite', title: 'Keep one copy somewhere else', done: !!getting.offsite, manual: true,
+        detail: 'If the computer is lost or stolen, a copy in the same room is lost too. Copy your photos and the settings file to a drive or cloud you control.', doc: 'BACKUPS' },
+    ];
+    checklist = { items, doneCount: items.filter(i => i.done).length };
+  }
+
+  return { stats, attention, activity, health, recent, checklist };
 }

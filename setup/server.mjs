@@ -10,8 +10,10 @@ import { join } from 'node:path';
 import { randomBytes, scryptSync, createHash } from 'node:crypto';
 import { SETTINGS, BY_ENV, validate } from '../config/settings.mjs';
 import { loadConfig, saveFile, toCfg, redact, writeProblem } from '../config/store.mjs';
+import { clientIp, isHttps, requestHost } from '../config/request.mjs';
 import { makeCode, codeMatches, createLimiter, makeToken, checkToken, sameOrigin } from './claim.mjs';
 import { checkImmich, checkResend, checkCloudflare, checkPublic } from './checks.mjs';
+import { immichStatus, provisionImmich, ProvisionError } from './provision.mjs';
 
 export const CODE_FILE = 'setup-code.txt';
 const hash = s => createHash('sha256').update(String(s || '')).digest('hex').slice(0, 16);
@@ -20,6 +22,8 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
   const port = Number(env.PORT || 3000);
   const instance = randomBytes(8).toString('hex');
   const limiter = createLimiter();
+  const loginLimiter = createLimiter();          /* wrong Immich passwords: 10 per address per 15 minutes */
+  let provisioning = false;                      /* one run at a time, so two clicks cannot make two sets of keys */
   let conf = loadConfig(env, dataDir);
   const reload = () => { conf = loadConfig(env, dataDir, { generate: false }); return conf; };
   const secret = conf.raw.APP_SECRET;
@@ -52,9 +56,10 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
     try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { return {}; }
   };
   const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(p => p.trim().split(/=(.*)/s)).filter(p => p[0]).map(p => [p[0], decodeURIComponent(p[1] || '')]));
-  const ipOf = req => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
-  const https = req => String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-  const suggested = req => `${https(req) ? 'https' : (req.headers['x-forwarded-proto'] || 'http')}://${String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim()}`;
+  const ipOf = req => clientIp(req, env.CLIENT_IP_HEADER || '');
+  const https = isHttps;
+  const fromInternet = env.SETUP_FROM_INTERNET === 'on';
+  const suggested = req => `${https(req) ? 'https' : (req.headers['x-forwarded-proto'] || 'http')}://${requestHost(req)}`;
 
   const WIZARD = new Set(SETTINGS.filter(s => s.wizard).map(s => s.env));
   const get = k => conf.raw[k] || '';
@@ -62,6 +67,8 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
     const c = toCfg(conf), emailOk = !!(conf.meta.emailVerified && conf.meta.emailVerified.key === hash(c.resendKey) && conf.meta.emailVerified.from === c.mailFrom);
     return { claimed: true, adminExists: adminExists(), suggestedPublicUrl: suggested(req), instance: undefined,
       emailVerified: emailOk, emailSkipped: !!conf.meta.emailSkipped, dataWritable: !bad, settings: redact(conf),
+      bundled: c.immichBundled ? { url: c.immichBundled, ml: c.bundledMl, importPath: c.bundledImport || '' } : null,
+      immichHint: c.immichHint || '', immichProvisioned: conf.meta.immichProvision || null,
       envAdmin: !!(conf.raw.ADMIN_EMAIL && conf.raw.ADMIN_PASSWORD) };
   };
 
@@ -69,7 +76,12 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
     const server = createServer(async (req, res) => {
       try {
         const url = new URL(req.url, 'http://x'), path = url.pathname;
-        if (path === '/healthz') return send(res, 200, { ok: true, setup: true });
+        if (path === '/healthz') return send(res, 200, { ok: true, setup: true, https: https(req) });
+        /* A tunnel would put this page on the internet before an owner has made an account. Cloudflare marks its
+           requests, so setup answers only on the home network unless the owner says otherwise. */
+        if ((path === '/' || path === '/setup' || path === '/setup/' || path === '/setup.html' || path.startsWith('/api/setup/')) && !fromInternet && req.headers['cf-connecting-ip']) {
+          return send(res, 403, path.startsWith('/api/') ? { error: 'Finish setup from your home network.' } : '<!doctype html><meta charset=utf-8><body style="font-family:system-ui;max-width:32em;margin:12vh auto;padding:0 1em;line-height:1.6"><h1>Finish setup from home</h1><p>For your safety, first-time setup only works from your home network. Open it at the address of this computer on your home Wi-Fi, for example <code>http://192.168.1.20:3000/setup</code>.</p>');
+        }
         if (path === '/' || path === '/setup' || path === '/setup/' || path === '/setup.html') {
           if (path === '/') { res.writeHead(302, { location: '/setup' }); return res.end(); }
           return send(res, 200, page());
@@ -128,6 +140,65 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
               accountId: pick(b.accountId, c.cfAccountId), project: pick(b.project, c.cfPagesProject), domain: pick(b.domain, c.dnsDomain), host: pick(b.host, c.dnsHost), f: fetchImpl });
             else return send(res, 404, { error: 'not_found' });
             return send(res, 200, out);
+          }
+
+          if (api === 'immich/status' && req.method === 'GET') {
+            reload();
+            const c = toCfg(conf), asked = url.searchParams.get('url');
+            const target = c.immichBundled || (asked && validate('IMMICH_URL', asked).ok ? validate('IMMICH_URL', asked).value : '') || c.immichHint || c.immichUrl;
+            return send(res, 200, { url: target, bundled: !!c.immichBundled, ...(await immichStatus({ url: target, f: fetchImpl })) });
+          }
+
+          /* Make the bundled Immich ready: its first account (or sign in to an existing one), then the two API keys this
+             app needs. The password is used for this one request and never stored or logged. */
+          if (api === 'immich/provision' && req.method === 'POST') {
+            reload();
+            const c = toCfg(conf);
+            if (conf.sources.IMMICH_API_KEY === 'env') return send(res, 409, { state: 'locked', error: 'The Immich key is set in your compose file; change it there.' });
+            if (provisioning) return send(res, 423, { state: 'busy', error: 'Already working on it. Give it a moment.' });
+            const b = await readJson(req);
+            let target = c.immichBundled;
+            if (!target) { const v = validate('IMMICH_URL', b.url || c.immichHint || c.immichUrl); if (!v.ok || !v.value) return send(res, 400, { error: 'Enter the address of your Immich.' }); target = v.value; }
+            const mode = b.mode === 'signin' ? 'signin' : 'create';
+            const em = validate('ADMIN_EMAIL', b.email);
+            if (!em.ok || !em.value) return send(res, 400, { error: 'Enter a valid email address.' });
+            const pw = String(b.password || '');
+            if (!pw) return send(res, 400, { error: 'Enter your password.' });
+            if (mode === 'create' && (pw.length < 12 || pw.length > 200)) return send(res, 400, { error: 'Use 12 to 200 characters for the password.' });
+            const why = loginLimiter.blocked(ipOf(req));
+            if (why) return send(res, 429, { state: 'locked', error: 'Too many wrong passwords. Wait a few minutes.' });
+            const write = ['add', 'addremove', 'all'].includes(b.write) ? b.write : 'none';
+            const ml = (!c.bundledMl || b.ml === 'off') && c.immichBundled ? 'off' : 'keep';
+            const prev = conf.meta.immichProvision || {};
+            provisioning = true;
+            try {
+              const out = await provisionImmich({
+                url: target, mode, email: em.value, password: pw, write, ml, f: fetchImpl,
+                name: (c.brandName || em.value.split('@')[0]).slice(0, 60),
+                importPath: c.immichBundled && c.bundledImport && b.importLibrary ? c.bundledImport : '',
+                previousKeyIds: [prev.readKeyId, prev.writeKeyId].filter(Boolean),
+                save: async (kind, k) => {
+                  const cur = loadConfig(env, dataDir, { generate: false }).meta.immichProvision || {};
+                  if (kind === 'read') saveFile(dataDir, { IMMICH_URL: target, IMMICH_API_KEY: k.secret }, { immichProvision: { readKeyId: k.id, writeKeyId: null, at: new Date().toISOString() } });
+                  else saveFile(dataDir, { IMMICH_WRITE_KEY: k.secret }, { immichProvision: { ...cur, writeKeyId: k.id } });
+                },
+              });
+              if (!out.writeKey && prev.writeKeyId && conf.sources.IMMICH_WRITE_KEY !== 'env') saveFile(dataDir, { IMMICH_WRITE_KEY: '' });
+              reload();
+              /* the keys were made with exactly the permissions chosen, so only the read side is tested: a write key without the trash
+                 permission is not a problem here, it is what was asked for */
+              const check = await checkImmich({ url: target, key: out.readKey.secret, f: fetchImpl });
+              return send(res, 200, { ok: true, createdAccount: out.createdAccount, readKey: { id: out.readKey.id, name: out.readKey.name },
+                writeKey: out.writeKey ? { id: out.writeKey.id, name: out.writeKey.name } : null, removedOldKeys: out.removedOldKeys,
+                ml: out.ml, library: out.library, version: out.version, check, state: stateOf(req) });
+            } catch (e) {
+              if (e instanceof ProvisionError) {
+                if (e.state === 'bad_login') loginLimiter.fail(ipOf(req));
+                return send(res, e.status, { state: e.state, error: e.message }, e.state === 'starting' ? { 'retry-after': '5' } : {});
+              }
+              log.error('setup provision:', e.message);
+              return send(res, 500, { state: 'immich_error', error: 'Something went wrong talking to Immich. Check the container log.' });
+            } finally { provisioning = false; }
           }
 
           if (api === 'skip-email' && req.method === 'POST') { saveFile(dataDir, {}, { emailSkipped: true }); reload(); return send(res, 200, stateOf(req)); }

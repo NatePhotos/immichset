@@ -1,0 +1,39 @@
+# For people who already run Immich: just immichset. Saved as docker-compose.yml by install.sh.
+# If Immich runs on this same computer, immichset-network.yml joins immichset to Immich's Docker network.
+
+name: immichset
+
+services:
+  immichset:
+    image: ghcr.io/natephotos/immichset:${IMMICHSET_TAG:-latest}
+    container_name: immichset
+    init: true
+    user: "${IMMICHSET_UID}:${IMMICHSET_GID}"
+    ports:
+      - "${IMMICHSET_PORT:-3000}:3000"
+    volumes:
+      - ${IMMICHSET_DATA}:/data
+      - ${IMMICHSET_BACKUPS}:/backups
+    environment:
+      TZ: ${TZ}
+      BACKUP_DIR: /backups
+      IMMICHSET_IMMICH_HINT: ${IMMICHSET_IMMICH_HINT:-}
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-cf-connecting-ip}
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.4
+    container_name: immichset_tunnel
+    command: ["tunnel", "--no-autoupdate", "run"]
+    env_file:
+      - tunnel.env
+    profiles: ["tunnel"]
+    depends_on:
+      - immichset
+    restart: unless-stopped
+
+  try-online:
+    image: cloudflare/cloudflared:2026.10.4
+    container_name: immichset_try
+    command: ["tunnel", "--no-autoupdate", "--url", "http://immichset:3000"]
+    profiles: ["try"]

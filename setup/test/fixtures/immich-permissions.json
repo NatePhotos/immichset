@@ -1,0 +1,19 @@
+{
+  "_source": "Immich v3.3.5 API spec and docs (docs.immich.app, github.com/immich-app/immich/releases/tag/v3.3.5), checked 2026-10-26. This is the set of permission names immichset uses, not Immich's full list. If Immich renames one, the real-Immich CI job fails and this file is updated from the spec.",
+  "permissions": ["album.read", "asset.read", "asset.view", "asset.download", "timeline.read", "asset.upload", "album.create", "albumAsset.create", "albumAsset.delete", "asset.delete"],
+  "endpoints": {
+    "GET /albums": "album.read",
+    "GET /timeline/buckets": "asset.read",
+    "GET /timeline/bucket": "asset.read",
+    "GET /assets/:id/thumbnail": "asset.view",
+    "GET /assets/:id/original": "asset.download",
+    "POST /download/archive": "asset.download",
+    "POST /search/metadata": "asset.read",
+    "POST /assets": "asset.upload",
+    "POST /albums": "album.create",
+    "PUT /albums/:id/assets": "albumAsset.create",
+    "DELETE /albums/:id/assets": "albumAsset.delete",
+    "DELETE /assets": "asset.delete",
+    "POST /trash/restore/assets": "asset.delete"
+  }
+}

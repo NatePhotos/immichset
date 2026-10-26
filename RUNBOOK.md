@@ -289,3 +289,15 @@ bar, Escape on a desktop, and a tap on the dark surround — which works because
 `touchmove` handler calls `preventDefault`, so a swipe between photos never synthesises the
 click that would dismiss it. Change either of those and the gesture quietly stops working,
 or starts firing when it should not. `smoke.mjs` asserts all three are still wired.
+
+## Installer and bundled Immich
+
+`install/install.sh` sets up immichset, optionally with Immich's official release files downloaded alongside
+(`IMMICH_RELEASE` in the script is the tested version). Our compose files layer on top of Immich's through
+`COMPOSE_FILE` in `.env`; Immich's own files are never edited.
+
+Traps:
+- Never regenerate `DB_PASSWORD` in an existing install: the database was initialised with it and Immich won't start.
+- Compose merges list keys by appending, so our files avoid redefining lists Immich already sets.
+- Every module `server.mjs` imports must be in the `FILES` list of `deploy.sh` (a test enforces this).
+- The real-Docker check is `.github/workflows/bundled.yml`; locally only fakes are exercised.

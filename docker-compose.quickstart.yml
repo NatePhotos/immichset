@@ -22,6 +22,18 @@ services:
     # (http://192.168.x.x:2283), or join its network by uncommenting this and the networks block below.
     # networks: [immich_default]
 
+    # Not in your own home network only: reach it from anywhere over https without opening your router. Make a tunnel in
+    # Cloudflare (see docs/ONLINE.md), put its token in a file called tunnel.env containing TUNNEL_TOKEN=..., then remove the
+    # # from the next block and from the "profiles" line, and run: docker compose --profile tunnel up -d
+    # Also set CLIENT_IP_HEADER: cf-connecting-ip above, so the sign-in limits see real visitor addresses.
+
+# cloudflared:
+#   image: cloudflare/cloudflared:2026.10.4
+#   command: ["tunnel", "--no-autoupdate", "run"]
+#   env_file: [tunnel.env]
+#   profiles: ["tunnel"]
+#   restart: unless-stopped
+
 volumes:
   immichset-data:
   immichset-backups:

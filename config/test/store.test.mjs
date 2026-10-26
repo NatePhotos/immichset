@@ -34,6 +34,9 @@ const legacy = e => ({
   healthFirstSec: Number(e.HEALTH_FIRST_SECONDS || 120), healthMinFreeGb: Number(e.HEALTH_MIN_FREE_GB || 20),
 });
 const viaConfig = env => toCfg(loadConfig(env, tmp(), { generate: false }));
+/* settings added later are new keys; what the server always read must come out exactly as before */
+const legacyKeys = Object.keys(legacy({}));
+const only = (cfg, keys = legacyKeys) => Object.fromEntries(keys.map(k => [k, cfg[k]]));
 
 const FULL = { PORT: '8080', IMMICH_URL: 'http://immich:2283///', IMMICH_API_KEY: 'k', IMMICH_WRITE_KEY: 'w', UPLOAD_MAX_MB: '10', APP_SECRET: 's', ADMIN_TOKEN: 't',
   DATA_DIR: '/x', WEB_DIR: '/w', SESSION_DAYS: '7', PUBLIC_URL: 'https://g.test/', RESEND_API_KEY: 'r', MAIL_FROM: 'A <a@b.co>', REMIND_DAYS: '3',
@@ -41,17 +44,17 @@ const FULL = { PORT: '8080', IMMICH_URL: 'http://immich:2283///', IMMICH_API_KEY
   DNS_APPLY: 'off', PREZIP: 'Off', MAIL_SEND: 'off', SITE_URL: 'https://s.test//', ZIP_MAX_GB: '0', HEALTH_MINUTES: '0', RESEND_API_URL: 'http://127.0.0.1:2998/' };
 
 test('golden: the same environment gives exactly the CFG the server always built', () => {
-  assert.deepEqual(viaConfig(FULL), legacy(FULL));
-  assert.deepEqual(viaConfig({}), legacy({}));
+  assert.deepEqual(only(viaConfig(FULL)), legacy(FULL));
+  assert.deepEqual(only(viaConfig({})), legacy({}));
   const odd = { PORT: '', IMMICH_URL: '', ADMIN_2FA: '', UPLOAD_MAX_MB: 'abc', MAIL_SEND: 'On', DNS_APPLY: 'OFF', REMIND_DAYS: '0' };
-  assert.deepEqual(viaConfig(odd), legacy(odd));   /* includes NaN from a nonsense number, exactly as before */
+  assert.deepEqual(only(viaConfig(odd)), legacy(odd));   /* includes NaN from a nonsense number, exactly as before */
 });
 
 test('the live install\'s shape: the four essentials from env and nothing else', () => {
   const env = { IMMICH_URL: 'http://nas:2283', IMMICH_API_KEY: 'k', APP_SECRET: 's', ADMIN_TOKEN: 't', DATA_DIR: '/data' };
   const dir = tmp();
   const conf = loadConfig(env, dir);
-  assert.deepEqual(toCfg(conf), legacy(env));
+  assert.deepEqual(only(toCfg(conf)), legacy(env));
   assert.equal(needsSetup(conf), false);
   assert.deepEqual(readdirSync(dir), [], 'no settings file is written when the environment is complete');
 });
@@ -136,4 +139,20 @@ test('drift: every environment variable the server reads is described here, and 
   for (const u of used) assert.ok(known.has(u) || ['NODE_ENV', 'IMMICHSET_VERSION', 'TZ'].includes(u), `server.mjs reads ${u} but it is not in config/settings.mjs`);
   const compose = readFileSync(join(root, 'docker-compose.example.yml'), 'utf8');
   for (const s of SETTINGS) if (!s.hidden && !s.envOnly || ['PORT', 'DATA_DIR'].includes(s.env)) assert.ok(compose.includes(s.env), `${s.env} is not in docker-compose.example.yml`);
+});
+
+test('settings added for the bundled install are off or empty unless set, and never touch an existing install', () => {
+  const c = viaConfig({});
+  assert.equal(c.clientIpHeader, ''); assert.equal(c.setupFromInternet, false); assert.equal(c.immichBundled, '');
+  assert.equal(c.immichHint, ''); assert.equal(c.bundledImport, ''); assert.equal(c.bundledMl, true);
+  const on = viaConfig({ SETUP_FROM_INTERNET: 'on', IMMICHSET_BUNDLED_IMMICH: 'http://immich-server:2283/', IMMICHSET_BUNDLED_ML: 'off', CLIENT_IP_HEADER: 'cf-connecting-ip' });
+  assert.equal(on.setupFromInternet, true); assert.equal(on.immichBundled, 'http://immich-server:2283'); assert.equal(on.bundledMl, false);
+  assert.equal(on.clientIpHeader, 'cf-connecting-ip');
+});
+
+test('the visitor-address header can only be one the app knows how to use', () => {
+  assert.equal(validate('CLIENT_IP_HEADER', 'cf-connecting-ip').ok, true);
+  assert.equal(validate('CLIENT_IP_HEADER', 'none').ok, true);
+  assert.equal(validate('CLIENT_IP_HEADER', 'x-anything').ok, false);
+  assert.equal(validate('CLIENT_IP_HEADER', '').ok, true, 'empty means the default');
 });

@@ -118,6 +118,9 @@ services:
       HEALTH_MIN_FREE_GB: "20"      # warn below this much free disk
 
       # --- client sessions ---
+      # Where the visitor's address comes from, for sign-in limits and the activity log. Behind a Cloudflare
+      # Tunnel set cf-connecting-ip; behind your own proxy, a header it overwrites (e.g. x-real-ip). Empty = X-Forwarded-For.
+      CLIENT_IP_HEADER: ""
       SESSION_DAYS: "30"
     ports:
       - '3100:3000'

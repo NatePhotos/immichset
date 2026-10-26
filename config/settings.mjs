@@ -11,7 +11,7 @@ const S = (key, env, group, type, o = {}) => ({
   secret: !!o.secret, required: !!o.required, def: o.def ?? (type === 'int' ? 0 : type === 'on' ? 'on' : ''),
   wizard: o.wizard || '',          /* the setup step that collects it; '' means advanced or env-only */
   live: !!o.live,                  /* takes effect at once when changed from the Connections screen */
-  envOnly: !!o.envOnly, hidden: !!o.hidden,
+  envOnly: !!o.envOnly, hidden: !!o.hidden, choices: o.choices || null,
 });
 
 export const SETTINGS = [
@@ -47,6 +47,9 @@ export const SETTINGS = [
 
   /* public address */
   S('publicUrl', 'PUBLIC_URL', 'public', 'url', { wizard: 'public', live: true, label: 'Public address', help: 'The https address your clients use. Links in emails are built from it.' }),
+  S('clientIpHeader', 'CLIENT_IP_HEADER', 'public', 'str', { live: true, choices: ['cf-connecting-ip', 'x-real-ip', 'x-forwarded-for', 'none'],
+    label: 'Where the visitor\'s address comes from',
+    help: 'Behind a Cloudflare Tunnel use cf-connecting-ip. Leave empty to use X-Forwarded-For. This decides what the sign-in limits and activity log see, so set it to a header your own proxy writes.' }),
   S('sessionDays', 'SESSION_DAYS', 'public', 'int', { def: 30, live: true, label: 'Client session, days' }),
 
   /* brand */
@@ -63,6 +66,13 @@ export const SETTINGS = [
   S('mailSend', 'MAIL_SEND', 'mailings', 'on', { live: true, label: 'Mailings send for real', help: 'Off turns every mailing into a simulation.' }),
   S('resendWebhookSecret', 'RESEND_WEBHOOK_SECRET', 'mailings', 'str', { secret: true, wizard: 'extras', live: true, label: 'Resend webhook secret', help: 'So bounces and spam complaints are never mailed again.' }),
   S('resendBase', 'RESEND_API_URL', 'internal', 'url', { def: 'https://api.resend.com', hidden: true }),
+
+  /* hints from the installer's bundled-Immich compose file; never set by hand, never shown */
+  S('immichBundled', 'IMMICHSET_BUNDLED_IMMICH', 'internal', 'url', { envOnly: true, hidden: true }),
+  S('bundledMl', 'IMMICHSET_BUNDLED_ML', 'internal', 'on', { envOnly: true, hidden: true }),
+  S('bundledImport', 'IMMICHSET_BUNDLED_IMPORT', 'internal', 'str', { envOnly: true, hidden: true }),
+  S('immichHint', 'IMMICHSET_IMMICH_HINT', 'internal', 'url', { envOnly: true, hidden: true }),
+  S('setupFromInternet', 'SETUP_FROM_INTERNET', 'internal', 'flag', { envOnly: true, hidden: true }),
 
   /* backups */
   S('backupDir', 'BACKUP_DIR', 'backups', 'str', { label: 'Backup folder' }),
@@ -110,6 +120,7 @@ export function normalise(s, raw) {
   switch (s.type) {
     case 'int': return Number(r || s.def);
     case 'on': return (r || 'on').toLowerCase() !== 'off';
+    case 'flag': return (r || 'off').toLowerCase() === 'on';      /* off unless switched on */
     case 'email': return (r || '').trim().toLowerCase();
     case 'url': return (r || s.def || '').replace(/\/+$/, '');
     default: return r || s.def || '';
@@ -128,7 +139,8 @@ export function validate(env, raw) {
       if (!/^\d{1,9}$/.test(v)) return { ok: false, error: 'Use a whole number' };
       return { ok: true, value: v };
     }
-    case 'on': {
+    case 'on':
+    case 'flag': {
       v = v.toLowerCase();
       return v === 'on' || v === 'off' ? { ok: true, value: v } : { ok: false, error: 'Use on or off' };
     }
@@ -140,6 +152,7 @@ export function validate(env, raw) {
       return { ok: true, value: v.replace(/\/+$/, '') };
     }
     default: {
+      if (s.choices && !s.choices.includes(v)) return { ok: false, error: `Use one of: ${s.choices.filter(Boolean).join(', ')}` };
       if (env === 'MAIL_FROM' && !/^([^<>]+<)?[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>?$/.test(v))
         return { ok: false, error: 'Use the form: Your Studio <hello@yourdomain.com>' };
       if (/[\r\n]/.test(v)) return { ok: false, error: 'That must be on one line' };

@@ -1,0 +1,52 @@
+# Layered on top of Immich's OWN docker-compose.yml (downloaded by install.sh, never edited).
+# The two files are joined by COMPOSE_FILE in .env, so `docker compose up -d` in this folder starts everything.
+# Compose merges the lists in this file with Immich's; nothing here uses features newer than Compose 2.x basics,
+# because NAS makers (Synology, Ugreen, QNAP) often ship an older Docker Compose.
+
+services:
+  # Machine learning (smart search, face grouping) is heavy. It only starts when COMPOSE_PROFILES includes "ml".
+  immich-machine-learning:
+    profiles: ["ml"]
+
+  immichset:
+    image: ghcr.io/natephotos/immichset:${IMMICHSET_TAG:-latest}
+    container_name: immichset
+    init: true
+    # The folders below belong to whoever installed, so they can back them up without sudo.
+    user: "${IMMICHSET_UID}:${IMMICHSET_GID}"
+    ports:
+      - "${IMMICHSET_PORT:-3000}:3000"
+    volumes:
+      - ${IMMICHSET_DATA}:/data
+      - ${IMMICHSET_BACKUPS}:/backups
+    environment:
+      TZ: ${TZ}
+      BACKUP_DIR: /backups
+      # These tell the setup page that Immich came with this install, so it can make your Immich account and keys.
+      IMMICHSET_BUNDLED_IMMICH: http://immich-server:2283
+      IMMICHSET_BUNDLED_ML: ${IMMICHSET_ML:-on}
+      IMMICHSET_BUNDLED_IMPORT: ${IMMICHSET_IMPORT_PATH:-}
+      # Behind a Cloudflare Tunnel the visitor's real address is in this header.
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-cf-connecting-ip}
+    depends_on:
+      - immich-server
+    restart: unless-stopped
+
+  # Reach it from anywhere over https without opening your router: `sh install.sh tunnel`.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.4
+    container_name: immichset_tunnel
+    command: ["tunnel", "--no-autoupdate", "run"]
+    env_file:
+      - tunnel.env
+    profiles: ["tunnel"]
+    depends_on:
+      - immichset
+    restart: unless-stopped
+
+  # A temporary web address, no account or domain needed, for trying it with a friend: `sh install.sh try-online`.
+  try-online:
+    image: cloudflare/cloudflared:2026.10.4
+    container_name: immichset_try
+    command: ["tunnel", "--no-autoupdate", "--url", "http://immichset:3000"]
+    profiles: ["try"]

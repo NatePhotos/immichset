@@ -1,0 +1,5 @@
+# Optional: lets Immich read an existing folder of photos in place (read-only). Added by install.sh when you give it one.
+services:
+  immich-server:
+    volumes:
+      - ${IMMICHSET_IMPORT_FOLDER}:${IMMICHSET_IMPORT_PATH}:ro

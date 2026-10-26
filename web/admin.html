@@ -692,6 +692,14 @@ function galleryChrome(g){
     { label:"Copy link", primary:true, onClick:function(){
       navigator.clipboard.writeText(galleryUrl(g)).then(function(){ toast("Link copied"); },
         function(){ toast(galleryUrl(g)); });
+    } },
+    /* a ready-to-send note: the link, the password if there is one (the panel only knows whether there is one) and when it ends */
+    { label:"Copy message", onClick:function(){
+      var lines = ["Your photos are ready: " + galleryUrl(g)];
+      if (g.hasPassword) lines.push("It is protected by a password. I will send it separately.");
+      if (g.expiresAt) lines.push("The gallery is available until " + fmtDate(g.expiresAt) + ", so please download anything you want to keep.");
+      var text = lines.join("\n\n");
+      navigator.clipboard.writeText(text).then(function(){ toast("Message copied"); }, function(){ toast("Couldn’t copy"); });
     } }
   ]});
 }
@@ -704,7 +712,9 @@ function listView(){
           actions:[{ label:"New gallery", primary:true, onClick:function(){ editorView(null); } }]});
   var h = '<div class="wrap" style="padding-top:26px">';
   if (!S.galleries.length){
-    h += emptyState(EI_STACK, "Galleries you create show up here", "emptyNew", "Create your first gallery");
+    h += emptyState(EI_STACK, "Galleries you create show up here", "emptyNew", "Create your first gallery")
+       + '<ol class="hint" style="max-width:520px;margin:6px auto 0;line-height:1.7"><li>Put your photos in an album in Immich (or choose <b>New gallery › Start a new album and upload</b>).</li>'
+       + '<li>Press <b>New gallery</b>, pick the album and give it a name.</li><li>Press <b>Copy link</b> and send it to your client.</li></ol>';
   } else {
     h += '<div class="status" id="stTotal" style="margin-bottom:14px"></div>';
     h += '<div class="cards">' + S.galleries.map(function(g){
@@ -1918,6 +1928,10 @@ function editorView(g){
     $("slugHint").innerHTML = v ? "Clients visit <b>"+esc(host+"/"+v)+"</b>" : "Letters, numbers and dashes.";
   }
   function syncAlbum(){
+    if (!S.albums.length && !S.canUpload){
+      $("albHint").textContent = "Your Immich has no albums yet. In Immich, select some photos and choose Add to album, then come back and reload this page.";
+      return;
+    }
     $("albHint").textContent = $("fAlbum").value === "__new__"
       ? "A new Immich album named after the title. You upload the photos on the next screen."
       : "The photos come from this album. Add or remove them in Immich and the gallery follows.";

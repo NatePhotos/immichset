@@ -60,9 +60,14 @@ td:first-child{color:var(--muted);width:42%}
 <script>
 (function(){
 "use strict";
-var STEPS = [["claim","Code"],["immich","Immich"],["email","Email"],["you","You"],["public","Address"],["extras","Extras"],["review","Finish"]];
+/* With the bundled Immich we ask who you are first, because one email and password make both accounts; with your own
+   Immich the keys come first, as they always did. */
+var ORDER_PLAIN = [["claim","Code"],["immich","Immich"],["email","Email"],["you","You"],["public","Address"],["extras","Extras"],["review","Finish"]];
+var ORDER_BUNDLED = [["claim","Code"],["you","You"],["immich","Immich"],["email","Email"],["public","Address"],["extras","Extras"],["review","Finish"]];
+function order(){ return S && S.bundled ? ORDER_BUNDLED : ORDER_PLAIN; }
+var PW = "";                       /* the password you typed, kept in this page only so Immich can use the same one */
 var S = null, cur = 0, results = {}, busy = false;
-try { var saved = parseInt(sessionStorage.getItem("setup.step"), 10); if (saved >= 0 && saved < STEPS.length) cur = saved; } catch(e){}
+try { var saved = parseInt(sessionStorage.getItem("setup.step"), 10); if (saved >= 0 && saved < ORDER_PLAIN.length) cur = saved; } catch(e){}
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
@@ -125,10 +130,10 @@ function err(t){ var e = $("err"); if (e) e.textContent = t || ""; if (t) say(t)
 
 /* ---- the steps ---- */
 function dots(){
-  $("dots").innerHTML = STEPS.map(function(s, i){ return '<span class="' + (i === cur ? "on" : (i < cur ? "done" : "")) + '">' + (i < cur ? "✓ " : "") + esc(s[1]) + '</span>'; }).join("");
+  $("dots").innerHTML = order().map(function(s, i){ return '<span class="' + (i === cur ? "on" : (i < cur ? "done" : "")) + '">' + (i < cur ? "✓ " : "") + esc(s[1]) + '</span>'; }).join("");
 }
 function go(n){
-  cur = Math.max(0, Math.min(STEPS.length - 1, n));
+  cur = Math.max(0, Math.min(order().length - 1, n));
   try { sessionStorage.setItem("setup.step", String(cur)); } catch(e){}
   render();
 }
@@ -160,7 +165,125 @@ function claimView(){
   $("next").onclick = go1; $("code").addEventListener("keydown", function(e){ if (e.key === "Enter") go1(); });
 }
 
-function immichView(){
+/* ---- Immich ---- */
+var provMode = "create";           /* "create": make the first Immich account. "signin": use the one that exists. */
+var immichChoice = null;           /* with your own Immich: "signin", "paste" or "none" */
+var PROV = { busy: false, done: false };
+
+function writeChoices(def){
+  var rows = [["none","Photos only. The admin can’t add or remove photos."],["addremove","Add and remove photos from the admin (recommended)"],["all","Also move photos to Immich’s trash (recoverable for 30 days)"]];
+  return '<label>What may the admin do with your photos?</label>' + rows.map(function(r){
+    return '<label style="font-weight:400;margin:6px 0"><input type="radio" name="pw_write" value="' + r[0] + '"' + (r[0] === def ? " checked" : "") + ' style="width:auto;margin-right:8px">' + esc(r[1]) + '</label>'; }).join("")
+    + '<p class="note">This only controls the second key. Your clients never use it.</p>';
+}
+function photosHelp(write){
+  var host = location.hostname || "your-server";
+  return '<h3 style="font-size:15px;margin:22px 0 6px">Now, your photos</h3>'
+    + '<p class="help">An <b>album</b> is a named collection of photos in Immich. Each gallery you make shows one album (or several, as parts). To get photos in, any of these works:</p>'
+    + '<ol class="help"><li>' + (write && write !== "none" ? 'In your admin, <b>New gallery › Upload photos</b> makes the album and adds the pictures in one go.' : 'You chose photos-only for the admin, so use one of the options below.') + '</li>'
+    + '<li>Open Immich in your browser at <code>http://' + esc(host) + ':2283</code>, drag photos in, select them and choose <b>Add to album</b>.</li>'
+    + '<li>Use the Immich phone app: sign in with that same address, and turn on backup.</li>'
+    + '<li>Already have a folder of photos on this computer? Immich can read it in place (<b>Administration › External Libraries</b>).</li></ol>';
+}
+function showProvResult(body){
+  PROV.done = true; showResults("immich", body.check || { checks: [] });
+  var box = $("res_immich");
+  box.insertAdjacentHTML("afterbegin", '<li class="ok"><span class="ic">✓</span><span><b>' + (body.createdAccount ? "Immich account created" : "Signed in to Immich") + '</b> — the two keys were made and saved. You never need to copy them.'
+    + (body.writeKey ? " The admin can add and remove photos." : "")
+    + (body.ml === "off" ? " Machine learning is switched off to suit this computer." : "") + (body.library ? " Your photo folder is being imported." : "") + '</span></li>');
+  box.insertAdjacentHTML("afterend", photosHelp(body.writeKey ? "add" : "none"));
+  $("next").disabled = false; $("prov").hidden = true;
+  say("Immich is ready");
+}
+function runProvision(url){
+  if (PROV.busy) return; PROV.busy = true;
+  var btn = $("prov"), label = btn.textContent; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Working…';
+  var email = val("pv_email") || (setting("ADMIN_EMAIL").value || ""), pw = val("pv_pw") || PW;
+  var w = (document.querySelector('input[name="pw_write"]:checked') || {}).value || "none";
+  var body = { mode: provMode, email: email, password: pw, write: w, url: url, importLibrary: !!($("pv_import") && $("pv_import").checked) };
+  (function attempt(tries){
+    api("POST", "immich/provision", body).then(function(r){
+      if (r.status === 503){
+        $("res_immich").innerHTML = '<li class="warn"><span class="ic"><span class="spin"></span></span><span><b>Immich is starting</b> — the first start takes a few minutes while it prepares itself. This page will carry on by itself.</span></li>';
+        if (tries > 240){ PROV.busy = false; btn.disabled = false; btn.textContent = label; return err("Immich is taking too long to start. Check its container log."); }
+        return setTimeout(function(){ attempt(tries + 1); }, 5000);
+      }
+      PROV.busy = false; btn.disabled = false; btn.textContent = label;
+      if (r.status === 401 && r.body.error === "claim") return claimView();
+      if (r.ok){ if (r.body.state) S = r.body.state; PW = ""; return showProvResult(r.body); }
+      var st = r.body.state;
+      if (st === "initialized"){ provMode = "signin"; $("res_immich").innerHTML = ""; renderProvFields(); return err("Immich already has an account. Sign in with it below and we’ll make the keys."); }
+      if (st === "bad_login") return err("Immich didn’t accept that email and password.");
+      err(r.body.error || "That didn’t work.");
+    });
+  })(0);
+}
+var provUrl = "";
+function renderProvFields(){
+  var box = $("provFields"); if (!box) return;
+  box.innerHTML = (provMode === "signin" || !PW ? '<label for="pv_email">Immich email</label><input id="pv_email" type="email" autocomplete="username" value="' + esc(setting("ADMIN_EMAIL").value || "") + '">' : "")
+    + (provMode === "signin" || !PW ? '<label for="pv_pw">' + (provMode === "signin" ? "Immich password" : "Your password") + '</label><input id="pv_pw" type="password" autocomplete="current-password">' : "")
+    + writeChoices("addremove")
+    + (S.bundled && S.bundled.importPath ? '<label style="font-weight:400;margin-top:14px"><input type="checkbox" id="pv_import" checked style="width:auto;margin-right:8px">Also add the folder you chose, ' + esc(S.bundled.importPath) + ', to Immich so its photos show up</label>' : "");
+}
+function provNav(){ return nav(true, PROV.done, "Continue", '<button type="button" id="prov" class="pri">' + (provMode === "signin" ? "Connect and make my keys" : "Set up Immich for me") + '</button>'); }
+function bindProv(url){
+  bindBack(); $("next").onclick = function(){ go(cur + 1); };
+  $("prov").onclick = function(){ runProvision(url); };
+}
+
+function immichBundledView(){
+  PROV.done = !!(S.immichProvisioned && setting("IMMICH_API_KEY").set);
+  frame("Set up Immich",
+    'Immich is the program that keeps your photos and makes the thumbnails. It was installed together with this server, so there is nothing for you to copy or paste: this step makes your Immich account and the two private keys this app needs.'
+    + (PW ? ' Your Immich account uses the same email and password you just chose.' : '')
+    + (!S.bundled.ml ? ' Machine learning (smart search) is switched off because this computer is small; you can turn it on later in Immich.' : ""),
+    '<div id="provFields"></div><ul class="res" id="res_immich"></ul>' + provNav());
+  renderProvFields(); bindProv(S.bundled.url);
+  if (PROV.done) { $("res_immich").innerHTML = '<li class="ok"><span class="ic">✓</span><span><b>Immich is already set up</b> — its keys are saved.</span></li>'; $("prov").hidden = true; $("next").disabled = false; }
+}
+
+/* your own Immich: sign in and we make the keys, paste a key you made, or you don't have one yet */
+function immichChoiceView(){
+  if (S.immichProvisioned && setting("IMMICH_API_KEY").set && !immichChoice) { immichChoice = "signin"; PROV.done = true; }
+  if (immichChoice === "paste") return immichPasteView();
+  if (immichChoice === "signin"){
+    provMode = "signin"; provUrl = provUrl || S.immichHint || setting("IMMICH_URL").value || "";
+    frame("Sign in to your Immich",
+      'Enter the address of your Immich and the email and password you use for it. We’ll make the two keys this app needs, so you don’t have to. Your password is used once, right now, and never saved.',
+      field("IMMICH_URL", "Immich address", { type: "url", value: provUrl, ph: "http://192.168.1.20:2283", note: 'The address <i>this server</i> uses to reach Immich. Inside a container, “localhost” means the container itself, so use your computer’s network address.' })
+      + '<div id="provFields"></div><ul class="res" id="res_immich"></ul>' + provNav());
+    renderProvFields();
+    bindBack(); $("back").onclick = function(){ immichChoice = null; render(); };
+    $("next").onclick = function(){ go(cur + 1); };
+    $("prov").onclick = function(){ provUrl = val("f_IMMICH_URL"); runProvision(provUrl); };
+    return;
+  }
+  if (immichChoice === "none"){
+    frame("You’ll need Immich first",
+      'immichset shows photos that live in <b>Immich</b>, a free program you run yourself. The easiest way is to run the installer again and choose <b>Install Immich for me</b>; it sets up Immich and this server together. Or follow Immich’s own guide at <a href="https://immich.app/docs/install/requirements" target="_blank" rel="noopener">immich.app</a>, then come back and press <b>Check again</b>.',
+      '<ul class="res" id="res_immich"></ul>' + nav(true, false, "Continue", '<button type="button" id="again">Check again</button>'));
+    bindBack(); $("back").onclick = function(){ immichChoice = null; render(); };
+    $("again").onclick = function(){
+      api("GET", "immich/status").then(function(r){
+        $("res_immich").innerHTML = r.ok && r.body.reachable ? '<li class="ok"><span class="ic">✓</span><span><b>Immich found</b> at ' + esc(r.body.url) + '. Choose “I have Immich” to continue.</span></li>'
+          : '<li class="bad"><span class="ic">✗</span><span>No Immich answered yet at ' + esc((r.body && r.body.url) || "the usual address") + '.</span></li>';
+      });
+    };
+    return;
+  }
+  var opts = [["signin","Yes: sign me in","Easiest. Give me your Immich address, email and password, and I’ll make the keys."],["paste","Yes: I’ll paste an API key","If you prefer to make the key yourself in Immich."],["none","No, I don’t have Immich yet","I’ll show you how to get it."]];
+  frame("Do you already have Immich?",
+    'immichset shows photos that live in <b>Immich</b>, a free program that keeps your photos and makes thumbnails. Choose what fits:',
+    opts.map(function(o){ return '<label style="font-weight:400;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:10px 0;display:block;cursor:pointer"><input type="radio" name="ic" value="' + o[0] + '" style="width:auto;margin-right:10px"><b>' + esc(o[1]) + '</b><br><span class="note" style="margin-left:26px">' + esc(o[2]) + '</span></label>'; }).join("")
+    + nav(true, false, "Continue"));
+  bindBack();
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="ic"]'), function(r){ r.onchange = function(){ immichChoice = r.value; render(); }; });
+  $("next").hidden = true;
+}
+function immichView(){ if (S.bundled) return immichBundledView(); return immichChoiceView(); }
+
+function immichPasteView(){
   var okNow = allOk(results.immich, ["reach", "key", "albums"]);
   frame("Connect to Immich",
     'Your photos stay in Immich; this app only reads them. Create a <b>read-only</b> key for it:<ol>'
@@ -174,9 +297,9 @@ function immichView(){
     + field("IMMICH_WRITE_KEY", "Write API key", { secret: true }) + '</details>'
     + '<ul class="res" id="res_immich"></ul>'
     + nav(true, okNow, "Continue", '<button type="button" id="test">Test connection</button><button type="button" class="lnk" id="anyway" hidden>Continue anyway</button>'));
-  bindBack();
+  bindBack(); $("back").onclick = function(){ immichChoice = null; render(); };
   var cont = function(){
-    saveSettings(collect(["IMMICH_URL", "IMMICH_API_KEY", "IMMICH_WRITE_KEY"])).then(function(ok){ if (ok) go(2); });
+    saveSettings(collect(["IMMICH_URL", "IMMICH_API_KEY", "IMMICH_WRITE_KEY"])).then(function(ok){ if (ok) go(cur + 1); });
   };
   $("next").onclick = cont;
   $("anyway").onclick = cont;
@@ -206,8 +329,8 @@ function emailView(){
     + '<ul class="res" id="res_email"></ul>'
     + nav(true, !!tested, "Continue", '<button type="button" id="test">Send test email</button><button type="button" class="lnk" id="skip">Skip email for now</button>'));
   bindBack();
-  $("next").onclick = function(){ saveSettings(collect(["RESEND_API_KEY", "MAIL_FROM", "MAIL_REPLY_TO"])).then(function(ok){ if (ok) go(3); }); };
-  $("skip").onclick = function(){ api("POST", "skip-email", {}).then(function(r){ if (r.ok) S = r.body; go(3); }); };
+  $("next").onclick = function(){ saveSettings(collect(["RESEND_API_KEY", "MAIL_FROM", "MAIL_REPLY_TO"])).then(function(ok){ if (ok) go(cur + 1); }); };
+  $("skip").onclick = function(){ api("POST", "skip-email", {}).then(function(r){ if (r.ok) S = r.body; go(cur + 1); }); };
   $("test").onclick = function(){
     runTest("email", "test/email", { apiKey: val("f_RESEND_API_KEY"), from: val("f_MAIL_FROM"), replyTo: val("f_MAIL_REPLY_TO"), to: val("mailTo") }, $("test")).then(function(r){
       if (!r) return; $("next").disabled = !(r.checks || []).some(function(c){ return c.id === "send" && c.ok && !c.warn; });
@@ -219,7 +342,7 @@ function emailView(){
 function youView(){
   var needAdmin = !S.adminExists && !S.envAdmin;
   frame("You and your business",
-    (needAdmin ? 'This is the account you sign in with.' : 'Your admin account already exists.') + ' Your business name and address appear on galleries and in the footer of every email you send. A postal address (or PO box) is required by law before you can email your contacts, but you can add it later.',
+    (needAdmin ? 'This is the account you sign in with.' + (S.bundled ? ' Your Immich account will use this same email and password, so there is only one to remember.' : '') : 'Your admin account already exists.') + ' Your business name and address appear on galleries and in the footer of every email you send. A postal address (or PO box) is required by law before you can email your contacts, but you can add it later.',
     (needAdmin ? field("ADMIN_EMAIL", "Your email", { type: "email", auto: "email" })
       + '<label for="pw">Password</label><input id="pw" type="password" autocomplete="new-password"><p class="note">At least 12 characters. Pick something you don’t use anywhere else.</p>'
       + '<label><input type="checkbox" id="showpw" style="width:auto;margin-right:6px">Show password</label>' : "")
@@ -233,13 +356,14 @@ function youView(){
   if ($("showpw")) $("showpw").onchange = function(){ $("pw").type = this.checked ? "text" : "password"; };
   $("next").onclick = function(){
     var brand = collect(["BRAND_NAME", "BRAND_ADDRESS", "BRAND_URL", "BRAND_SOCIAL", "BRAND_SOCIAL_LABEL"]);
-    var next = function(){ saveSettings(brand).then(function(ok){ if (ok) go(4); }); };
+    var next = function(){ saveSettings(brand).then(function(ok){ if (ok) go(cur + 1); }); };
     if (!needAdmin) return next();
     $("next").disabled = true;
-    api("POST", "admin", { email: val("f_ADMIN_EMAIL"), password: $("pw").value }).then(function(r){
+    var typed = $("pw").value;
+    api("POST", "admin", { email: val("f_ADMIN_EMAIL"), password: typed }).then(function(r){
       $("next").disabled = false;
       if (!r.ok) return err(r.body.error || "Couldn't create the account");
-      S = r.body; next();
+      S = r.body; PW = typed; next();
     });
   };
 }
@@ -247,14 +371,23 @@ function youView(){
 function publicView(){
   var cur_ = setting("PUBLIC_URL");
   frame("Your public address",
-    'This is the web address your clients will use. It should be <b>https</b>. Put a reverse proxy (Caddy, nginx, or your NAS’s built-in one) or a <b>Cloudflare Tunnel</b> in front of this server (port 3000) and use that address here.',
+    'This is the web address your clients will use. It should be <b>https</b>, so people can reach it from anywhere. You can fill this in now or come back later; the gallery works at home either way.'
+    + '<details><summary>How do I get an https address? (pick one)</summary><ul class="help" style="margin-top:10px">'
+    + '<li><b>Cloudflare Tunnel (recommended).</b> No router changes. You need a domain (about $10–15 a year). <a href="https://github.com/NatePhotos/immichset/blob/main/docs/ONLINE.md" target="_blank" rel="noopener">Step-by-step guide</a>.</li>'
+    + '<li><b>Just trying it with a friend.</b> A temporary address with no domain: run <code>sh install.sh try-online</code>. It changes every time it restarts.</li>'
+    + '<li><b>Only you, from your phone.</b> Tailscale: a private link just for you, not for clients.</li>'
+    + '<li><b>Your own router and proxy.</b> For people who already know how. Never open Immich’s own port to the internet.</li></ul></details>',
     field("PUBLIC_URL", "Public address", { type: "url", value: cur_.value || S.suggestedPublicUrl, ph: "https://galleries.yourstudio.com" })
     + '<ul class="res" id="res_public"></ul>'
-    + nav(true, true, "Continue", '<button type="button" id="test">Test address</button>'));
+    + nav(true, true, "Continue", '<button type="button" id="test">Test address</button><button type="button" class="lnk" id="later">Set up later (home only)</button>'));
   bindBack();
+  $("later").onclick = function(){
+    $("f_PUBLIC_URL").value = S.suggestedPublicUrl;
+    $("res_public").innerHTML = '<li class="warn"><span class="ic">!</span><span><b>Home only for now</b> — this address only works on your home network, so clients can’t open it yet. You can change it any time under Connections.</span></li>';
+  };
   $("next").onclick = function(){
     if (!val("f_PUBLIC_URL")) return err("Enter the address clients will use.");
-    saveSettings(collect(["PUBLIC_URL"])).then(function(ok){ if (ok) go(5); });
+    saveSettings(collect(["PUBLIC_URL"])).then(function(ok){ if (ok) go(cur + 1); });
   };
   $("test").onclick = function(){ runTest("public", "test/public", { url: val("f_PUBLIC_URL") }, $("test")); };
   if (results.public) showResults("public", results.public);
@@ -277,7 +410,7 @@ function extrasView(){
     + nav(true, true, "Continue"));
   bindBack();
   var envs = ["CLOUDFLARE_TOKEN", "HOSTINGER_TOKEN", "DNS_DOMAIN", "DNS_HOST", "CF_ACCOUNT_ID", "CF_PAGES_PROJECT", "CF_PAGES_TOKEN", "SITE_URL", "RESEND_WEBHOOK_SECRET"];
-  $("next").onclick = function(){ saveSettings(collect(envs)).then(function(ok){ if (ok) go(6); }); };
+  $("next").onclick = function(){ saveSettings(collect(envs)).then(function(ok){ if (ok) go(cur + 1); }); };
   $("testDns").onclick = function(){ runTest("dns", "test/cloudflare", { kind: "dns", token: val("f_CLOUDFLARE_TOKEN"), domain: val("f_DNS_DOMAIN"), host: val("f_DNS_HOST") }, $("testDns")); };
   $("testPages").onclick = function(){ runTest("pages", "test/cloudflare", { kind: "pages", token: val("f_CF_PAGES_TOKEN"), accountId: val("f_CF_ACCOUNT_ID"), project: val("f_CF_PAGES_PROJECT") }, $("testPages")); };
 }
@@ -324,7 +457,7 @@ function waitForApp(){
 }
 
 var VIEWS = { immich: immichView, email: emailView, you: youView, public: publicView, extras: extrasView, review: reviewView };
-function render(){ if (cur === 0) return claimView(); (VIEWS[STEPS[cur][0]] || immichView)(); }
+function render(){ if (cur === 0) return claimView(); (VIEWS[order()[cur][0]] || immichView)(); }
 
 function load(){
   return api("GET", "state").then(function(r){

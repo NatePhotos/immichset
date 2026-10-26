@@ -6,10 +6,24 @@
 
 /* The permissions Immich asks an API key for, by the part of the API each one guards. */
 export const PERMISSION = {
-  albums: 'album.read', timeline: 'timeline.read', thumbnail: 'asset.view', original: 'asset.download',
+  albums: 'album.read', timeline: 'asset.read', thumbnail: 'asset.view', original: 'asset.download',
   archive: 'asset.download', search: 'asset.read', upload: 'asset.upload', albumCreate: 'album.create',
   albumAdd: 'albumAsset.create', albumRemove: 'albumAsset.delete', trash: 'asset.delete', restore: 'asset.delete',
 };
+/* What the keys this app makes for itself may do. Checked against Immich v3.3.5 (docs.immich.app, API spec): the
+   read key needs these to list albums and photos, show thumbnails and download; `timeline.read` is harmless
+   insurance for older versions. The write key is split so the owner can grant only what the admin will use. */
+export const READ_PERMISSIONS = ['album.read', 'asset.read', 'asset.view', 'asset.download', 'timeline.read'];
+export const WRITE_PERMISSIONS = {
+  add: ['asset.upload', 'album.create', 'albumAsset.create'],
+  remove: ['albumAsset.delete'],
+  trash: ['asset.delete'],
+};
+export const KEY_NAMES = { read: 'immichset (read-only)', write: 'immichset (add and remove photos)' };
+export const writePermissionsFor = level => level === 'add' ? WRITE_PERMISSIONS.add
+  : level === 'addremove' ? [...WRITE_PERMISSIONS.add, ...WRITE_PERMISSIONS.remove]
+  : level === 'all' ? [...WRITE_PERMISSIONS.add, ...WRITE_PERMISSIONS.remove, ...WRITE_PERMISSIONS.trash] : [];
+
 const LABEL = {
   albums: 'list your albums', timeline: 'read an album\'s photo list', thumbnail: 'show thumbnails', original: 'download originals',
   archive: 'build zip downloads', search: 'read photo sizes',
@@ -244,6 +258,15 @@ export async function checkPublic({ url, instance, f = fetch }) {
   try {
     const r = await f(`${u}/healthz`, lim());
     const id = r.headers.get('x-immichset-instance');
+    /* the address is https but this server was told visitors came in over http: the proxy is not passing that on,
+       so sign-in cookies would not be marked secure */
+    if (r.ok && /^https:/i.test(u) && id === instance) {
+      const body = await r.clone().json().catch(() => null);
+      if (body && body.https === false) checks.push({ id: 'secure', label: 'Sign-in cookies are secure', ok: true, warn: true,
+        detail: 'Your proxy is not telling this server that visitors use https.',
+        fix: 'Make it send the X-Forwarded-Proto header (Cloudflare Tunnel and Caddy do this by default; nginx needs proxy_set_header X-Forwarded-Proto $scheme;).' });
+    }
+    if (r.headers.get('cf-ray')) checks.push(pass('cloudflare', 'Arrives through Cloudflare', 'Your tunnel is working.'));
     checks.push(id && id === instance ? pass('reach', 'Reaches this server') : r.ok
       ? { id: 'reach', label: 'Reaches this server', ok: true, warn: true, detail: 'Something answered, but it may not be this server.', fix: 'Check the address points at port 3000 of this container.' }
       : fail('reach', 'Reaches this server', `${u} answered ${r.status}.`));

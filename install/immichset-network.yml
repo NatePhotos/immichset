@@ -1,0 +1,12 @@
+# Joins immichset to the Docker network an existing Immich on this computer uses, so the setup page can reach it by name.
+# install.sh adds this file (via COMPOSE_FILE in .env) when it finds Immich already running; IMMICH_NETWORK names that network.
+services:
+  immichset:
+    networks:
+      - default
+      - immich
+
+networks:
+  immich:
+    name: ${IMMICH_NETWORK:-immich_default}
+    external: true

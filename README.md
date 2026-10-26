@@ -59,6 +59,10 @@ and uploads for you.
 
 ## Quick start
 
+**Never done this before? Read [docs/START-HERE.md](docs/START-HERE.md).** It can install immichset *and* Immich for you.
+
+The short version, if you already run Immich:
+
 You need Immich running, and about ten minutes.
 
 1. Save [`docker-compose.quickstart.yml`](docker-compose.quickstart.yml) as `docker-compose.yml` and run

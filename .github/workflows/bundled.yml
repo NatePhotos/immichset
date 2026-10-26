@@ -1,0 +1,43 @@
+name: bundled install (real Docker and real Immich)
+
+# The normal tests use fakes for Immich and Docker. This job is the check against the real ones: it builds the app image,
+# runs the real installer, lets the real Immich start, and drives the setup page's Immich provisioning end to end.
+# It pulls about 2 GB of images, so it runs weekly, on demand, and when the installer or setup code changes. It does not
+# block publishing; if Immich changes something we depend on, this is where it shows first.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1'
+  pull_request:
+    paths: ['install/**', 'setup/**', 'config/**', '.github/workflows/bundled.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  bundled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - name: Build the app image from this checkout
+        run: docker build -t ghcr.io/natephotos/immichset:ci .
+      - name: Install everything with the real installer
+        env:
+          IMMICHSET_SOURCE: file://${{ github.workspace }}/install
+          IMMICHSET_IMAGE_TAG: ci
+          IMMICHSET_SKIP_PULL: '1'
+          IMMICHSET_NO_WAIT: '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/stack"
+          sh install/install.sh --yes --no-ml --immich \
+            --dir "$RUNNER_TEMP/stack" --photos "$RUNNER_TEMP/stack/library" --db "$RUNNER_TEMP/stack/postgres"
+      - name: Provision Immich through the setup page, against the real thing
+        run: node install/test/real-provision.mjs "$RUNNER_TEMP/stack"
+      - name: Logs, if it went wrong
+        if: failure()
+        run: cd "$RUNNER_TEMP/stack" && docker compose logs --tail 80

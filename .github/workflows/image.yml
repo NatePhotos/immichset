@@ -19,7 +19,8 @@ jobs:
         with:
           node-version: 26
       # the unit tests, and the end-to-end walk through a brand-new install against fake Immich and Resend
-      - run: node --test admin/test health/test zip/test mail/test config/test setup/test site/test
+      - run: sudo apt-get install -y shellcheck dash
+      - run: node --test admin/test health/test zip/test mail/test config/test setup/test site/test install/test docs/test
 
   publish:
     needs: test

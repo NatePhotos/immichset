@@ -128,11 +128,9 @@ function activityHtml(list){
 /* ok: true = fine, null = not known yet, false = wrong; email not set up is a warning, not a fault */
 function tone(item, soft){ return item.ok === true ? "ok" : (item.ok === null || soft) ? "warn" : "bad"; }
 function healthHtml(hl){
-  var items = [
-    { title:"Website", it: hl.site, tone: tone(hl.site) },
-    { title:"Backups", it: hl.nas, tone: tone(hl.nas) },
-    { title:"Email", it: hl.email, tone: tone(hl.email, true) }
-  ];
+  var items = [];
+  if (hl.site) items.push({ title:"Website", it: hl.site, tone: tone(hl.site) });   /* only when the portfolio site is set up */
+  items.push({ title:"Backups", it: hl.nas, tone: tone(hl.nas) }, { title:"Email", it: hl.email, tone: tone(hl.email, true) });
   /* the server's own watch on Immich, disk space, prepared zips and download traffic */
   [["immich","Immich"],["disk","Disk space"],["zips","Prepared zips"],["downloads","Downloads"]].forEach(function(k){
     if (hl[k[0]]) items.push({ title:k[1], it: hl[k[0]], tone: tone(hl[k[0]]) });
@@ -173,14 +171,30 @@ function recentHtml(list){
     + '<span class="hm-tt">New gallery</span></button></div></section>';
 }
 
+/* ---------- getting started: from "I have a server" to "my first client opened a gallery" ---------- */
+var DOCS = "https://github.com/NatePhotos/immichset/blob/main/docs/";
+function checklistHtml(c){
+  if (!c || !c.items) return "";
+  var rows = c.items.map(function(i, n){
+    return '<li class="hm-todo-row' + (i.done ? " done" : "") + '"><span class="hm-ic ' + (i.done ? "ok" : "warn") + '">' + (i.done ? IC.check : IC.clock) + '</span>'
+      + '<span class="hm-txt"><span class="hm-t">' + esc(i.title) + '</span><span class="hm-d">' + esc(i.detail)
+      + ' <a href="' + DOCS + esc(i.doc) + '.md" target="_blank" rel="noopener">How</a></span></span>'
+      + (i.manual && !i.done ? '<button type="button" class="btn sm ghost" data-todo="' + esc(i.id) + '">I’ve done this</button>' : "") + '</li>';
+  }).join("");
+  return '<section class="hm-card hm-todo" aria-labelledby="hmTodoH" style="margin-bottom:16px"><div class="hm-head"><h2 id="hmTodoH">Getting started</h2>'
+    + '<span class="hm-d" style="margin-right:10px">' + c.doneCount + ' of ' + c.items.length + ' done</span>'
+    + '<button type="button" class="btn sm ghost" id="hmTodoHide">Hide this list</button></div>'
+    + '<ul style="list-style:none;margin:0;padding:0">' + rows + '</ul></section>';
+}
+
 /* ---------- the page ---------- */
 function render(){
   if (!H.active || !H.data) return;
   var d = H.data;
   hchrome();   /* the greeting follows the clock */
-  $("root").innerHTML = '<div class="wrap"><div class="hm">'
+  $("root").innerHTML = '<div class="wrap">' + checklistHtml(d.checklist) + '<div class="hm">'
     + statsHtml(d.stats || {}) + attentionHtml(d.attention || []) + activityHtml(d.activity || [])
-    + healthHtml(d.health || { site:{ok:null}, nas:{ok:null}, email:{ok:null} }) + recentHtml(d.recent || [])
+    + healthHtml(d.health || { nas:{ok:null}, email:{ok:null} }) + recentHtml(d.recent || [])
     + '</div></div>';
   var root = $("root");
   Array.prototype.forEach.call(root.querySelectorAll("[data-att]"), function(b){
@@ -197,6 +211,16 @@ function render(){
     this.parentNode.classList.toggle("open", H.healthOpen);
   };
   $("hmSeeAll").onclick = function(){ K.goSection("galleries"); };
+  if ($("hmTodoHide")) $("hmTodoHide").onclick = function(){
+    api("/checklist", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"dismiss" }) })
+      .then(function(){ d.checklist = null; render(); toast("Hidden. You can always find the guides in the docs."); });
+  };
+  Array.prototype.forEach.call(root.querySelectorAll("[data-todo]"), function(b){
+    b.onclick = function(){
+      api("/checklist", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"offsite" }) })
+        .then(function(){ refresh(true); });
+    };
+  });
   $("hmNewTile").onclick = function(){ K.openNewGallery(); };
 }
 

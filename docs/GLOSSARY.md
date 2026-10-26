@@ -1,0 +1,23 @@
+# Words you'll see
+
+- **Album** A named group of photos in Immich.
+- **API key** A long secret text that lets one program use another (immichset uses one to read your Immich). Treat it like a password.
+- **CGNAT** When your internet provider shares one public address among many customers; makes port forwarding impossible.
+- **Cloudflare Tunnel** A private pipe from your computer to Cloudflare so people can reach your site without opening your router.
+- **Compose / docker compose** The tool that starts several containers from one file.
+- **Container** A packaged program that runs in isolation. Docker runs them.
+- **DNS** The internet's phone book: it turns `yourstudio.com` into an address.
+- **Docker** The program that runs containers.
+- **Domain** A name like `yourstudio.com` that you rent.
+- **Gallery** What a client opens; shows one or more albums.
+- **https** The padlock. Traffic is encrypted.
+- **Immich** The free photo library that stores your pictures.
+- **Machine learning (ML)** Immich's optional smart search and face grouping. Needs a stronger computer.
+- **NAS** A small always-on computer with drives for storing files.
+- **Port** A numbered door on a computer (Immich is 2283, immichset is 3000).
+- **Public address** The https web address clients use.
+- **Reverse proxy** A program in front of others that handles https and sends traffic to the right place.
+- **SSH** A way to open a terminal on another computer.
+- **Tailscale** A private network between your own devices.
+- **Terminal** A window where you type commands.
+- **Token** Another word for a secret key.
