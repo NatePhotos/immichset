@@ -179,6 +179,7 @@ function checklistHtml(c){
     return '<li class="hm-todo-row' + (i.done ? " done" : "") + '"><span class="hm-ic ' + (i.done ? "ok" : "warn") + '">' + (i.done ? IC.check : IC.clock) + '</span>'
       + '<span class="hm-txt"><span class="hm-t">' + esc(i.title) + '</span><span class="hm-d">' + esc(i.detail)
       + ' <a href="' + DOCS + esc(i.doc) + '.md" target="_blank" rel="noopener">How</a></span></span>'
+      + (i.section && !i.done ? '<button type="button" class="btn sm" data-go="' + esc(i.section) + '">Open</button>' : "")
       + (i.manual && !i.done ? '<button type="button" class="btn sm ghost" data-todo="' + esc(i.id) + '">I’ve done this</button>' : "") + '</li>';
   }).join("");
   return '<section class="hm-card hm-todo" aria-labelledby="hmTodoH" style="margin-bottom:16px"><div class="hm-head"><h2 id="hmTodoH">Getting started</h2>'
@@ -215,6 +216,9 @@ function render(){
     api("/checklist", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"dismiss" }) })
       .then(function(){ d.checklist = null; render(); toast("Hidden. You can always find the guides in the docs."); });
   };
+  Array.prototype.forEach.call(root.querySelectorAll("[data-go]"), function(b){
+    b.onclick = function(){ K.goSection(b.dataset.go); };
+  });
   Array.prototype.forEach.call(root.querySelectorAll("[data-todo]"), function(b){
     b.onclick = function(){
       api("/checklist", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"offsite" }) })

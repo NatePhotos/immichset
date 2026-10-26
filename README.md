@@ -94,13 +94,12 @@ The app makes its own session secret and admin token. You never invent those.
 
 ### Branding
 
-Set `BRAND_NAME`, `BRAND_URL`, `BRAND_SOCIAL` and `BRAND_SOCIAL_LABEL`. For your own logo, drop a
-**`web/brand-logo.png`**: black artwork on a transparent background. It is used as a mask, so it
-renders white over the cover photo and dark in the footer. Without one, a neutral aperture is used.
-
-It also becomes the favicon and iOS home-screen icon. Optionally add
-**`web/brand-logo-dark.png`**: the same mark in white; browsers in dark mode will use it,
-so the icon stays visible on a dark tab strip.
+Set your business name, address and links in the admin under **Connections › Your business** (or with
+`BRAND_NAME`, `BRAND_URL`, `BRAND_SOCIAL` and `BRAND_SOCIAL_LABEL`). Upload your own logo on the same screen: a PNG with a
+transparent background and black artwork, which is used as a mask, so it renders white over the cover photo and dark in the
+footer. The upload is kept in the data folder and refused if it has a solid background. Without one, a neutral aperture is
+used. It also becomes the favicon and iOS home-screen icon. Files placed by hand still work: `brand-logo.png` and an
+optional white `brand-logo-dark.png` for dark browser tabs, in the data folder or the web folder.
 
 ### Managing photos
 

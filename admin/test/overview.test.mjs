@@ -189,12 +189,13 @@ test('the getting-started list appears only after setup, until it is dismissed, 
   assert.equal(overview(db, { now: NOW, getting: { setupDone: false } }).checklist, null);
   assert.equal(overview(db, { now: NOW, getting: { setupDone: true, dismissed: true } }).checklist, null);
   const fresh = overview(db, { now: NOW, publicUrl: 'http://192.168.1.20:3000', getting: { setupDone: true, dismissed: false, albums: 0, offsite: false } }).checklist;
-  assert.deepEqual(fresh.items.map(i => i.id), ['photos', 'gallery', 'email', 'online', 'backup', 'offsite']);
+  assert.deepEqual(fresh.items.map(i => i.id), ['photos', 'gallery', 'brand', 'email', 'online', 'backup', 'offsite']);
   assert.equal(fresh.doneCount, 0);
   const { db: db2, gal } = mk();
   const more = overview(db2, { now: NOW, mailReady: true, publicUrl: 'https://g.example.com', backups: [{ at: new Date(NOW).toISOString() }],
-    getting: { setupDone: true, dismissed: false, albums: 3, offsite: true } }).checklist;
+    getting: { setupDone: true, dismissed: false, albums: 3, offsite: true, brand: true } }).checklist;
   const byId = Object.fromEntries(more.items.map(i => [i.id, i.done]));
-  assert.deepEqual([byId.photos, byId.email, byId.online, byId.backup, byId.offsite], [true, true, true, true, true]);
+  assert.deepEqual([byId.photos, byId.brand, byId.email, byId.online, byId.backup, byId.offsite], [true, true, true, true, true, true]);
+  assert.deepEqual(more.items.filter(i => i.section).map(i => i.section).sort(), ['connections', 'connections', 'connections', 'galleries'], 'steps that can be done inside the admin say where');
   assert.ok(more.items.every(i => i.doc && i.detail));
 });

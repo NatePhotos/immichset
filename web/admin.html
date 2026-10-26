@@ -2476,6 +2476,7 @@ function paintConnections(){
         + (m.help ? '<div class="hint">'+esc(m.help)+'</div>' : "")+'</div>';
     }).join("");
     var t = CN_TESTS[g[0]];
+    if (g[0] === "brand") inner += '<div class="field" id="cnLogo"><label>Logo</label><div class="spin"></div></div>';
     var body = inner + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">'
       + '<button class="btn sm cnSave" data-g="'+g[0]+'" type="button"'+(d.signedIn ? "" : " disabled")+'>Save</button>'
       + (t ? '<button class="btn sm ghost cnTest" data-g="'+g[0]+'" data-t="'+t[0]+'" type="button">'+t[1]+'</button>' : "")
@@ -2484,6 +2485,7 @@ function paintConnections(){
                    : '<details style="max-width:660px;margin-bottom:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">'+g[1]+'</summary><div style="padding:6px 0 12px">'+body+'</div></details>';
   });
   box.innerHTML = html;
+  paintLogo();
   function gather(g){
     var out = {};
     Array.prototype.forEach.call(box.querySelectorAll('[data-env]'), function(el){
@@ -2516,6 +2518,54 @@ function paintConnections(){
         if (!r.ok) return toast((r.body && r.body.error) || "Couldn’t run the test");
         cnResults($("cnRes_" + g), r.body);
       });
+    };
+  });
+}
+
+/* the logo: one PNG, black artwork on a transparent background. Shown on a light and a dark patch because that is how it
+   is used (the page colours it), and refused with advice when it has a solid background. */
+function paintLogo(){
+  var box = $("cnLogo"); if (!box) return;
+  var signed = CN.data && CN.data.signedIn;
+  api("/logo").then(function(r){
+    if (!$("cnLogo") || !r.ok) return;
+    var mt = r.body && r.body.light, custom = !!mt, v = "/brand/logo?v=" + (mt || "default");
+    var patch = function(bg, fg){ return '<span style="display:inline-block;width:96px;height:96px;background:'+bg+';border:1px solid var(--line);position:relative">'
+      + '<span style="position:absolute;inset:16px;background:'+fg+';-webkit-mask:url('+v+') center/contain no-repeat;mask:url('+v+') center/contain no-repeat"></span></span>'; };
+    box.innerHTML = '<label>Logo</label><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">'
+      + patch("#ffffff", "#111111") + patch("#151515", "#ffffff")
+      + '<span class="hint" style="margin:0">' + (custom ? "Your logo" : "The default mark. Upload your own to replace it.") + '</span></div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      + '<button class="btn sm" type="button" id="logoUp"' + (signed ? "" : " disabled") + '>' + (custom ? "Replace logo" : "Upload a logo") + '</button>'
+      + (custom ? '<button class="btn sm ghost" type="button" id="logoDel"' + (signed ? "" : " disabled") + '>Use the default</button>' : "")
+      + '<input type="file" id="logoFile" accept="image/png" hidden></div>'
+      + '<div class="hint">A PNG with a <b>transparent background</b> and black artwork; 512 by 512 pixels is plenty. It appears on gallery covers, in emails and as the browser tab icon. A change can take a few minutes to show in browsers that have already loaded the old one.</div>'
+      + '<div id="logoMsg" class="hint" style="color:var(--bad)"></div>';
+    $("logoUp").onclick = function(){ $("logoFile").click(); };
+    $("logoFile").onchange = function(){
+      var f = $("logoFile").files[0]; $("logoFile").value = ""; if (!f) return;
+      $("logoMsg").textContent = "";
+      /* a PNG can carry an alpha channel and still be solid, so look at the pixels: a logo with nothing transparent
+         would be drawn as a solid block */
+      var solid = function(){
+        return createImageBitmap(f).then(function(bm){
+          var c = document.createElement("canvas"), n = 96; c.width = c.height = n;
+          var x = c.getContext("2d"); x.drawImage(bm, 0, 0, n, n);
+          var d = x.getImageData(0, 0, n, n).data;
+          for (var i = 3; i < d.length; i += 4) if (d[i] < 250) return false;
+          return true;
+        }).catch(function(){ return false; });
+      };
+      solid().then(function(isSolid){
+        if (isSolid){ $("logoMsg").textContent = "Every pixel of this image is solid, so it would show as a block. Export it again with a transparent background: black artwork, nothing behind it."; return; }
+        api("/logo?variant=light", { method:"POST", headers:{ "Content-Type":"image/png" }, body:f }).then(function(u){
+          if (!u.ok){ $("logoMsg").textContent = (u.body && u.body.error) || "Couldn’t upload that"; return; }
+          toast("Logo updated"); paintLogo();
+        });
+      });
+    };
+    if ($("logoDel")) $("logoDel").onclick = function(){
+      api("/logo?variant=light", { method:"DELETE" }).then(function(){ toast("Back to the default mark"); paintLogo(); });
     };
   });
 }

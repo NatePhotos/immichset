@@ -5,6 +5,7 @@
 import { createServer } from 'node:http';
 import { clientIp as pickClientIp, isHttps as pickHttps, requestHost } from './config/request.mjs';
 import { coverVersion as pickCoverVersion } from './admin/cover.mjs';
+import { inspectPng, LOGO_MAX, LOGO_FILES } from './admin/logo.mjs';
 import { loadConfig, toCfg, needsSetup, startupSummary, saveFile, redact, FILE_NAME } from './config/store.mjs';
 import { SETTINGS, BY_ENV, validate as validateSetting } from './config/settings.mjs';
 import { runSetup } from './setup/server.mjs';
@@ -1307,7 +1308,7 @@ const server = createServer(async (req, res) => {
       const darkFile = find('brand-logo-dark.png');
       const own = (wantDark && darkFile) ? darkFile : find('brand-logo.png');
       if (own) {
-        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' });
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=300' });
         return res.end(await readFile(own));
       }
       res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'public, max-age=3600' });
@@ -2083,7 +2084,8 @@ async function adminRoutes(req, res, path, url) {
     if (conf.meta.setupCompletedAt && !q.setGet.get('checklist_dismissed')) {
       let albums = null;
       try { albums = (await immichJson('/api/albums')).filter(a => a.assetCount > 0).length; } catch {}
-      getting = { setupDone: true, dismissed: false, albums, offsite: !!q.setGet.get('checklist_offsite') };
+      getting = { setupDone: true, dismissed: false, albums, offsite: !!q.setGet.get('checklist_offsite'),
+                  brand: !!(CFG.brandName && CFG.brandAddress && existsSync(join(DATA_DIR, LOGO_FILES.light))) };
     }
     return json(res, 200, overview(db, { now: Date.now(), site: site.summary(), mailReady: mailReady(),
                                          backups: backupList(), publicUrl: CFG.publicUrl,
@@ -2226,6 +2228,32 @@ async function adminRoutes(req, res, path, url) {
     q.coverFile.run(file, g.id);
     console.log(`cover for ${g.slug}: ${file} ${(buf.length / 1024).toFixed(0)}KB`);
     return json(res, 200, gallDto(q.gallById.get(g.id)));
+  }
+
+  /* the logo: a PNG kept in the data folder (an image's own web folder is read-only), so it survives updates */
+  if (path === '/api/admin/logo') {
+    const variant = url.searchParams.get('variant') === 'dark' ? 'dark' : 'light';
+    const file = join(DATA_DIR, LOGO_FILES[variant]);
+    const state = () => Object.fromEntries(Object.entries(LOGO_FILES).map(([k, f]) => {
+      try { return [k, Math.floor(statSync(join(DATA_DIR, f)).mtimeMs)]; } catch { return [k, null]; }
+    }));
+    if (req.method === 'GET') return json(res, 200, state());
+    if (req.method === 'DELETE') {
+      try { unlinkSync(file); } catch {}
+      console.log(`logo removed (${variant})`);
+      return json(res, 200, state());
+    }
+    if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' });
+    if (Number(req.headers['content-length'] || 0) > LOGO_MAX) { json(res, 413, { error: 'Logos must be under 2 MB' }, { connection: 'close' }); return req.destroy(); }
+    let buf;
+    try { buf = await readBuffer(req, LOGO_MAX); } catch { json(res, 413, { error: 'Logos must be under 2 MB' }, { connection: 'close' }); return req.destroy(); }
+    const seen = inspectPng(buf);
+    if (!seen.ok) return json(res, 422, { error: seen.error });
+    const tmp = join(DATA_DIR, `.${LOGO_FILES[variant]}.tmp`);
+    await writeFile(tmp, buf);
+    renameSync(tmp, file);                 /* appears whole, never half written */
+    console.log(`logo saved (${variant}): ${seen.width}x${seen.height}, ${(buf.length / 1024).toFixed(0)}KB`);
+    return json(res, 200, { ...state(), width: seen.width, height: seen.height });
   }
 
   if (path === '/api/admin/albums' && req.method === 'POST') {
