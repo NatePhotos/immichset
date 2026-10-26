@@ -206,7 +206,7 @@ td{border-bottom:1px solid var(--line)}
 
 /* page header: crumb, title + pill (+ cover thumbnail), summary; actions on the right */
 .top{position:static;background:var(--bg);border-bottom:0;backdrop-filter:none;-webkit-backdrop-filter:none}
-.topin{max-width:1400px;margin:0;height:auto;min-height:60px;padding:22px 28px 16px;gap:14px;align-items:center}
+.topin{max-width:none;margin:0;height:auto;min-height:60px;padding:22px 28px 16px;gap:14px;align-items:center}
 .ttl .crumb{font-size:12px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .crumbbtn{border:0;background:none;padding:0;margin:0;font:inherit;color:var(--muted);cursor:pointer}
 .crumbbtn:hover{color:var(--fg)}
@@ -219,9 +219,10 @@ td{border-bottom:1px solid var(--line)}
 .tmore svg{display:block}
 
 /* gallery: word tabs across the top, the sub-pane rail on the left */
-.wrap{margin:0;padding:0 28px 90px}
-.detail{margin:0;grid-template-columns:220px minmax(0,1fr)}
-.gtabs{grid-column:1/-1;display:flex;gap:4px;padding:0 28px;border-bottom:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch}
+.wrap{margin:0;max-width:none;padding:0 28px 90px}
+.detail{margin:0;max-width:none;grid-template-columns:220px minmax(0,1fr)}
+.gtabs{grid-column:1/-1;display:flex;gap:4px;padding:0 28px;border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.gtabs::-webkit-scrollbar{display:none}
 .gtabs button{border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;color:var(--muted);font:inherit;font-size:14px;
   padding:10px 12px;min-height:44px;cursor:pointer;white-space:nowrap}
 .gtabs button:hover{color:var(--fg)}
@@ -398,3 +399,9 @@ td{border-bottom:1px solid var(--line)}
 .tcov.none{display:inline-flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;
   border:1px dashed var(--input-line)}
 .tcov.none:hover{color:var(--fg)}
+
+/* the photo grid fills the window and its tiles grow with it */
+.grid{max-width:none;grid-template-columns:repeat(auto-fill,minmax(clamp(104px,11vw,230px),1fr))}
+.picksrow{max-width:none}
+*{scrollbar-width:none}
+*::-webkit-scrollbar{display:none}
