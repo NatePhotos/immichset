@@ -38,7 +38,7 @@ versions; match them by meaning.)
 6. In a browser on a computer on the same network, open `http://<your NAS address>:3000/setup` (for example
    `http://192.168.1.20:3000/setup`) and enter the code.
 
-This route installs only immichset. On the Immich step choose "I already have Immich" and enter its address
+This route installs only immichset. (Don't have Immich yet? Use [the all-in-one file](NO-TERMINAL.md).) On the Immich step choose "I already have Immich" and enter its address
 (`http://<NAS address>:2283`) and an API key.
 
 ## Then, the setup page

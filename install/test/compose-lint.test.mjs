@@ -11,7 +11,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const read = f => readFileSync(join(ROOT, f), 'utf8');
 const strip = t => t.split('\n').filter(l => !/^\s*#/.test(l)).join('\n');
-const FILES = ['install/immichset.yml', 'install/immichset-only.yml', 'install/immichset.import.yml', 'install/immichset-network.yml', 'docker-compose.quickstart.yml'];
+const FILES = ['install/immichset.yml', 'install/immichset-only.yml', 'install/immichset.import.yml', 'install/immichset-network.yml', 'docker-compose.quickstart.yml', 'docker-compose.with-immich.yml'];
 
 /* the services a file defines, from its two-space-indented keys under `services:` */
 const services = t => { const m = (strip(t).split(/^services:\n/m)[1] || '').split(/\n(?=\S)/)[0]; return [...m.matchAll(/^  ([a-z][\w-]*):\s*$/gm)].map(x => x[1]); };
@@ -48,7 +48,7 @@ test('machine learning, the tunnel and try-online only start when asked for', ()
 });
 
 test('every folder mounted comes from a variable, and nothing is an anonymous volume', () => {
-  for (const f of FILES) {
+  for (const f of FILES.filter(x => x !== 'docker-compose.with-immich.yml')) {   /* that one is meant to be pasted as it is, so its folder is fixed */
     const t = strip(read(f));
     const vols = [...t.matchAll(/^\s+volumes:\n((?:\s+- .*\n)+)/gm)].flatMap(m => m[1].trim().split('\n').map(l => l.replace(/^\s*- /, '').replace(/^["']|["']$/g, '')));
     for (const v of vols) { assert.ok(v.includes(':'), `${f}: "${v}" would be an anonymous volume`); if (/^[./~]/.test(v)) assert.fail(`${f}: "${v}" is a fixed path, not a chosen folder`); }
@@ -83,4 +83,15 @@ test('the tunnel block in the quickstart file lands under services when uncommen
   const on = text.replace(/^( *)# (cloudflared:|  \S.*)$/gm, '$1$2');
   assert.match(on, /^ {2}cloudflared:$/m, 'indented as a service');
   assert.match(on, /^ {4}image: cloudflare\/cloudflared/m);
+});
+
+test('the paste-in file with Immich has what Immich needs and exposes only the two web ports', () => {
+  const t = read('docker-compose.with-immich.yml'), live = strip(t);
+  assert.deepEqual(services(t).sort(), ['database', 'immich-server', 'immichset', 'redis']);
+  assert.deepEqual([...live.matchAll(/- "(\d+):\d+"/g)].map(m => m[1]).sort(), ['2283', '3000']);
+  assert.match(live, /IMMICHSET_BUNDLED_IMMICH: http:\/\/immich-server:2283/);
+  assert.ok(live.includes(FIX.match(/ghcr\.io\/immich-app\/postgres:[^\s]+/)[0]), 'same database image as Immich\'s own file');
+  assert.ok(live.includes(FIX.match(/docker\.io\/valkey\/valkey:[^\s]+/)[0]), 'same redis image');
+  assert.ok(!/\$\{/.test(live), 'no variables: it must work pasted on its own');
+  assert.ok(/^volumes:\n(  [\w-]+:\n)+/m.test(live) && ['immich-db', 'immichset-data', 'immichset-backups'].every(v => new RegExp(`^  ${v}:$`, 'm').test(live)));
 });

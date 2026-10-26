@@ -20,6 +20,7 @@ Your photos ──► Immich (keeps them, makes thumbnails) ──► immichset 
 | You are... | Follow |
 |---|---|
 | **New to all of this**, or you don't have Immich | [Install everything](install/NEW.md) (about 30 minutes plus download time) |
+| **You have a NAS and its Docker app, but no terminal** | [Install everything from your NAS's Docker app](install/NO-TERMINAL.md) (paste one file) |
 | **Already running Immich** | [Add immichset to your Immich](install/HAVE-IMMICH.md) (about 10 minutes) |
 | **Just curious**, want to try it on a laptop | [Install everything](install/NEW.md), on a Mac or Linux laptop, and skip the "online" part |
 

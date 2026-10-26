@@ -10,7 +10,7 @@ on:
   schedule:
     - cron: '17 5 * * 1'
   pull_request:
-    paths: ['install/**', 'setup/**', 'config/**', '.github/workflows/bundled.yml']
+    paths: ['install/**', 'setup/**', 'config/**', 'docker-compose.with-immich.yml', '.github/workflows/bundled.yml']
 
 permissions:
   contents: read
@@ -41,3 +41,30 @@ jobs:
       - name: Logs, if it went wrong
         if: failure()
         run: cd "$RUNNER_TEMP/stack" && docker compose logs --tail 80
+
+  pasted-file:
+    # The all-in-one file people paste into a NAS's Docker app: real Immich, real Docker, same provisioning check.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - name: Build the app image from this checkout and start the file
+        run: |
+          docker build -t ghcr.io/natephotos/immichset:ci .
+          mkdir -p "$RUNNER_TEMP/paste"
+          sed 's|immichset:latest|immichset:ci|' docker-compose.with-immich.yml > "$RUNNER_TEMP/paste/docker-compose.yml"
+          cd "$RUNNER_TEMP/paste" && docker compose up -d
+      - name: Provision Immich through the setup page
+        run: |
+          mkdir -p "$RUNNER_TEMP/paste-dir/immichset-data"
+          for i in $(seq 1 60); do
+            (cd "$RUNNER_TEMP/paste" && docker compose cp immichset:/data/setup-code.txt "$RUNNER_TEMP/paste-dir/immichset-data/setup-code.txt") 2>/dev/null && break
+            sleep 2
+          done
+          node install/test/real-provision.mjs "$RUNNER_TEMP/paste-dir"
+      - name: Logs, if it went wrong
+        if: failure()
+        run: cd "$RUNNER_TEMP/paste" && docker compose logs --tail 80

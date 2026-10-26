@@ -3,6 +3,8 @@
 This installs Immich and immichset together, in one folder, with one command. About 30 minutes, most of it waiting for
 downloads. Read each step through before you do it.
 
+> **On a NAS with only its Docker app and no terminal?** Use [Install everything from your NAS's Docker app](NO-TERMINAL.md) instead.
+
 ## 1. Pick the computer
 
 Anything that stays on and meets the sizes in [Start here](../START-HERE.md#what-your-computer-needs): a small NAS
