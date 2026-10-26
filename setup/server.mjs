@@ -39,7 +39,7 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
   const bad = writeProblem(dataDir);
   if (bad) log.error(`\nThe data folder (${dataDir}) is not writable: ${bad}\nFix it with:  chown -R 1000:1000 <that folder on your computer>   or give the container a "user:" that owns it.\n`);
   const line = '='.repeat(58);
-  log.log(`\n${line}\n  FIRST-TIME SETUP\n  Open  http://<this computer>:${port}/setup\n  Setup code:  ${code}\n  (also in the file ${codePath})\n${line}\n`);
+  log.log(`\n${line}\n  FIRST-TIME SETUP\n  Open this in your web browser, replacing ADDRESS with the address you use to open this computer's own\n  web page (on a NAS, the one in your browser's address bar when you sign in to it; it looks like 192.168.1.20):\n\n      http://ADDRESS:${port}/setup\n\n  On the same computer that is running this, you can use http://localhost:${port}/setup\n\n  Setup code:  ${code}\n  (also in the file ${codePath})\n${line}\n`);
 
   const adminExists = () => { try { return db.prepare('SELECT COUNT(*) n FROM admin_users').get().n > 0; } catch { return false; } };
   const page = () => readFileSync(join(webDir, 'setup.html'), 'utf8');
