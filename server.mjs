@@ -1268,7 +1268,9 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === '/api/admin/logout' && req.method === 'POST') {
-      res.setHeader('set-cookie', 'adm=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
+      /* cleared with and without Secure, and on the old narrower path, so no copy of the cookie can survive a sign-out */
+      res.setHeader('set-cookie', ['adm=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax', 'adm=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+                                   'adm=; Path=/admin; Max-Age=0; HttpOnly; SameSite=Lax']);
       return json(res, 200, { ok: true });
     }
     if (path.startsWith('/api/admin/')) {

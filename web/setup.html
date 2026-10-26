@@ -13,8 +13,9 @@ body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-appl
 main{max-width:640px;margin:0 auto;padding:28px 16px 80px}
 h1{font-size:20px;margin:0 0 4px;letter-spacing:.02em}
 .lede{color:var(--muted);margin:0 0 22px}
-.dots{display:flex;gap:6px;margin:0 0 20px;flex-wrap:wrap}
-.dots span{font-size:12px;color:var(--muted);padding:3px 9px;border:1px solid var(--line);border-radius:99px}
+.dots{display:flex;gap:5px;margin:0 0 20px;flex-wrap:wrap}
+.dots span{font-size:12px;color:var(--muted);padding:3px 8px;border:1px solid var(--line);border-radius:99px}
+.dots span i{font-style:normal;font-size:10px;margin-left:4px;opacity:.75}
 .dots span.on{color:var(--on);background:var(--primary);border-color:var(--primary)}
 .dots span.done{color:var(--ok);border-color:var(--ok)}
 section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px 20px}
@@ -52,7 +53,7 @@ td:first-child{color:var(--muted);width:42%}
 <body>
 <main>
   <h1>Set up your gallery server</h1>
-  <p class="lede">A few minutes, and a few keys. Each step can test itself before you move on.</p>
+  <p class="lede">A few minutes. Only the Immich connection and your sign-in are required. Anything marked optional can be skipped and added later in the admin.</p>
   <div class="dots" id="dots" aria-hidden="true"></div>
   <section id="step" aria-labelledby="stepTitle"></section>
   <div class="visually-hidden" id="live" aria-live="polite"></div>
@@ -62,8 +63,8 @@ td:first-child{color:var(--muted);width:42%}
 "use strict";
 /* With the bundled Immich we ask who you are first, because one email and password make both accounts; with your own
    Immich the keys come first, as they always did. */
-var ORDER_PLAIN = [["claim","Code"],["immich","Immich"],["email","Email"],["you","You"],["public","Address"],["extras","Extras"],["review","Finish"]];
-var ORDER_BUNDLED = [["claim","Code"],["you","You"],["immich","Immich"],["email","Email"],["public","Address"],["extras","Extras"],["review","Finish"]];
+var ORDER_PLAIN = [["claim","Code"],["immich","Immich"],["email","Email","optional"],["you","You"],["public","Address","optional"],["extras","Extras","optional"],["review","Finish"]];
+var ORDER_BUNDLED = [["claim","Code"],["you","You"],["immich","Immich"],["email","Email","optional"],["public","Address","optional"],["extras","Extras","optional"],["review","Finish"]];
 function order(){ return S && S.bundled ? ORDER_BUNDLED : ORDER_PLAIN; }
 var PW = "";                       /* the password you typed, kept in this page only so Immich can use the same one */
 var S = null, cur = 0, results = {}, busy = false;
@@ -130,7 +131,7 @@ function err(t){ var e = $("err"); if (e) e.textContent = t || ""; if (t) say(t)
 
 /* ---- the steps ---- */
 function dots(){
-  $("dots").innerHTML = order().map(function(s, i){ return '<span class="' + (i === cur ? "on" : (i < cur ? "done" : "")) + '">' + (i < cur ? "✓ " : "") + esc(s[1]) + '</span>'; }).join("");
+  $("dots").innerHTML = order().map(function(s, i){ return '<span class="' + (i === cur ? "on" : (i < cur ? "done" : "")) + '">' + (i < cur ? "✓ " : "") + esc(s[1]) + (s[2] ? '<i>' + s[2] + '</i>' : "") + '</span>'; }).join("");
 }
 function go(n){
   cur = Math.max(0, Math.min(order().length - 1, n));
@@ -317,11 +318,11 @@ function immichPasteView(){
 
 function emailView(){
   var tested = (results.email && (results.email.checks || []).some(function(c){ return c.id === "send" && c.ok && !c.warn; })) || (S && S.emailVerified);
-  frame("Set up email",
-    'Email sends gallery links, expiry reminders and your sign-in codes. It uses <b>Resend</b> (free to start):<ol>'
+  frame("Set up email (optional)",
+    '<b>You can skip this step</b> and add email later. Email sends gallery links, expiry reminders and your sign-in codes. It uses <b>Resend</b> (free to start):<ol>'
     + '<li>Sign up at <a href="https://resend.com" target="_blank" rel="noopener">resend.com</a>, then <b>Domains › Add Domain</b>. Add the records it shows at wherever your domain’s DNS is kept, and wait for <b>Verified</b>.</li>'
     + '<li><b>API Keys › Create API Key</b> with <b>Sending access</b>. Copy it.</li></ol>'
-    + 'No domain yet? You can skip this and add email later. Until then there are no invites or reminders, and the emailed sign-in code stays off.',
+    + 'Until email is set up there are no invites or reminders, and the emailed sign-in code stays off.',
     field("RESEND_API_KEY", "Resend API key", { secret: true })
     + field("MAIL_FROM", "Send from", { ph: "Your Studio <hello@yourdomain.com>", note: "The address must be on the domain you verified." })
     + field("MAIL_REPLY_TO", "Replies go to (optional)", { type: "email", auto: "email" })
@@ -343,13 +344,13 @@ function browserZone(){ try { return Intl.DateTimeFormat().resolvedOptions().tim
 function youView(){
   var needAdmin = !S.adminExists && !S.envAdmin;
   frame("You and your business",
-    (needAdmin ? 'This is the account you sign in with.' + (S.bundled ? ' Your Immich account will use this same email and password, so there is only one to remember.' : '') : 'Your admin account already exists.') + ' Your business name and address appear on galleries and in the footer of every email you send. A postal address (or PO box) is required by law before you can email your contacts, but you can add it later.',
+    (needAdmin ? 'This is the account you sign in with.' + (S.bundled ? ' Your Immich account will use this same email and password, so there is only one to remember.' : '') : 'Your admin account already exists.') + ' <b>Only the email and password are needed.</b> Everything else on this page is optional and can be added later in the admin under Connections. Your business name appears on galleries and in the footer of every email; a postal address (or PO box) is only required by law once you start emailing your contacts.',
     (needAdmin ? field("ADMIN_EMAIL", "Your email", { type: "email", auto: "email" })
       + '<label for="pw">Password</label><input id="pw" type="password" autocomplete="new-password"><p class="note">At least 12 characters. Pick something you don’t use anywhere else.</p>'
       + '<label><input type="checkbox" id="showpw" style="width:auto;margin-right:6px">Show password</label>' : "")
-    + field("BRAND_NAME", "Business name", { ph: "Your Studio" })
-    + field("BRAND_ADDRESS", "Postal address", { ph: "PO Box 123, Brooklyn, NY 11201" })
-    + field("BRAND_URL", "Your website", { ph: "https://yourstudio.com" })
+    + field("BRAND_NAME", "Business name (optional)", { ph: "Your Studio" })
+    + field("BRAND_ADDRESS", "Postal address (optional)", { ph: "PO Box 123, Brooklyn, NY 11201" })
+    + field("BRAND_URL", "Your website (optional)", { ph: "https://yourstudio.com" })
     + field("BRAND_SOCIAL", "Social link (optional)", { ph: "https://instagram.com/yourstudio" })
     + field("BRAND_SOCIAL_LABEL", "Social label (optional)", { ph: "@yourstudio" })
     + field("TZ", "Time zone", { value: setting("TZ").value || browserZone(), ph: "America/Chicago", note: "Filled in from this browser, so it is almost certainly right. It sets the dates in emails and logs." })
@@ -372,8 +373,8 @@ function youView(){
 
 function publicView(){
   var cur_ = setting("PUBLIC_URL");
-  frame("Your public address",
-    'This is the web address your clients will use. It should be <b>https</b>, so people can reach it from anywhere. You can fill this in now or come back later; the gallery works at home either way.'
+  frame("Your public address (optional)",
+    '<b>You can skip this for now.</b> This is the web address your clients will use. It should be <b>https</b>, so people can reach it from anywhere. You can fill this in now or come back later; the gallery works at home either way.'
     + '<details><summary>How do I get an https address? (pick one)</summary><ul class="help" style="margin-top:10px">'
     + '<li><b>Cloudflare Tunnel (recommended).</b> No router changes. You need a domain (about $10–15 a year). <a href="https://github.com/NatePhotos/immichset/blob/main/docs/ONLINE.md" target="_blank" rel="noopener">Step-by-step guide</a>.</li>'
     + '<li><b>Just trying it with a friend.</b> A temporary address with no domain: run <code>sh install.sh try-online</code>. It changes every time it restarts.</li>'

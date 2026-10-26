@@ -527,7 +527,12 @@ $("loginForm").addEventListener("submit", function(e){
 });
 function resetLogin(){ challenge=null; clearChallenge(); $("aEmail").hidden=false; $("aPass").hidden=false;
   $("aCode").hidden=true; $("aCode").value=""; $("aBtn").textContent="Sign in"; $("loginErr").style.color=""; }
-function signOut(){ post("/logout").then(function(){ location.reload(); }); }
+function signOut(){
+  post("/logout").then(function(r){
+    if (!r.ok) return toast("Couldn’t sign out. Close this browser tab to end the session.");
+    location.replace("/admin");
+  });
+}
 $("outBtn").addEventListener("click", signOut);
 $("msOut").addEventListener("click", signOut);
 
