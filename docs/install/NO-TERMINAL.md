@@ -27,8 +27,9 @@ In your NAS's Docker app, find **Project** (Synology: **Container Manager › Pr
 
 ## 3. Open the setup page
 
-1. Open the project's or the `immichset` container's **Logs**. Find the box that says `FIRST-TIME SETUP`. It has a
-   `Setup code`; use the one on your screen.
+1. Open the **Logs** of the container named `immichset` (in the Docker app's container list; not the whole project's log,
+   which is full of Immich's messages). Find the box that says `FIRST-TIME SETUP`. It has a `Setup code`; use the one on your
+   screen. The box is printed again every minute until you enter the code, so the newest one is at the bottom.
 2. In a browser on a computer on the same network, open `http://NAS-ADDRESS:3000/setup`, swapping `NAS-ADDRESS` for the address
    you use to open your NAS's own web page (a number like `192.168.1.20`). Enter the code.
 

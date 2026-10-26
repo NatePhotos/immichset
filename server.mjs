@@ -4,6 +4,7 @@
 
 import { createServer } from 'node:http';
 import { clientIp as pickClientIp, isHttps as pickHttps, requestHost } from './config/request.mjs';
+import { coverVersion as pickCoverVersion } from './admin/cover.mjs';
 import { loadConfig, toCfg, needsSetup, startupSummary, saveFile, redact, FILE_NAME } from './config/store.mjs';
 import { SETTINGS, BY_ENV, validate as validateSetting } from './config/settings.mjs';
 import { runSetup } from './setup/server.mjs';
@@ -913,6 +914,7 @@ const COVER_MAX = 12 * 1024 * 1024;
 const COVER_MIME = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png',
                      '.webp':'image/webp', '.avif':'image/avif', '.gif':'image/gif' };
 const coverPath = g => (g.cover_file ? join(COVERS_DIR, g.cover_file) : null);
+const coverVersion = g => pickCoverVersion(g, f => { try { const fp = join(COVERS_DIR, f); return existsSync(fp) ? statSync(fp).mtimeMs : null; } catch { return null; } });
 function dropCoverFile(g) {
   const p = coverPath(g);
   if (p && existsSync(p)) { try { unlinkSync(p); } catch (e) { console.error('cover unlink', e.message); } }
@@ -1352,12 +1354,12 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       slug: gallery.slug,
       title: gallery.title,
       subtitle: prettyDate(gallery.subtitle),   /* the client prints it as sent */
-      cover: `/api/g/${gallery.slug}/cover`,
+      cover: `/api/g/${gallery.slug}/cover?v=${coverVersion(gallery)}`,
       coverFocus: gallery.cover_focus || '50 50',
       /* only when the cover comes from Immich: an uploaded one has no cheaper variant,
          and asking for it twice would be slower, not faster */
       coverSmall: coverPath(gallery) && existsSync(coverPath(gallery))
-        ? null : `/api/g/${gallery.slug}/cover?size=thumbnail`,
+        ? null : `/api/g/${gallery.slug}/cover?size=thumbnail&v=${coverVersion(gallery)}`,
       allowDownload: !!gallery.allow_download,
       expiresAt: gallery.expires_at,
       /* the client shows these as tabs only when there is more than one */

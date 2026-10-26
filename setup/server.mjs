@@ -39,7 +39,12 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
   const bad = writeProblem(dataDir);
   if (bad) log.error(`\nThe data folder (${dataDir}) is not writable: ${bad}\nFix it with:  chown -R 1000:1000 <that folder on your computer>   or give the container a "user:" that owns it.\n`);
   const line = '='.repeat(58);
-  log.log(`\n${line}\n  FIRST-TIME SETUP\n\n  1. In a browser on your home network, open:  http://NAS-ADDRESS:${port}/setup\n     Swap NAS-ADDRESS for the address you type to open your NAS's own web page (like 192.168.1.20).\n     Not sure what it is? Sign in to your NAS in a browser and copy what's in the address bar.\n\n  2. When it asks, enter this code:\n     Setup code:  ${code}\n\n  (Running on your own computer? Use http://localhost:${port}/setup)\n  The code is also in the file ${codePath}\n${line}\n`);
+  const banner = () => `\n${line}\n  FIRST-TIME SETUP\n\n  1. In a browser on your home network, open:  http://NAS-ADDRESS:${port}/setup\n     Swap NAS-ADDRESS for the address you type to open your NAS's own web page (like 192.168.1.20).\n     Not sure what it is? Sign in to your NAS in a browser and copy what's in the address bar.\n\n  2. When it asks, enter this code:\n     Setup code:  ${code}\n\n  (Running on your own computer? Use http://localhost:${port}/setup)\n  The code is also in the file ${codePath}\n${line}\n`;
+  /* a project log mixes in other containers' output (Immich is chatty), so print the box again every minute until someone
+     has entered the code: it is then always near the bottom */
+  let claimed = false;
+  log.log(banner());
+  const reprint = setInterval(() => { if (!claimed) log.log(banner()); }, 60_000); reprint.unref();
 
   const adminExists = () => { try { return db.prepare('SELECT COUNT(*) n FROM admin_users').get().n > 0; } catch { return false; } };
   const page = () => readFileSync(join(webDir, 'setup.html'), 'utf8');
@@ -101,6 +106,7 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
             if (why) return send(res, 429, { error: 'Too many wrong codes. Wait a few minutes.' });
             const b = await readJson(req);
             if (!codeMatches(b.code, code)) { limiter.fail(ipOf(req)); return send(res, 401, { error: 'That code is not right. Check the container log.' }); }
+            claimed = true;
             return send(res, 200, { ok: true }, { 'set-cookie': `setup=${makeToken(secret)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200${https(req) ? '; Secure' : ''}` });
           }
           if (!checkToken(secret, cookies(req).setup)) return send(res, 401, { error: 'claim' });
@@ -248,6 +254,7 @@ export function runSetup({ db, env, dataDir, webDir, log = console, fetchImpl = 
         try { send(res, 500, { error: 'Something went wrong. Check the container log.' }); } catch {}
       }
     });
+    server.on('close', () => clearInterval(reprint));
     server.listen(port, '0.0.0.0');
   });
 }

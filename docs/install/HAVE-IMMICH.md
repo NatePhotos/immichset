@@ -29,7 +29,7 @@ versions; match them by meaning.)
    and create a project named `immichset`. If it asks for a folder, use one on your data volume, such as
    `/volume1/docker/immichset`. Choose to paste or create a `docker-compose.yml` and paste the file. Don't pick a template.
 3. Start (deploy) it. The first time it downloads the program, which takes a minute.
-4. Open the project's or container's **Logs**. You'll see a box with `FIRST-TIME SETUP` and a line `Setup code: XXXX-XXXX-XXXX`.
+4. Open the **Logs** of the container named `immichset`. You'll see a box with `FIRST-TIME SETUP` and a line `Setup code: XXXX-XXXX-XXXX`.
    That code is made for your install; use the one on your screen.
 5. Work out your **NAS address** (the program can't know it from inside its container). It's a number like `192.168.1.20`.
    The easiest way to find it: sign in to your NAS's own web page from your computer and look at your browser's address
