@@ -14,6 +14,7 @@ import { createSite } from './site/routes.mjs';
 import { overview } from './admin/overview.mjs';
 import { createZipWriter } from './zip/writer.mjs';
 import { DownloadQueue } from './zip/queue.mjs';
+import { createWatchdog } from './health/watchdog.mjs';
 
 const CFG = {
   port:       Number(process.env.PORT || 3000),
@@ -58,9 +59,12 @@ const CFG = {
   zipRateMbit:  Number(process.env.ZIP_RATE_MBIT || 0),
   zipMaxGb:     Number(process.env.ZIP_MAX_GB || 100),
   zipMinFreeGb: Number(process.env.ZIP_MIN_FREE_GB || 50),
-  zipSweepMin:  Number(process.env.ZIP_SWEEP_MINUTES || 15),
+  zipSweepMin:  Number(process.env.ZIP_SWEEP_MINUTES || 60),
   zipSettleMin: Number(process.env.ZIP_SETTLE_MINUTES || 10),
   zipStallSec:  Number(process.env.ZIP_STALL_SECONDS || 120),
+  healthMinutes: Number(process.env.HEALTH_MINUTES || 30),
+  healthFirstSec: Number(process.env.HEALTH_FIRST_SECONDS || 120),
+  healthMinFreeGb: Number(process.env.HEALTH_MIN_FREE_GB || 20),
 };
 for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
   if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
@@ -107,6 +111,26 @@ CREATE INDEX IF NOT EXISTS ix_sets ON sets(gallery_id, position);
 /* One ready-made zip per set, kept on disk so a download starts at once and can resume.
    'fingerprint' is a hash of the set's photo ids: if it no longer matches the album the
    file is out of date and is never served. */
+/* What full downloads cost: one row per download sent, and the busiest moment of each hour,
+   so "is the uplink the limit?" has an answer in numbers instead of a feeling. */
+CREATE TABLE IF NOT EXISTS dl_stats (
+  id          INTEGER PRIMARY KEY,
+  gallery_id  INTEGER REFERENCES galleries(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,                  -- zip | adhoc
+  at          TEXT NOT NULL DEFAULT (datetime('now')),
+  bytes       INTEGER NOT NULL DEFAULT 0,
+  ms          INTEGER NOT NULL DEFAULT 0,
+  waited_ms   INTEGER NOT NULL DEFAULT 0,
+  resume      INTEGER NOT NULL DEFAULT 0,     -- 1 = picking a dropped download back up
+  complete    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_dl_stats ON dl_stats(at);
+CREATE TABLE IF NOT EXISTS dl_peaks (
+  hour    TEXT PRIMARY KEY,                   -- 2026-10-26T14, UTC
+  active  INTEGER NOT NULL DEFAULT 0,
+  waiting INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS zips (
   id          INTEGER PRIMARY KEY,
   gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
@@ -295,6 +319,19 @@ const q = {
   zipSeen:    db.prepare('UPDATE zips SET seen_fp=?, seen_at=? WHERE set_id=?'),
   zipUsed:    db.prepare(`UPDATE zips SET last_used_at=datetime('now'), served=served+1 WHERE id=?`),
   zipDelSet:  db.prepare('DELETE FROM zips WHERE set_id = ?'),
+  dlIns:      db.prepare('INSERT INTO dl_stats (gallery_id,kind,bytes,ms,waited_ms,resume,complete) VALUES (?,?,?,?,?,?,?)'),
+  peakPut:    db.prepare(`INSERT INTO dl_peaks (hour,active,waiting) VALUES (?,?,?)
+                          ON CONFLICT(hour) DO UPDATE SET active = MAX(active, excluded.active), waiting = MAX(waiting, excluded.waiting)`),
+  dlTotals:   db.prepare(`SELECT COUNT(CASE WHEN resume = 0 THEN 1 END) downloads, COALESCE(SUM(bytes),0) bytes,
+                          COUNT(CASE WHEN resume = 0 AND waited_ms > 5000 THEN 1 END) waited,
+                          COALESCE(MAX(waited_ms),0) maxWait, COALESCE(AVG(CASE WHEN resume = 0 THEN waited_ms END),0) avgWait
+                          FROM dl_stats WHERE at >= datetime('now', ?)`),
+  dlByGallery: db.prepare(`SELECT s.gallery_id id, g.title, COUNT(CASE WHEN s.resume = 0 THEN 1 END) downloads, SUM(s.bytes) bytes
+                          FROM dl_stats s JOIN galleries g ON g.id = s.gallery_id WHERE s.at >= datetime('now', ?)
+                          GROUP BY s.gallery_id ORDER BY bytes DESC LIMIT 10`),
+  peaksSince: db.prepare('SELECT * FROM dl_peaks WHERE hour >= ? ORDER BY hour'),
+  statsPrune: db.prepare(`DELETE FROM dl_stats WHERE at < datetime('now', '-400 days')`),
+  peaksPrune: db.prepare('DELETE FROM dl_peaks WHERE hour < ?'),
   coverFile:  db.prepare('UPDATE galleries SET cover_file = ? WHERE id = ?'),
   coverFocus: db.prepare('UPDATE galleries SET cover_focus = ? WHERE id = ?'),
   sortOrder:  db.prepare('UPDATE galleries SET sort_order = ? WHERE id = ?'),
@@ -788,6 +825,7 @@ async function immich(path, init = {}) {
     headers: { 'x-api-key': write && CFG.immichWriteKey ? CFG.immichWriteKey : CFG.immichKey,
                ...(rest.headers || {}) },
   });
+  if (write && (rest.method || 'GET') !== 'GET') albumLists.clear();   /* a photo was added, removed or moved */
   return r;
 }
 const canUpload = () => !!CFG.immichWriteKey;
@@ -895,7 +933,7 @@ async function albumHas(albumId, assetId) {
   if (c.ids.has(assetId)) return true;
   /* a newly added photo may predate the cache - refresh once before refusing */
   if (Date.now() - c.at > 5_000) {
-    const list = await albumAssets(albumId);
+    const list = await albumAssets(albumId, { fresh: true });
     c = { ids: new Set(list.map(a => a.id)), at: Date.now() };
     albumSets.set(albumId, c);
     return c.ids.has(assetId);
@@ -929,7 +967,25 @@ async function allAssets(g) {
   return out;
 }
 
-async function albumAssets(albumId) {
+/* An album's photo list costs one Immich call per month of photos, and every gallery open,
+   set count and zip check asked for it again. A minute-old answer is plenty for a client; the
+   admin panel and anything that is about to act on membership ask for a fresh one, and any
+   change made through the write key clears the lot. Callers get their own copy to sort. */
+const albumLists = new Map();
+async function albumAssets(albumId, { fresh = false } = {}) {
+  const c = albumLists.get(albumId);
+  if (!fresh && c) {
+    if (c.list && Date.now() - c.at < 60_000) return c.list.slice();
+    if (c.pending) return (await c.pending).slice();
+  }
+  if (albumLists.size > 200) albumLists.clear();
+  const p = albumAssetsRaw(albumId).then(
+    list => { albumLists.set(albumId, { at: Date.now(), list, pending: null }); return list; },
+    e => { if (albumLists.get(albumId)?.pending === p) albumLists.delete(albumId); throw e; });
+  albumLists.set(albumId, { at: 0, list: null, pending: p });
+  return (await p).slice();
+}
+async function albumAssetsRaw(albumId) {
   const buckets = await immichJson(`/api/timeline/buckets?albumId=${encodeURIComponent(albumId)}`);
   const out = [];
   for (const b of buckets) {
@@ -1458,7 +1514,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const zipQueue = new DownloadQueue({
   maxActive: CFG.zipMaxActive, stallMs: CFG.zipStallSec * 1000,
   isReady: spec => spec.kind !== 'set' || zipFresh(spec.setId),
+  onChange: () => noteLoad(),
 });
+/* remember the busiest moment of each hour; writes only when a new high is reached */
+let loadPeak = { hour: '', active: 0, waiting: 0 };
+function noteLoad() {
+  const active = zipQueue.slots.size;
+  const waiting = zipQueue.tickets.length;
+  const hour = new Date().toISOString().slice(0, 13);
+  if (loadPeak.hour !== hour) loadPeak = { hour, active: 0, waiting: 0 };
+  if (active <= loadPeak.active && waiting <= loadPeak.waiting) return;
+  loadPeak.active = Math.max(loadPeak.active, active); loadPeak.waiting = Math.max(loadPeak.waiting, waiting);
+  try { q.peakPut.run(hour, loadPeak.active, loadPeak.waiting); } catch (e) { console.error('peak:', e.message); }
+}
+function recordDl(gallery, kind, slot, sent, t0, resume, complete) {
+  try { q.dlIns.run(gallery.id, kind, sent, Date.now() - t0, slot.waited || 0, resume ? 1 : 0, complete ? 1 : 0); }
+  catch (e) { console.error('download stats:', e.message); }
+}
 const zipBuild = { todo: [], running: null, busy: false };
 const zipReaders = new Map();      /* file -> downloads reading it now */
 const zipDeferred = new Set();     /* replaced files waiting for their readers to finish */
@@ -1566,7 +1638,7 @@ async function buildSetZip(setId) {
   const t0 = Date.now();
   let fh, part, name;
   try {
-    const list = await albumAssets(st.album_id);
+    const list = await albumAssets(st.album_id, { fresh: true });
     if (!list.length) throw new Error('empty set');
     const fp = fingerprintOf(list.map(a => a.id));
     /* the gate and the serve check read this cache: keep it in step with what is being zipped */
@@ -1840,6 +1912,7 @@ async function sendZipSet(req, res, gallery, st, who, url) {
     res.writeHead(range ? 206 : 200, head);
     const t0 = Date.now();
     const sent = await pump(res, createReadStream(zipPath(file), { start: a, end: b, highWaterMark: 262144 }), slot);
+    recordDl(gallery, 'zip', slot, sent, t0, range && range.start > 0, sent >= b - a + 1);
     console.log(`zip: ${gallery.slug} sent ${(sent / 1e6).toFixed(0)} of ${((b - a + 1) / 1e6).toFixed(0)} MB in ${Math.round((Date.now() - t0) / 1000)}s${sent < b - a + 1 ? ' (stopped early)' : ''}`);
     if (!res.destroyed) res.end();
   } catch (e) {
@@ -1866,7 +1939,10 @@ async function sendZipAdhoc(req, res, gallery, who, id) {
       'cache-control': 'private, no-store', 'x-accel-buffering': 'no',
       ...(up.headers.get('content-length') ? { 'content-length': up.headers.get('content-length') } : {}),
     });
-    await pump(res, up.body, slot);
+    const t0 = Date.now();
+    const sent = await pump(res, up.body, slot);
+    const want = Number(up.headers.get('content-length')) || 0;
+    recordDl(gallery, 'adhoc', slot, sent, t0, false, !res.destroyed && (!want || sent >= want));
     if (!res.destroyed) res.end();
   } catch (e) {
     console.error('zip adhoc:', e.message);
@@ -1908,7 +1984,23 @@ async function adminRoutes(req, res, path, url) {
   if (path === '/api/admin/site' || path.startsWith('/api/admin/site/')) return site.admin(req, res, path, url);
   if (path === '/api/admin/overview' && req.method === 'GET')
     return json(res, 200, overview(db, { now: Date.now(), site: site.summary(), mailReady: mailReady(),
-                                         backups: backupList(), publicUrl: CFG.publicUrl }));
+                                         backups: backupList(), publicUrl: CFG.publicUrl,
+                                         extraHealth: watchdogHealth() }));
+  if (path === '/api/admin/health' && req.method === 'GET') return json(res, 200, watchdog.summary());
+
+  if (path === '/api/admin/usage' && req.method === 'GET') {
+    const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
+    const t = q.dlTotals.get(`-${days} days`);
+    const peaks = q.peaksSince.all(new Date(Date.now() - days * 86400_000).toISOString().slice(0, 13));
+    return json(res, 200, {
+      days, downloads: t.downloads, bytes: t.bytes, waited: t.waited,
+      avgWaitMs: Math.round(t.avgWait), maxWaitMs: t.maxWait, totalMbit: CFG.zipTotalMbit, maxActive: CFG.zipMaxActive,
+      byGallery: q.dlByGallery.all(`-${days} days`),
+      peak: { active: Math.max(0, ...peaks.map(x => x.active)), waiting: Math.max(0, ...peaks.map(x => x.waiting)) },
+      backedUpHours: peaks.filter(x => x.waiting > 0).length,
+      busiest: [...peaks].sort((a, b) => (b.active + b.waiting) - (a.active + a.waiting)).slice(0, 3),
+    });
+  }
   if (path === '/api/admin/me')
     return json(res, 200, { ok: true, publicUrl: CFG.publicUrl || null, brandName: CFG.brandName || null,
                             canUpload: canUpload(), uploadMaxMb: CFG.uploadMaxMb,
@@ -2112,7 +2204,7 @@ async function adminRoutes(req, res, path, url) {
       ids = asked.filter(id => recentTrash.get(id)?.albumId === albumId);
       if (!ids.length) return json(res, 409, { error: "There's nothing left to undo" });
     } else {
-      const here = new Set((await albumAssets(albumId)).map(a => a.id));
+      const here = new Set((await albumAssets(albumId, { fresh: true })).map(a => a.id));
       ids = asked.filter(id => here.has(id));
       if (!ids.length) return json(res, 409, { error: 'Those photos are no longer in this gallery' });
     }
@@ -2155,7 +2247,7 @@ async function adminRoutes(req, res, path, url) {
 
   const am = path.match(/^\/api\/admin\/albums\/([0-9a-f-]{36})\/assets$/i);
   if (am) {
-    const list = await albumAssets(am[1]);
+    const list = await albumAssets(am[1], { fresh: true });
     if (url.searchParams.get('sort') === 'oldest') list.reverse();
     return json(res, 200, { assets: list.slice(0, 400) });
   }
@@ -2546,6 +2638,74 @@ syncAdminUser();
 seedTemplates();
 if (!q.admAny.get().n) console.warn('WARNING: no admin account. Set ADMIN_EMAIL and ADMIN_PASSWORD.');
 
+/* ---- the watchdog: things worth an email when they stay wrong ---- */
+const fmtGB = n => n >= 1e12 ? `${(n / 1e12).toFixed(1)} TB` : `${(n / 1e9).toFixed(0)} GB`;
+let backedUpSince = 0;
+const watchdog = createWatchdog({
+  notify: tellAdmin,
+  checks: [
+    { id: 'immich', title: 'Immich', hint: 'Galleries cannot load photos until this is fixed. Check that the NAS and the Immich container are running, and that the API key has not been revoked.',
+      async run() {
+        const lim = { signal: AbortSignal.timeout(8000) };
+        let r;
+        try { r = await immich('/api/server/ping', lim); } catch (e) { return { ok: false, detail: `Cannot reach Immich (${e.message})` }; }
+        if (!r.ok) return { ok: false, detail: `Immich answered ${r.status}` };
+        /* a quiet canary: the photo lists are the one thing every gallery depends on, and an Immich
+           update is the likeliest thing to change their shape */
+        const g = q.gallAll.all()[0], st = g && setsOf(g)[0];
+        if (!st) return { ok: true, detail: 'Reachable' };
+        const b = await immich(`/api/timeline/buckets?albumId=${encodeURIComponent(st.album_id)}`, lim).catch(e => ({ ok: false, status: e.message }));
+        if (!b.ok) return { ok: false, detail: `Immich is up but "${g.title}" would not list (${b.status}); the API key may have lapsed` };
+        const buckets = await b.json().catch(() => null);
+        if (!Array.isArray(buckets)) return { ok: false, detail: 'Immich changed the format of its photo lists; galleries may stop loading' };
+        if (buckets.length) {
+          const d = await immich(`/api/timeline/bucket?albumId=${encodeURIComponent(st.album_id)}&timeBucket=${encodeURIComponent(buckets[0].timeBucket)}`, lim)
+            .then(x => x.ok ? x.json() : null).catch(() => null);
+          if (!d || !Array.isArray(d.id)) return { ok: false, detail: 'Immich changed the format of its photo lists; galleries may stop loading' };
+        }
+        return { ok: true, detail: 'Reachable, photo lists as expected' };
+      } },
+    { id: 'disk', title: 'Disk space', hint: 'Free some space, or lower ZIP_MAX_GB so prepared zips use less.',
+      async run() {
+        let free = Infinity;
+        for (const d of new Set([CFG.dataDir, CFG.prezip ? ZIP_DIR : null].filter(Boolean))) {
+          try { const f = statfsSync(d); free = Math.min(free, f.bavail * f.bsize); } catch {}
+        }
+        if (free === Infinity) return { ok: true, detail: 'Not measured' };
+        return { ok: free >= CFG.healthMinFreeGb * 1e9, detail: `${fmtGB(free)} free` };
+      } },
+    { id: 'backups', title: 'Backups', hint: 'The nightly database copy has not been written. Check that the backup folder is mounted and writable.',
+      async run() {
+        if (!CFG.backupDir) return { ok: true, detail: 'Not set up' };
+        const newest = backupList()[0];
+        if (!newest) return { ok: false, detail: 'No backup found' };
+        const hours = Math.floor((Date.now() - Date.parse(newest.at)) / 3600_000);
+        return { ok: hours < 36, detail: hours < 1 ? 'Last backup under an hour ago' : `Last backup ${hours} hours ago` };
+      } },
+    { id: 'zips', title: 'Prepared zips', hint: 'Open the gallery\'s Downloads tab to see why, and Rebuild now once it is fixed.',
+      async run() {
+        if (!CFG.prezip) return { ok: true, detail: 'Off' };
+        const bad = q.zipEvery.all().filter(z => z.status === 'failed');
+        if (!bad.length) return { ok: true, detail: 'All building normally' };
+        return { ok: false, detail: `${bad.length} failed to build: ` + bad.slice(0, 3).map(z => `${z.slug} / ${z.set_name} (${z.error || 'unknown'})`).join('; ') };
+      } },
+    { id: 'downloads', title: 'Downloads', hint: 'Your upload speed is probably the limit. The Downloads tab shows the numbers; moving big downloads off your home connection is the fix.',
+      async run() {
+        const waiting = zipQueue.tickets.filter(t => t.state === 'waiting').length;
+        backedUpSince = !waiting ? 0 : backedUpSince || Date.now();
+        const mins = backedUpSince ? Math.round((Date.now() - backedUpSince) / 60_000) : 0;
+        return mins >= 30 ? { ok: false, detail: `People have been waiting in line for about ${mins} minutes (${waiting} now)` }
+                          : { ok: true, detail: waiting ? `${waiting} waiting` : 'Flowing' };
+      } },
+  ],
+});
+/* only what has actually been measured is shown on Home */
+function watchdogHealth() {
+  const out = {};
+  for (const [k, v] of Object.entries(watchdog.summary())) if (v.ok !== null) out[k] = { ok: v.ok, detail: v.detail };
+  return out;
+}
+
 zipRecover();
 
 server.listen(CFG.port, '0.0.0.0', () => {
@@ -2759,5 +2919,13 @@ if (CFG.prezip) {
   setInterval(() => zipSweep().catch(e => console.error('zip sweep:', e.message)), CFG.zipSweepMin * 60_000);
 }
 setInterval(() => zipQueue.tick(), 15_000);
+if (CFG.healthMinutes > 0) {
+  setTimeout(() => watchdog.run().catch(e => console.error('watchdog:', e.message)), CFG.healthFirstSec * 1000);
+  setInterval(() => watchdog.run().catch(e => console.error('watchdog:', e.message)), CFG.healthMinutes * 60_000);
+}
+/* old download figures are not worth keeping past a year */
+setInterval(() => {
+  try { q.statsPrune.run(); q.peaksPrune.run(new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 13)); } catch {}
+}, 6 * 3600_000);
 
 site.startJobs();

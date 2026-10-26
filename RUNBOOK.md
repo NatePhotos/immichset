@@ -30,6 +30,7 @@ nothing without a session.
 |---|---|
 | `server.mjs` | The whole server. Node built-ins only — `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
 | `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`). |
+| `health/watchdog.mjs` | Runs the self-checks and decides when to email. Pure, tested in `health/test`. |
 | `web/index.html` | The client gallery. One file: markup, CSS, script. |
 | `web/admin.html` | The admin panel. Same. |
 
@@ -117,6 +118,14 @@ or on **Rebuild now**; "over_budget" means `ZIP_MAX_GB` or `ZIP_MIN_FREE_GB` lea
 download is built as it is sent instead. If the reverse proxy buffers responses (nginx: `proxy_buffering off`),
 it will drain a zip into its own storage and bypass the speed limit; the app sends `X-Accel-Buffering: no`
 to prevent that.
+
+### An email says "needs attention"
+
+It names the check. **Immich**: the NAS or container is down, the key was revoked, or an Immich update
+changed its photo-list format (the message says which). **Disk space**: free some, or lower `ZIP_MAX_GB`.
+**Backups**: the backup folder is not mounted or writable. **Prepared zips**: open the gallery's Downloads
+tab for the error, then Rebuild now. **Downloads**: people waited ~30 minutes; see the usage numbers on the
+same tab. `GET /api/admin/health` shows the current state of every check; `HEALTH_MINUTES=0` turns the watch off.
 
 ### Photos do not load but the page does
 

@@ -138,6 +138,19 @@ upload speed; anyone else sees "You're 2nd in line" and starts automatically. Th
 each set's zip and the queue. Keep `ZIP_DIR` on a local disk, not a network share. Set `PREZIP=off` to
 turn the prepared zips off and keep only the queue.
 
+### Watching itself, and download numbers
+
+Every `HEALTH_MINUTES` (default 30) the app checks Immich, free disk space, the newest backup, failed
+zips, and whether people have been stuck in the download line. A problem has to survive two checks
+before it emails you; it repeats at most once a day and sends a note when it clears. The Immich check
+also reads one real album the way galleries do, so an Immich update that changes its photo-list format
+shows up here before a client sees an empty gallery. The results appear as cards on the admin Home page.
+
+The **Downloads** tab shows the last 30 days: full downloads, bytes sent, how long people waited, the
+busiest moment, and how many hours the line backed up. If the line keeps backing up, your upload speed
+is the limit. Album photo lists are cached for a minute, so opening a gallery no longer costs a dozen
+Immich calls; changes made from the admin panel clear the cache at once.
+
 ### Email
 
 Verify your domain in Resend and add the DNS records it gives you, including DMARC. Mail sent from

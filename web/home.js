@@ -133,6 +133,10 @@ function healthHtml(hl){
     { title:"Backups", it: hl.nas, tone: tone(hl.nas) },
     { title:"Email", it: hl.email, tone: tone(hl.email, true) }
   ];
+  /* the server's own watch on Immich, disk space, prepared zips and download traffic */
+  [["immich","Immich"],["disk","Disk space"],["zips","Prepared zips"],["downloads","Downloads"]].forEach(function(k){
+    if (hl[k[0]]) items.push({ title:k[1], it: hl[k[0]], tone: tone(hl[k[0]]) });
+  });
   var rank = { ok:0, warn:1, bad:2 }, worst = items[0];
   items.forEach(function(x){ if (rank[x.tone] > rank[worst.tone]) worst = x; });
   var allOk = worst.tone === "ok";

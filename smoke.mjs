@@ -407,6 +407,17 @@ try {
     ok(typeof z.maxActive === 'number' || typeof z.queue?.maxActive === 'number', 'no queue figures');
     ok(Array.isArray(z.zips), 'no zip list');
   });
+  await check('download figures are kept and readable', async () => {
+    const u = await adminJson('/api/admin/usage?days=30');
+    ok(typeof u.downloads === 'number' && typeof u.bytes === 'number', 'no totals');
+    ok(u.downloads >= 1, 'the downloads above were not counted');
+    ok(u.peak && typeof u.peak.active === 'number', 'no peak figures');
+  });
+  await check('the server\'s own checks report', async () => {
+    const h = await adminJson('/api/admin/health');
+    for (const k of ['immich', 'disk', 'backups', 'zips', 'downloads']) ok(k in h, `no ${k} check`);
+    ok(h.immich.ok !== false, `Immich check failing: ${h.immich.detail}`);
+  });
   await check('with downloads off nothing is offered and the zip is removed', async () => {
     await patch(`/api/admin/galleries/${galleryId}`, { allowDownload: false });
     const r = await clientFetch(`/api/g/${SLUG}/zip`, { method: 'POST' });

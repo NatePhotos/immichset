@@ -1739,8 +1739,26 @@ function paneDownloads(g){
     + '<div id="zipbox"></div><div id="dls"><div class="spin"></div></div>';
   /* the ready-made zips: what is on disk, how it is doing, and who is downloading right now */
   function gb(n){ return n >= 1e9 ? (n/1e9).toFixed(2) + " GB" : Math.max(1, Math.round(n/1e6)) + " MB"; }
+  function mins(ms){ var m = Math.round(ms / 60000); return m < 1 ? Math.max(1, Math.round(ms / 1000)) + " s" : m + " min"; }
+  function when(h){ var d = new Date(h + ":00:00Z"); return isNaN(d) ? h : d.toLocaleString(undefined,{weekday:"short",hour:"numeric"}); }
+  /* what downloads have cost over the last month: the numbers that say whether the uplink is the limit */
+  function usageLine(u){
+    if (!u || !u.downloads) return '<p class="hint" style="margin:10px 0 0">No full downloads in the last ' + u.days + ' days.</p>';
+    var mine = (u.byGallery || []).filter(function(x){ return x.id === g.id; })[0];
+    var h = '<p class="hint" style="margin:10px 0 0">Last ' + u.days + ' days: <b>' + u.downloads + '</b> full download' + (u.downloads === 1 ? "" : "s")
+      + ' · ' + gb(u.bytes) + ' sent'
+      + (mine ? ' (this gallery: ' + mine.downloads + ', ' + gb(mine.bytes) + ')' : "") + '.</p>';
+    h += '<p class="hint" style="margin:6px 0 0">'
+      + (u.waited ? u.waited + ' had to wait, longest ' + mins(u.maxWaitMs) + '.' : 'Nobody had to wait.')
+      + (u.peak.active ? ' Busiest: ' + u.peak.active + ' at once' + (u.peak.waiting ? ', ' + u.peak.waiting + ' waiting' : "") + '.' : "")
+      + (u.backedUpHours ? ' The line backed up in ' + u.backedUpHours + ' hour' + (u.backedUpHours === 1 ? "" : "s")
+        + (u.busiest && u.busiest[0] ? ' (worst: ' + when(u.busiest[0].hour) + ')' : "") + '. If that keeps happening, your upload speed is the limit.' : "")
+      + '</p>';
+    return h;
+  }
   function zipBox(){
-    api("/zips").then(function(r){
+    Promise.all([api("/zips"), api("/usage?days=30")]).then(function(both){
+      var r = both[0], us = both[1];
       var box = $("zipbox"); if (!box || !r.ok || !r.body) return;
       var z = r.body, mine = (z.zips || []).filter(function(x){ return x.slug === g.slug; });
       if (!z.enabled) return (box.innerHTML = '<p class="hint">Prepared zips are off (PREZIP=off); downloads are built as they are sent.</p>');
@@ -1756,6 +1774,7 @@ function paneDownloads(g){
           : x.status === "evicted" ? 'removed to save space; built again if someone asks' : 'not built yet';
         h += '<p class="hint" style="margin:10px 0 0"><b>' + esc(x.set) + '</b> \u2014 ' + what + '</p>';
       });
+      if (us.ok) h += usageLine(us.body);
       if (mine.length) h += '<p style="margin:12px 0 0"><button class="btn sm ghost sec" id="zRebuild">Rebuild now</button> '
         + '<button class="btn sm ghost sec" id="zDelete">Delete zips</button></p>';
       box.innerHTML = h + '</div>';

@@ -5,7 +5,7 @@ const DAY = 86400_000, HOUR = 3600_000;
 const sqlTime = ms => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-export function overview(db, { now = Date.now(), site = null, mailReady = false, backups = [], publicUrl = '' } = {}) {
+export function overview(db, { now = Date.now(), site = null, mailReady = false, backups = [], publicUrl = '', extraHealth = {} } = {}) {
   const week = sqlTime(now - 7 * DAY), prev = sqlTime(now - 14 * DAY);
   const count = (sql, ...a) => db.prepare(sql).get(...a).n;
 
@@ -73,6 +73,7 @@ export function overview(db, { now = Date.now(), site = null, mailReady = false,
     nas: hours == null ? { ok: false, detail: 'No backup found' }
        : { ok: hours < 36, detail: hours < 1 ? 'Last backup under an hour ago' : `Last backup ${plural(hours, 'hour', 'hours')} ago` },
     email: { ok: !!mailReady, detail: mailReady ? 'Ready to send' : 'Not set up' },
+    ...extraHealth,   /* the server's own checks: Immich, disk, zips, downloads */
   };
 
   return { stats, attention, activity, health, recent };

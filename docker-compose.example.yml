@@ -90,9 +90,17 @@ services:
       ZIP_MAX_ACTIVE: "3"           # downloads at once
       ZIP_TOTAL_MBIT: "120"         # share this much of your upload between them (0 = unlimited)
       ZIP_RATE_MBIT: "0"            # optional cap per download
-      ZIP_SWEEP_MINUTES: "15"       # how often to look for galleries that need a zip
+      ZIP_SWEEP_MINUTES: "60"       # how often to look for galleries that need a zip
       ZIP_SETTLE_MINUTES: "10"      # wait this long after the photos stop changing before rebuilding
       ZIP_STALL_SECONDS: "120"      # a download that moves nothing for this long gives up its place
+
+      # --- watching itself ---
+      # Every HEALTH_MINUTES (30 by default, so it stays quiet on the NAS) the app checks Immich (including that its photo lists still have the
+      # shape this app reads, which an Immich update can change), free disk, last backup, failed
+      # zips, and whether people are stuck waiting in the download line. A problem has to last two
+      # checks before it emails ADMIN_EMAIL; it repeats at most daily and says when it clears.
+      HEALTH_MINUTES: "30"          # 0 turns the watch off
+      HEALTH_MIN_FREE_GB: "20"      # warn below this much free disk
 
       # --- client sessions ---
       SESSION_DAYS: "30"

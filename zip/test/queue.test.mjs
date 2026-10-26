@@ -101,3 +101,16 @@ test('cancel leaves the line', () => {
   assert.ok(q.cancel(b.id, 'b'));
   assert.equal(q.status(c.id, 'c').position, 1);
 });
+
+test('a download remembers how long it waited, and tells the server when the line changes', () => {
+  const c = clock(); let changes = 0;
+  const q = new DownloadQueue({ maxActive: 1, now: c.now, onChange: () => changes++ });
+  const first = q.claim(q.request('a', {}).id, 'a');
+  assert.equal(first.waited, 0);
+  const b = q.request('b', {});
+  c.t += 42_000; q.status(b.id, 'b');
+  q.release(first);
+  const s = q.claim(b.id, 'b');
+  assert.equal(s.waited, 42_000);
+  assert.ok(changes > 0);
+});

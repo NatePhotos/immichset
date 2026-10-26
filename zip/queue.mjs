@@ -11,10 +11,11 @@ import { randomBytes } from 'node:crypto';
 
 export class DownloadQueue {
   constructor({ maxActive = 3, isReady = () => true, now = Date.now,
-                waitTtlMs = 180_000, reserveTtlMs = 120_000, stallMs = 120_000 } = {}) {
+                waitTtlMs = 180_000, reserveTtlMs = 120_000, stallMs = 120_000, onChange = () => {} } = {}) {
     this.maxActive = Math.max(1, maxActive);
     this.isReady = isReady;
     this.now = now;
+    this.onChange = onChange;     /* told after every change of who is running or waiting */
     this.waitTtlMs = waitTtlMs; this.reserveTtlMs = reserveTtlMs; this.stallMs = stallMs;
     this.tickets = [];            /* FIFO: waiting or reserved */
     this.slots = new Set();       /* downloads in progress */
@@ -24,7 +25,7 @@ export class DownloadQueue {
   request(key, spec) {
     const mine = this.tickets.find(t => t.key === key);
     if (mine) { mine.spec = spec; mine.seen = this.now(); this.tick(); return mine; }
-    const t = { id: randomBytes(12).toString('hex'), key, spec, state: 'waiting', seen: this.now(), reservedAt: 0 };
+    const t = { id: randomBytes(12).toString('hex'), key, spec, state: 'waiting', seen: this.now(), created: this.now(), reservedAt: 0 };
     this.tickets.push(t);
     this.tick();
     return t;
@@ -56,7 +57,7 @@ export class DownloadQueue {
     const i = this.tickets.findIndex(x => x.id === id && x.key === key && x.state === 'reserved');
     if (i < 0) return null;
     const [t] = this.tickets.splice(i, 1);
-    return this._open(t.key, t.spec);
+    return this._open(t.key, t.spec, this.now() - t.created);
   }
 
   /* a free slot and nobody waiting: no reason to make anyone queue */
@@ -92,6 +93,7 @@ export class DownloadQueue {
       if (!this.isReady(x.spec)) continue;
       x.state = 'reserved'; x.reservedAt = t;
     }
+    this.onChange(this);
   }
 
   snapshot() {
@@ -102,9 +104,9 @@ export class DownloadQueue {
 
   _reserved() { return this.tickets.filter(x => x.state === 'reserved').length; }
   _holds(key) { return [...this.slots].some(s => s.key === key) || this.tickets.some(x => x.key === key && x.state === 'reserved'); }
-  _open(key, spec) {
+  _open(key, spec, waited = 0) {
     const now = this.now();
-    const s = { key, spec, since: now, last: now, expired: false };
+    const s = { key, spec, since: now, last: now, waited, expired: false };
     this.slots.add(s);
     return s;
   }

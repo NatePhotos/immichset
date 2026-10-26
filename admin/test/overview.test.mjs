@@ -166,3 +166,9 @@ test('health: site from the last check, nas from backup age, email from mailRead
   h = overview(db, { now: NOW, site: { check: { ok: false, at: NOW, why: 'timeout' } }, backups: [{ file: 'x', at: iso(NOW - 40 * HOUR) }] }).health;
   assert.equal(h.site.ok, false); assert.match(h.site.detail, /timeout/); assert.equal(h.nas.ok, false);
 });
+
+test('the server\'s own checks are added to the health cards', () => {
+  const o = overview(mk().db, { now: NOW, extraHealth: { immich: { ok: false, detail: 'Cannot reach Immich' } } });
+  assert.deepEqual(o.health.immich, { ok: false, detail: 'Cannot reach Immich' });
+  assert.ok(o.health.site && o.health.nas && o.health.email);
+});
