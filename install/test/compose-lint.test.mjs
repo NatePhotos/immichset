@@ -57,7 +57,7 @@ test('every folder mounted comes from a variable, and nothing is an anonymous vo
 
 test('every variable a file needs is set by the installer or has a default', () => {
   const installer = read('install/install.sh');
-  const immichEnv = read('install/test/fixtures/immich-example.env');
+  const immichEnv = read('install/test/fixtures/immich-example.env.txt');
   const provided = n => installer.includes(n) || immichEnv.includes(n);
   for (const f of FILES.filter(x => x.startsWith('install/'))) {
     for (const m of strip(read(f)).matchAll(/\$\{([A-Z_]+)(:-[^}]*)?\}/g)) {

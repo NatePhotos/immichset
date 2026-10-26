@@ -17,7 +17,7 @@ function sandbox() {
   const bin = join(root, 'bin'), src = join(root, 'immich-src'), home = join(root, 'home'), log = join(root, 'docker.log');
   mkdirSync(bin); mkdirSync(src); mkdirSync(home); writeFileSync(log, '');
   copyFileSync(join(HERE, 'fixtures', 'immich-compose.yml'), join(src, 'docker-compose.yml'));
-  copyFileSync(join(HERE, 'fixtures', 'immich-example.env'), join(src, 'example.env'));
+  copyFileSync(join(HERE, 'fixtures', 'immich-example.env.txt'), join(src, 'example.env'));
   writeFileSync(join(bin, 'docker'), `#!/bin/sh
 echo "$@" >> "$FAKE_DOCKER_LOG"
 case "$1" in
