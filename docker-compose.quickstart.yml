@@ -1,0 +1,31 @@
+# The short version. Save this as docker-compose.yml, run `docker compose up -d`, then follow docs/SETUP.md:
+# the first thing the app does is ask you, in your browser, for the keys it needs.
+#
+# docker-compose.example.yml lists every setting as an environment variable, for people who prefer that.
+# Anything set there always wins over what the setup page saved.
+
+services:
+  immichset:
+    image: ghcr.io/natephotos/immichset:latest
+    container_name: immichset
+    init: true
+    ports:
+      - "3000:3000"
+    volumes:
+      - immichset-data:/data          # database, covers, and the settings file the setup page writes
+      - immichset-backups:/backups    # nightly database copies
+    environment:
+      TZ: America/New_York            # your time zone, for reminders and logs
+      BACKUP_DIR: /backups
+    restart: unless-stopped
+    # Immich in another compose project on this computer? Either use its network address in setup
+    # (http://192.168.x.x:2283), or join its network by uncommenting this and the networks block below.
+    # networks: [immich_default]
+
+volumes:
+  immichset-data:
+  immichset-backups:
+
+# networks:
+#   immich_default:
+#     external: true

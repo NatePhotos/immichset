@@ -489,6 +489,27 @@ try {
     await r.arrayBuffer();
   });
 
+  section('setup and connections');
+  await check('the setup page is not served once the app is set up', async () => {
+    for (const p of ['/setup', '/setup.html', '/api/setup/state']) { const r = await fetch(BASE + p); is(r.status, 404, p); await r.arrayBuffer(); }
+    const c = await fetch(BASE + '/api/setup/claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    is(c.status, 404, 'claim'); await c.arrayBuffer();
+  });
+  await check('the health check does not claim to be in setup', async () => {
+    const h = await (await fetch(BASE + '/healthz')).json();
+    ok(h.ok === true && !('setup' in h), 'healthz says setup');
+  });
+  await check('Connections lists settings and never a secret value', async () => {
+    const c = await adminJson('/api/admin/connections');
+    ok(Array.isArray(c.meta) && c.meta.length > 20, 'no settings listed');
+    for (const [env, v] of Object.entries(c.settings)) if (v.secret) ok(!('value' in v), `${env} shows a value`);
+    ok(!c.meta.some(m => ['APP_SECRET', 'ADMIN_TOKEN'].includes(m.env)), 'internal secrets offered');
+  });
+  await check('the API token cannot change settings', async () => {
+    const r = await adminFetch('/api/admin/connections', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ BRAND_NAME: 'x' }) });
+    is(r.status, 403, 'status'); await r.arrayBuffer();
+  });
+
   section('visibility');
   await check('an unpublished gallery is not found', async () => {
     await patch(`/api/admin/galleries/${galleryId}`, { published: false });

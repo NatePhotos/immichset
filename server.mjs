@@ -3,6 +3,10 @@
    client relationship: access gates, sessions and the activity log. */
 
 import { createServer } from 'node:http';
+import { loadConfig, toCfg, needsSetup, startupSummary, saveFile, redact, FILE_NAME } from './config/store.mjs';
+import { SETTINGS, BY_ENV, validate as validateSetting } from './config/settings.mjs';
+import { runSetup } from './setup/server.mjs';
+import { probeCaps, checkImmich, checkResend, checkCloudflare, checkPublic } from './setup/checks.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from 'node:crypto';
 import { readFile, writeFile, open as openFile } from 'node:fs/promises';
@@ -17,70 +21,14 @@ import { DownloadQueue } from './zip/queue.mjs';
 import { createWatchdog } from './health/watchdog.mjs';
 import { render, cleanDesign, IMAGE_FILE, scanVars, unsubToken, readUnsubToken, maskEmail, selectRecipients, planHash, classify, verifySvix, isReservedAddress } from './mail/blast.mjs';
 
-const CFG = {
-  port:       Number(process.env.PORT || 3000),
-  immichUrl:  (process.env.IMMICH_URL || '').replace(/\/+$/, ''),
-  immichKey:   process.env.IMMICH_API_KEY || '',
-  immichWriteKey: process.env.IMMICH_WRITE_KEY || '',
-  uploadMaxMb: Number(process.env.UPLOAD_MAX_MB || 250),
-  uploadMaxVideoMb: Number(process.env.UPLOAD_MAX_VIDEO_MB || 4096),
-  secret:      process.env.APP_SECRET || '',
-  adminToken:  process.env.ADMIN_TOKEN || '',
-  dataDir:     process.env.DATA_DIR || '/data',
-  webDir:      process.env.WEB_DIR  || '/app/web',
-  sessionDays: Number(process.env.SESSION_DAYS || 30),
-  publicUrl:   (process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
-  resendKey:    process.env.RESEND_API_KEY || '',
-  mailFrom:     process.env.MAIL_FROM || '',
-  remindDays:  Number(process.env.REMIND_DAYS || 7),
-  mailReplyTo:  process.env.MAIL_REPLY_TO || '',
-  adminEmail:  (process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
-  adminPass:    process.env.ADMIN_PASSWORD || '',
-  admin2fa:   (process.env.ADMIN_2FA || 'on').toLowerCase() !== 'off',
-  backupDir:    process.env.BACKUP_DIR || '',
-  backupKeep:  Number(process.env.BACKUP_KEEP || 14),
-  brandName:    process.env.BRAND_NAME || '',
-  brandUrl:     process.env.BRAND_URL || '',
-  brandSocial:  process.env.BRAND_SOCIAL || '',
-  brandSocialLabel: process.env.BRAND_SOCIAL_LABEL || '',
-  hostingerToken: process.env.HOSTINGER_TOKEN || '',
-  cfToken:     process.env.CLOUDFLARE_TOKEN || '',
-  dnsDomain:   process.env.DNS_DOMAIN || '',
-  dnsHost:     process.env.DNS_HOST || '',
-  dnsApply:   (process.env.DNS_APPLY || 'on').toLowerCase() !== 'off',
-  dnsEvery:    Number(process.env.DNS_CHECK_MINUTES || 10),
-  cfAccountId:   process.env.CF_ACCOUNT_ID || '',
-  cfPagesToken:  process.env.CF_PAGES_TOKEN || '',
-  cfPagesProject: process.env.CF_PAGES_PROJECT || '',
-  siteUrl:      (process.env.SITE_URL || '').replace(/\/+$/, ''),
-  prezip:      (process.env.PREZIP || 'on').toLowerCase() !== 'off',
-  zipDir:       process.env.ZIP_DIR || '',
-  zipMaxActive: Number(process.env.ZIP_MAX_ACTIVE || 3),
-  zipTotalMbit: Number(process.env.ZIP_TOTAL_MBIT || 120),
-  zipRateMbit:  Number(process.env.ZIP_RATE_MBIT || 0),
-  zipMaxGb:     Number(process.env.ZIP_MAX_GB || 100),
-  zipMinFreeGb: Number(process.env.ZIP_MIN_FREE_GB || 50),
-  zipSweepMin:  Number(process.env.ZIP_SWEEP_MINUTES || 60),
-  zipSettleMin: Number(process.env.ZIP_SETTLE_MINUTES || 10),
-  zipStallSec:  Number(process.env.ZIP_STALL_SECONDS || 120),
-  healthMinutes: Number(process.env.HEALTH_MINUTES || 30),
-  brandAddress:  process.env.BRAND_ADDRESS || '',
-  mailingMax:    Number(process.env.MAILING_MAX || 500),
-  mailingDayMax: Number(process.env.MAILING_DAY_MAX || 500),
-  mailingIntervalMs: Number(process.env.MAILING_INTERVAL_MS || 600),
-  mailSend:     (process.env.MAIL_SEND || 'on').toLowerCase() !== 'off',
-  resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET || '',
-  resendBase:  (process.env.RESEND_API_URL || 'https://api.resend.com').replace(/\/+$/, ''),
-  healthFirstSec: Number(process.env.HEALTH_FIRST_SECONDS || 120),
-  healthMinFreeGb: Number(process.env.HEALTH_MIN_FREE_GB || 20),
-};
-for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
-  if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
-}
-if (!existsSync(CFG.dataDir)) mkdirSync(CFG.dataDir, { recursive: true });
+/* The data folder is needed before anything else: the database lives in it, and so does the settings file
+   that the first-run setup page writes. Everything else in CFG is built further down, once the database is
+   open, because a brand-new install has to be able to ask its owner for the missing pieces first. */
+const DATA_DIR = process.env.DATA_DIR || '/data';
+if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 /* ---------------------------------------------------------------- database */
-const db = new DatabaseSync(join(CFG.dataDir, 'gallery.db'));
+const db = new DatabaseSync(join(DATA_DIR, 'gallery.db'));
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -322,8 +270,22 @@ for (const [table, col, decl] of [['email_templates', 'kind', "TEXT NOT NULL DEF
 
 /* a cover that is not one of the album's photos lives here, beside the database,
    so it is never part of the gallery and never lands in the Immich library */
-const COVERS_DIR = join(CFG.dataDir, 'covers');
+const COVERS_DIR = join(DATA_DIR, 'covers');
 if (!existsSync(COVERS_DIR)) mkdirSync(COVERS_DIR, { recursive: true });
+
+/* ----------------------------------------------------------------- settings
+   Environment variables win, then the settings file the setup page writes, then the defaults. An install
+   that already has Immich's address and key (the usual case for one run from a compose file) goes straight
+   on. One that does not stays in setup until its owner has filled them in; setup hands this same process
+   over when it finishes, so the rest of this file simply carries on. */
+let conf = loadConfig(process.env, DATA_DIR);
+const FIRST_RUN = needsSetup(conf);
+if (FIRST_RUN) conf = await runSetup({ db, env: process.env, dataDir: DATA_DIR, webDir: process.env.WEB_DIR || '/app/web' });
+const CFG = toCfg(conf);
+for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
+  if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
+}
+const INSTANCE = randomBytes(8).toString('hex');   /* lets the setup and Connections pages tell whether an address leads back here */
 
 const q = {
   gallBySlug: db.prepare('SELECT * FROM galleries WHERE slug = ?'),
@@ -590,7 +552,7 @@ function prettyDate(v) {
 /* Galleries live at the root, so a slug may not be a path the app already answers. */
 const RESERVED = new Set(['g', 's', 'share', 'api', 'admin', 'healthz', 'brand', 'static', 'assets',
                           'favicon.ico', 'robots.txt', 'sitemap.xml', 'index.html', 'admin.html',
-                          'well-known', 'login', 'logout', 'unsubscribe', 'u', 'mail']);
+                          'well-known', 'login', 'logout', 'unsubscribe', 'u', 'mail', 'setup']);
 const slugShape = s => /^[a-z0-9][a-z0-9-]{1,60}$/i.test(String(s));
 const slugFree  = s => !RESERVED.has(String(s).toLowerCase());
 
@@ -1014,29 +976,13 @@ function uploadToImmich(req, name, when, cap) {
 /* Shaped like a real v4 id so the probes clear Immich's format check and reach the
    permission answer, but belonging to nothing. Never an empty ids array: an API that
    reads empty as "all" would turn a probe into a mass operation. */
-const NIL_ID = '00000000-0000-4000-8000-000000000000';
 const NO_CAPS = { upload: false, albumCreate: false, albumAdd: false, albumRemove: false, trash: false, restore: false };
 let capsCache = null, capsAt = 0;
 async function writeCaps() {
   if (!canUpload()) return NO_CAPS;
   if (capsCache && Date.now() - capsAt < 600_000) return capsCache;
-  const asJson = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const probe = async (p, init) => {
-    try {
-      const r = await immich(p, { write: true, ...init });
-      if (r.status !== 403) return true;
-      return !/Missing required permission/.test(await r.text().catch(() => ''));
-    } catch { return true; }   /* if Immich is unreachable, don't hide the buttons too */
-  };
-  const [upload, albumCreate, albumAdd, albumRemove, trash, restore] = await Promise.all([
-    probe('/api/assets', { method: 'POST', headers: { 'content-type': 'multipart/form-data; boundary=x' }, body: '--x--' }),
-    probe('/api/albums', asJson('POST', {})),
-    probe(`/api/albums/${NIL_ID}/assets`, asJson('PUT', { ids: [NIL_ID] })),
-    probe(`/api/albums/${NIL_ID}/assets`, asJson('DELETE', { ids: [NIL_ID] })),
-    probe('/api/assets', asJson('DELETE', { ids: [NIL_ID], force: false })),
-    probe('/api/trash/restore/assets', asJson('POST', { ids: [NIL_ID] })),
-  ]);
-  capsCache = { upload, albumCreate, albumAdd, albumRemove, trash, restore };
+  /* the probes live with the setup checks, which use the very same ones to explain what a key is missing */
+  capsCache = await probeCaps((p, init) => immich(p, { write: true, ...init }));
   capsAt = Date.now();
   return capsCache;
 }
@@ -1254,7 +1200,9 @@ const server = createServer(async (req, res) => {
 
   try {
     /* ---- health ---- */
-    if (path === '/healthz') return json(res, 200, { ok: true });
+    if (path === '/healthz') return json(res, 200, { ok: true }, { 'x-immichset-instance': INSTANCE });
+    /* the setup page exists only until setup is finished; after that these simply are not here */
+    if (path === '/setup' || path === '/setup/' || path === '/setup.html' || path.startsWith('/api/setup/')) return json(res, 404, { error: 'not_found' });
 
     /* ---- mailing: the unsubscribe page and the bounce webhook, both public ---- */
     if (path.startsWith('/mail/img/') && (req.method === 'GET' || req.method === 'HEAD')) return mailImageRoute(req, res, path.slice('/mail/img/'.length));
@@ -1348,9 +1296,10 @@ const server = createServer(async (req, res) => {
     if (path === '/favicon.ico' || path === '/brand/logo') {
       /* an operator may supply brand-logo-dark.png (light artwork) for dark UIs */
       const wantDark = url.searchParams.get('theme') === 'dark';
-      const darkFile = join(CFG.webDir, 'brand-logo-dark.png');
-      const own = (wantDark && existsSync(darkFile)) ? darkFile : join(CFG.webDir, 'brand-logo.png');
-      if (existsSync(own)) {
+      const find = f => [join(DATA_DIR, f), join(CFG.webDir, f)].find(existsSync);   /* the data folder first: an image's web folder is read-only */
+      const darkFile = find('brand-logo-dark.png');
+      const own = (wantDark && darkFile) ? darkFile : find('brand-logo.png');
+      if (own) {
         res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' });
         return res.end(await readFile(own));
       }
@@ -2515,6 +2464,60 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { dir: CFG.backupDir || null, keep: CFG.backupKeep, backups: backupList(), covers: coverBackupCount() });
   }
 
+
+  /* ---- Connections: the keys and settings, readable and testable from the panel ----
+     Anything set in the compose file is shown as such and cannot be changed here. Changes need the browser
+     sign-in, not the API token, so a leaked token cannot redirect where mail goes or which Immich is used. */
+  if (path === '/api/admin/connections' && req.method === 'GET') {
+    const meta = SETTINGS.filter(x => !x.hidden && !x.envOnly && !['secret', 'adminToken'].includes(x.key))
+      .map(x => ({ env: x.env, group: x.group, label: x.label, help: x.help, type: x.type, secret: x.secret, live: x.live, def: x.def }));
+    return json(res, 200, { settings: redact(conf), meta, health: watchdog.summary(), signedIn: sessionOnly(req), file: FILE_NAME });
+  }
+  if (path.startsWith('/api/admin/connections/test/') && req.method === 'POST') {
+    const b = await readJson(req), c = CFG;
+    const pick = (v, fallback) => (v === undefined || v === '' || v === null ? fallback : String(v).trim());
+    const kind = path.slice('/api/admin/connections/test/'.length);
+    if (kind === 'immich') return json(res, 200, await checkImmich({ url: pick(b.url, c.immichUrl), key: pick(b.key, c.immichKey), writeKey: pick(b.writeKey, c.immichWriteKey) }));
+    if (kind === 'email') return json(res, 200, await checkResend({ apiKey: pick(b.apiKey, c.resendKey), from: pick(b.from, c.mailFrom), replyTo: pick(b.replyTo, c.mailReplyTo), to: pick(b.to, c.adminEmail), base: c.resendBase }));
+    if (kind === 'public') return json(res, 200, await checkPublic({ url: pick(b.url, c.publicUrl), instance: INSTANCE }));
+    if (kind === 'cloudflare') return json(res, 200, await checkCloudflare({ kind: b.kind === 'dns' ? 'dns' : 'pages', token: pick(b.token, b.kind === 'dns' ? c.cfToken : c.cfPagesToken),
+      accountId: pick(b.accountId, c.cfAccountId), project: pick(b.project, c.cfPagesProject), domain: pick(b.domain, c.dnsDomain), host: pick(b.host, c.dnsHost) }));
+    return json(res, 404, { error: 'not_found' });
+  }
+  if (path === '/api/admin/connections' && req.method === 'PUT') {
+    if (!sessionOnly(req)) return json(res, 403, { error: 'Sign in to the admin panel in your browser to change settings' });
+    if (!originOk(req)) return json(res, 403, { error: 'Request came from somewhere else' });
+    const b = await readJson(req), patch = {}, errors = {};
+    for (const [k, v] of Object.entries(b)) {
+      const x = BY_ENV.get(k);
+      if (!x || x.hidden || x.envOnly || ['APP_SECRET', 'ADMIN_TOKEN'].includes(k)) { errors[k] = 'That setting cannot be changed here'; continue; }
+      if (conf.sources[k] === 'env') { errors[k] = 'This one is set in your compose file; change it there'; continue; }
+      if (x.secret && (v === '' || v === null || v === undefined)) continue;           /* blank keeps the saved key */
+      const r = validateSetting(k, v); if (!r.ok) { errors[k] = r.error; continue; }
+      patch[k] = r.value;
+    }
+    if (Object.keys(errors).length) return json(res, 400, { error: Object.values(errors)[0], errors });
+    saveFile(DATA_DIR, patch);
+    conf = loadConfig(process.env, DATA_DIR, { generate: false });
+    /* what can change under a running server does so now; the rest says it needs a restart */
+    const next = toCfg(conf), restart = [];
+    for (const k of Object.keys(patch)) {
+      const x = BY_ENV.get(k);
+      if (x.live) CFG[x.key] = next[x.key]; else restart.push(k);
+    }
+    capsCache = null; albumLists.clear();
+    console.log(`settings changed from the panel: ${Object.keys(patch).join(', ') || '(none)'}`);
+    return json(res, 200, { settings: redact(conf), restartNeeded: restart });
+  }
+  if (path === '/api/admin/connections/export' && req.method === 'GET') {
+    if (!sessionOnly(req)) return json(res, 403, { error: 'Sign in to the admin panel in your browser to download the settings file' });
+    try {
+      const buf = await readFile(join(DATA_DIR, FILE_NAME));
+      res.writeHead(200, { 'content-type': 'application/json', 'content-disposition': `attachment; filename="${FILE_NAME}"`, 'cache-control': 'no-store' });
+      return res.end(buf);
+    } catch { return json(res, 404, { error: 'There is no settings file: everything is set in your compose file.' }); }
+  }
+
   if (path === '/api/admin/mail-status')
     return json(res, 200, { configured: mailReady(), from: CFG.mailFrom || null, replyTo: CFG.mailReplyTo || null, remindDays: CFG.remindDays,
                             brandAddress: !!CFG.brandAddress, mailingMax: CFG.mailingMax, mailingDayMax: CFG.mailingDayMax,
@@ -3225,8 +3228,36 @@ function watchdogHealth() {
 zipRecover();
 mailerRecover();
 
+/* An upgrade changes the database in ways that cannot be undone, so the first start of a new version keeps a
+   copy of the database as it was. The last three are kept. */
+{
+  const ver = process.env.IMMICHSET_VERSION || '';
+  const was = (q.setGet.get('app_version') || {}).value || '';
+  if (ver && ver !== 'dev' && was && was !== ver) {
+    try {
+      const copy = join(DATA_DIR, `pre-upgrade-${was.replace(/[^\w.-]/g, '_')}.db`);
+      if (!existsSync(copy)) db.exec(`VACUUM INTO '${copy.replace(/'/g, "''")}'`);
+      const old = readdirSync(DATA_DIR).filter(f => /^pre-upgrade-.*\.db$/.test(f)).map(f => ({ f, t: statSync(join(DATA_DIR, f)).mtimeMs })).sort((a, b) => b.t - a.t).slice(3);
+      for (const o of old) { try { unlinkSync(join(DATA_DIR, o.f)); } catch {} }
+      console.log(`upgraded ${was} -> ${ver}; the old database is kept as ${copy}`);
+    } catch (e) { console.error('pre-upgrade copy failed:', e.message); }
+  }
+  if (ver && ver !== 'dev') q.setPut.run('app_version', ver);
+}
+
+/* `docker stop` sends SIGTERM. Closing the database properly means a stop never leaves a write half done. */
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    console.log(`${sig}: shutting down`);
+    try { server.close(); server.closeAllConnections?.(); } catch {}
+    try { db.close(); } catch {}
+    process.exit(0);
+  });
+}
+
 server.listen(CFG.port, '0.0.0.0', () => {
   console.log(`gallery app listening on ${CFG.port}; immich=${CFG.immichUrl}`);
+  console.log(`config: ${startupSummary(conf)}${FIRST_RUN ? ' (set up just now)' : ''}`);
   console.log(CFG.prezip
     ? `downloads: zips kept in ${ZIP_DIR} (up to ${CFG.zipMaxGb} GB), ${CFG.zipMaxActive} at a time, ${CFG.zipTotalMbit || 'unlimited'} Mbit/s shared`
     : `downloads: prepared zips off, ${CFG.zipMaxActive} at a time`);

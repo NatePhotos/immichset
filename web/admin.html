@@ -2417,6 +2417,97 @@ function mailTemplatesView(){
 }
 addSection("contacts", "Contacts", IC.users, contactsView, function(){ CT.seq++; MV.seq++; clearTimeout(MV.timer); }, 25);
 
+
+/* ---------- connections: the keys and settings, with a Test button for each ---------- */
+var CN = { seq:0, data:null };
+var CN_GROUPS = [["immich","Immich"],["email","Email"],["public","Public address"],["brand","Your business"],["admin","Sign-in"],["mailings","Mailings"],
+                 ["dns","Dynamic DNS"],["website","Website publishing"],["backups","Backups"],["downloads","Downloads"],["health","Self-checks"]];
+var CN_TESTS = { immich:["immich","Test Immich"], email:["email","Send a test email"], "public":["public","Test address"] };
+function connectionsView(){
+  var seq = ++CN.seq;
+  chrome({ title:"Connections", summary:"Your keys and settings", section:"connections",
+    actions:[{ label:"Download settings file", onClick:function(){ location.href = "/api/admin/connections/export"; } }] });
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px"><div id="cnBody"><div class="spin"></div></div></div>';
+  api("/connections").then(function(r){
+    if (seq !== CN.seq || !$("cnBody")) return;
+    if (!r.ok){ $("cnBody").innerHTML = '<p class="empty">Couldn’t load the settings.</p>'; return; }
+    CN.data = r.body; paintConnections();
+  });
+}
+function cnResults(box, res){
+  box.innerHTML = (res.checks || []).map(function(c){
+    var cls = c.ok ? (c.warn ? "warn" : "ok") : "bad", ic = c.ok ? (c.warn ? "!" : "✓") : "✗";
+    return '<p class="hint" style="margin:6px 0;color:var(--'+(c.ok ? (c.warn ? "muted" : "fg") : "bad")+')"><b>'+ic+' '+esc(c.label)+'</b>'+(c.detail ? " — "+esc(c.detail) : "")
+      + (c.fix ? '<br><span style="color:var(--muted)">'+esc(c.fix)+'</span>' : "")+'</p>';
+  }).join("");
+}
+function paintConnections(){
+  var d = CN.data, box = $("cnBody"); if (!box) return;
+  var byGroup = {}; d.meta.forEach(function(m){ (byGroup[m.group] = byGroup[m.group] || []).push(m); });
+  var hl = d.health || {}, hk = Object.keys(hl);
+  var html = '<p class="lede" style="color:var(--muted);font-size:13px;line-height:1.6;max-width:640px;margin:0 0 20px">Everything this server connects to. '
+    + 'A setting marked <b>compose file</b> was set outside the panel and is changed there. '
+    + (d.signedIn ? "" : '<b style="color:var(--bad)">Sign in with your password in the browser to change anything here.</b> ')
+    + 'Keys are never shown again once saved.</p>';
+  if (hk.length) html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px">' + hk.map(function(k){
+    var v = hl[k]; return '<span class="hint" style="margin:0;border:1px solid var(--line);padding:5px 10px">'+(v.ok === true ? "✓ " : v.ok === false ? "✗ " : "")+esc(v.title || k)+': '+esc(v.detail || "")+'</span>'; }).join("") + '</div>';
+  CN_GROUPS.forEach(function(g, gi){
+    var rows = byGroup[g[0]]; if (!rows || !rows.length) return;
+    var inner = rows.map(function(m){
+      var s = d.settings[m.env] || {}, locked = !!s.locked;
+      var ph = locked ? "Set in your compose file" : (m.secret && s.set ? "Saved. Leave blank to keep it." : (m.def !== "" && m.def !== undefined ? "Default: " + m.def : ""));
+      return '<div class="field"><label for="cn_'+m.env+'">'+esc(m.label)+(locked ? ' <span class="muted" style="font-weight:400">· compose file</span>' : '')+'</label>'
+        + '<input type="'+(m.secret ? "password" : "text")+'" id="cn_'+m.env+'" data-env="'+m.env+'" autocomplete="off" spellcheck="false"'
+        + (locked || !d.signedIn ? " disabled" : "")+' value="'+esc(m.secret ? "" : (s.value || ""))+'" placeholder="'+esc(ph)+'">'
+        + (m.help ? '<div class="hint">'+esc(m.help)+'</div>' : "")+'</div>';
+    }).join("");
+    var t = CN_TESTS[g[0]];
+    var body = inner + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">'
+      + '<button class="btn sm cnSave" data-g="'+g[0]+'" type="button"'+(d.signedIn ? "" : " disabled")+'>Save</button>'
+      + (t ? '<button class="btn sm ghost cnTest" data-g="'+g[0]+'" data-t="'+t[0]+'" type="button">'+t[1]+'</button>' : "")
+      + '</div><div id="cnRes_'+g[0]+'" style="margin-top:10px"></div>';
+    html += gi < 4 ? '<div style="border:1px solid var(--line);padding:18px;margin-bottom:16px;max-width:660px"><h3 class="sec" style="margin-top:0">'+g[1]+'</h3>'+body+'</div>'
+                   : '<details style="max-width:660px;margin-bottom:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">'+g[1]+'</summary><div style="padding:6px 0 12px">'+body+'</div></details>';
+  });
+  box.innerHTML = html;
+  function gather(g){
+    var out = {};
+    Array.prototype.forEach.call(box.querySelectorAll('[data-env]'), function(el){
+      var m = d.meta.filter(function(x){ return x.env === el.dataset.env; })[0];
+      if (m && m.group === g && !el.disabled) out[m.env] = el.value.trim();
+    });
+    return out;
+  }
+  Array.prototype.forEach.call(box.querySelectorAll(".cnSave"), function(b){
+    b.onclick = function(){
+      b.disabled = true;
+      put("/connections", gather(b.dataset.g), "PUT").then(function(r){
+        b.disabled = false;
+        if (!r.ok) return toast((r.body && r.body.error) || "Couldn’t save");
+        d.settings = r.body.settings;
+        toast(r.body.restartNeeded && r.body.restartNeeded.length ? "Saved. Restart the server for this to take effect." : "Saved");
+        paintConnections();
+      });
+    };
+  });
+  Array.prototype.forEach.call(box.querySelectorAll(".cnTest"), function(b){
+    b.onclick = function(){
+      var g = b.dataset.g, vals = gather(g), body = {};
+      if (g === "immich"){ body = { url:vals.IMMICH_URL, key:vals.IMMICH_API_KEY, writeKey:vals.IMMICH_WRITE_KEY }; }
+      else if (g === "email"){ body = { apiKey:vals.RESEND_API_KEY, from:vals.MAIL_FROM, replyTo:vals.MAIL_REPLY_TO }; }
+      else if (g === "public"){ body = { url:vals.PUBLIC_URL }; }
+      var label = b.textContent; b.disabled = true; b.textContent = "Testing…";
+      post("/connections/test/" + b.dataset.t, body).then(function(r){
+        b.disabled = false; b.textContent = label;
+        if (!r.ok) return toast((r.body && r.body.error) || "Couldn’t run the test");
+        cnResults($("cnRes_" + g), r.body);
+      });
+    };
+  });
+}
+function put(p, d){ return api(p, { method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(d || {}) }); }
+addSection("connections", "Connections", IC.settings, connectionsView, function(){ CN.seq++; }, 40);
+
 window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC,
   goSection:goSection, openGallery:kitOpenGallery, openNewGallery:kitNewGallery, coverCss:coverCss,
   galleryById:function(id){ return S.galleries.filter(function(x){ return x.id === id; })[0] || null; } };

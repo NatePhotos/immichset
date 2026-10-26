@@ -6,8 +6,9 @@ Pixieset's gallery delivery, for photographers who already keep their work in Im
 Immich stays the photo engine: ingest, thumbnails, transcoding, storage. **immichset** owns
 everything client-facing — the gallery page, who may see it, and what they did.
 
-> **Early software.** One author, no test suite, and it handles authentication and client
-> personal data. Read it before you put it in front of paying clients.
+> **Early software.** One author, and it handles authentication and client personal data. It has
+> a test suite (including a walk through a brand-new install), but read the code before you put it
+> in front of paying clients.
 
 ---
 
@@ -56,27 +57,35 @@ Each set points at an Immich album. Add or remove photos in Immich and the set f
 a write key set, drop them straight onto the set in the admin panel and immichset creates the album
 and uploads for you.
 
-## Requirements
+## Quick start
 
-- A running Immich instance (developed against v3.2)
-- Docker, and a reverse proxy terminating HTTPS
-- Optionally a [Resend](https://resend.com) account for email
+You need Immich running, and about ten minutes.
 
-## Install
+1. Save [`docker-compose.quickstart.yml`](docker-compose.quickstart.yml) as `docker-compose.yml` and run
+   `docker compose up -d`.
+2. Run `docker logs immichset` to see your **setup code**, then open `http://<your server>:3000/setup`.
+3. Follow the page. It asks for your Immich key, optionally a Resend key for email, and who you are,
+   and **tests each one** before you move on, telling you in plain words what to fix.
 
-1. Clone this repo onto the host.
-2. `cp docker-compose.example.yml docker-compose.yml` and fill it in.
-3. In Immich, create a **read-only** API key: `asset.read`, `asset.view`, `asset.download`,
-   `album.read`, `album.download`, `timeline.read`, `timeline.download`.
-   To manage photos from the admin panel, create a **second** key and set it as
-   `IMMICH_WRITE_KEY`: `asset.upload`, `album.create` and `albumAsset.create` to add,
-   plus `asset.delete` and `albumAsset.delete` to remove. Keeping the two keys apart means
-   the client-facing path cannot change anything in Immich even if it is compromised.
-   Grant only the half you want — the panel probes the key on startup and shows just the
-   actions it will allow.
-4. Generate long random values for `APP_SECRET` and `ADMIN_TOKEN`.
-5. `docker compose up -d`
-6. Point your proxy at the container and open `/admin`.
+That's the whole install. The step-by-step guide, with exactly which permissions to tick in Immich,
+how to verify an email domain, and how to put it on the internet over https, is
+**[docs/SETUP.md](docs/SETUP.md)**.
+
+Prefer environment variables? [`docker-compose.example.yml`](docker-compose.example.yml) lists every
+setting; anything set there wins over what the setup page saved. Running from a clone of this repo
+instead of the image works the same way (`node server.mjs`, with the settings as environment variables).
+
+### The keys it needs
+
+| Key | Where from | Needed for |
+|---|---|---|
+| Immich read-only API key | Immich › Account Settings › API Keys | Everything: showing photos |
+| Immich write key *(optional)* | The same place; a second key | Adding and removing photos from the admin |
+| Resend API key *(optional)* | resend.com › API Keys (sending access) | Gallery emails, reminders, mailings, sign-in codes |
+| Cloudflare / Hostinger token *(optional)* | Your DNS provider | Keeping a home address up to date |
+| Cloudflare Pages token *(optional)* | Cloudflare | Publishing a portfolio website |
+
+The app makes its own session secret and admin token. You never invent those.
 
 ### Branding
 
@@ -196,6 +205,12 @@ a residential IP without SPF and DKIM will land in spam.
 - Session cookies are HttpOnly, SameSite=Lax, and Secure behind HTTPS
 - Gallery visitors' emails are **collected, not verified** — deliberately, matching how Pixieset
   works. The password is the access control; registration is to know your audience
+- Keys entered in the setup page are stored in `/data/immichset.json` (mode 0600, not encrypted, never
+  copied into the backup folder, never sent back to a browser). Settings made as environment variables
+  win over it. The setup page itself needs a one-time code from the container log and disappears
+  for good when you finish
+- Gallery pages load their typeface from Google Fonts, so a client's browser contacts Google when it
+  opens one. Host the font yourself (the link is at the top of `web/index.html`) if that matters
 - Image requests are checked against the gallery's album, so a session for one gallery cannot
   read another's photos
 - The write key is separate from the read key, and the client-facing path never touches it. It

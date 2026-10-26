@@ -29,7 +29,9 @@ nothing without a session.
 | File | What it is |
 |---|---|
 | `server.mjs` | The whole server. Node built-ins only — `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
-| `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`). |
+| `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`; everything: `node --test admin/test health/test zip/test mail/test config/test setup/test site/test`). |
+| `config/settings.mjs`, `config/store.mjs` | Every setting in one list, and where it comes from (environment, then the settings file, then the default). `config/test` includes a golden test that the same environment always builds the same config as before. |
+| `setup/*.mjs`, `web/setup.html` | The first-run setup page and its server, the setup-code protection, and the tests behind every Test button (also used by Connections). `setup/test/fresh-install.test.mjs` walks a whole new install. |
 | `mail/blast.mjs` | Fills a mailing template for one person, signs unsubscribe links, picks recipients, and decides how to react to the mail service. Pure, tested in `mail/test`. |
 | `health/watchdog.mjs` | Runs the self-checks and decides when to email. Pure, tested in `health/test`. |
 | `web/index.html` | The client gallery. One file: markup, CSS, script. |
@@ -159,8 +161,12 @@ command in this runbook authenticates, and it is why the token is a secret.
 
 ### The app will not start
 
-It refuses to run without `IMMICH_URL`, `IMMICH_API_KEY`, `APP_SECRET` and `ADMIN_TOKEN`,
-and says which is missing. Otherwise read the log ring from the container.
+A fresh install with no Immich address or key is not broken: it is in **setup mode**, and prints a setup
+code in the log. Open `/setup` and enter it (`docker exec <container> cat /data/setup-code.txt`). An
+install whose settings come from the compose file never enters setup. If the log says the data folder
+is not writable, the container runs as uid 1000: `chown -R 1000:1000 <folder>`, or set `user:`.
+`APP_SECRET` and `ADMIN_TOKEN` are made automatically (stored in `/data/immichset.json`) if nobody
+supplied them. Otherwise read the log ring from the container.
 
 ### Restoring from a backup
 
@@ -178,7 +184,11 @@ albums.
 ## Secrets
 
 Six things are secret. None belongs in this repo; `.gitignore` already blocks the real
-compose file.
+compose file. A secret may come from the compose file (which wins) or from `/data/immichset.json`,
+which the setup page and Connections screen write (mode 0600, not encrypted, not in the backups;
+download it from Connections after signing in, and keep it private). `APP_SECRET` and
+`ADMIN_TOKEN` are generated into that file if neither place has them. Losing `APP_SECRET` signs
+everyone out and breaks the unsubscribe links in emails already sent.
 
 | Name | What it opens | Rotating it |
 |---|---|---|

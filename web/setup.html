@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Set up your gallery server</title>
+<style>
+:root{--bg:#f5f5f4;--card:#fff;--fg:#1a1a1a;--muted:#6b6b6b;--line:#dcdcd8;--primary:#1a1a1a;--on:#fff;--ok:#1a7f4b;--warn:#a05a00;--bad:#b3261e;--field:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#141417;--card:#1c1c20;--fg:#ececec;--muted:#9a9aa2;--line:#33333a;--primary:#59a6ff;--on:#0b0b0d;--ok:#4cc38a;--warn:#e0a33a;--bad:#ff7b72;--field:#121215}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:28px 16px 80px}
+h1{font-size:20px;margin:0 0 4px;letter-spacing:.02em}
+.lede{color:var(--muted);margin:0 0 22px}
+.dots{display:flex;gap:6px;margin:0 0 20px;flex-wrap:wrap}
+.dots span{font-size:12px;color:var(--muted);padding:3px 9px;border:1px solid var(--line);border-radius:99px}
+.dots span.on{color:var(--on);background:var(--primary);border-color:var(--primary)}
+.dots span.done{color:var(--ok);border-color:var(--ok)}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px 20px}
+h2{font-size:17px;margin:0 0 6px}
+.help{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.help ol,.help ul{margin:6px 0 0;padding-left:20px}
+code{background:var(--field);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12.5px}
+label{display:block;font-size:13px;font-weight:600;margin:14px 0 5px}
+input[type=text],input[type=password],input[type=email],input[type=url]{width:100%;padding:10px 12px;font:inherit;color:var(--fg);background:var(--field);border:1px solid var(--line);border-radius:7px}
+input:focus,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+input:disabled{opacity:.6}
+.note{font-size:12.5px;color:var(--muted);margin:5px 0 0}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;align-items:center}
+button{font:inherit;font-weight:600;padding:10px 18px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
+button.pri{background:var(--primary);color:var(--on);border-color:var(--primary)}
+button:disabled{opacity:.45;cursor:not-allowed}
+a.lnk,button.lnk{border:0;background:none;padding:0;color:var(--muted);text-decoration:underline;font-weight:400;cursor:pointer}
+.res{margin:16px 0 0;padding:0;list-style:none}
+.res li{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.res li:first-child{border-top:0}
+.ic{flex:none;width:20px;text-align:center;font-weight:700}
+.ok .ic{color:var(--ok)}.warn .ic{color:var(--warn)}.bad .ic{color:var(--bad)}
+.res .fix{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.err{color:var(--bad);font-size:13.5px;margin:12px 0 0}
+details{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+summary{cursor:pointer;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:7px 4px;border-top:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--muted);width:42%}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--primary);border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px}
+@keyframes s{to{transform:rotate(360deg)}}
+.visually-hidden{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Set up your gallery server</h1>
+  <p class="lede">A few minutes, and a few keys. Each step can test itself before you move on.</p>
+  <div class="dots" id="dots" aria-hidden="true"></div>
+  <section id="step" aria-labelledby="stepTitle"></section>
+  <div class="visually-hidden" id="live" aria-live="polite"></div>
+</main>
+<script>
+(function(){
+"use strict";
+var STEPS = [["claim","Code"],["immich","Immich"],["email","Email"],["you","You"],["public","Address"],["extras","Extras"],["review","Finish"]];
+var S = null, cur = 0, results = {}, busy = false;
+try { var saved = parseInt(sessionStorage.getItem("setup.step"), 10); if (saved >= 0 && saved < STEPS.length) cur = saved; } catch(e){}
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function say(t){ $("live").textContent = t; }
+
+function api(method, path, body){
+  return fetch("/api/setup/" + path, { method: method, credentials: "same-origin", headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, status: r.status, body: j }; }); })
+    .catch(function(){ return { ok: false, status: 0, body: { error: "Couldn't reach the server. Is it still running?" } }; });
+}
+function val(id){ var e = $(id); return e ? e.value.trim() : ""; }
+function setting(env){ return (S && S.settings && S.settings[env]) || { set: false }; }
+
+/* a text input for one setting: its saved value, a note when it comes from the compose file, and a
+   "saved" hint instead of echoing a secret back */
+function field(env, label, o){
+  o = o || {};
+  var s = setting(env), locked = !!s.locked, isSecret = !!o.secret;
+  var v = o.value !== undefined ? o.value : (isSecret ? "" : (s.value || ""));
+  return '<label for="f_' + env + '">' + esc(label) + '</label>'
+    + '<input id="f_' + env + '" type="' + (isSecret ? "password" : (o.type || "text")) + '" autocomplete="' + (isSecret ? "off" : (o.auto || "off")) + '" spellcheck="false" autocapitalize="off"'
+    + (locked ? " disabled" : "") + ' value="' + esc(v) + '" placeholder="' + esc(locked ? "Set in your compose file" : (isSecret && s.set ? "Saved. Leave blank to keep it." : (o.ph || ""))) + '">'
+    + (o.note ? '<p class="note">' + o.note + '</p>' : "");
+}
+function collect(envs){
+  var out = {};
+  envs.forEach(function(e){ var el = $("f_" + e); if (el && !el.disabled) out[e] = el.value.trim(); });
+  return out;
+}
+
+function showResults(id, r){
+  results[id] = r;
+  var box = $("res_" + id); if (!box) return;
+  box.innerHTML = (r.checks || []).map(function(c){
+    var cls = c.ok ? (c.warn ? "warn" : "ok") : "bad", ic = c.ok ? (c.warn ? "!" : "✓") : "✗";
+    return '<li class="' + cls + '"><span class="ic" aria-hidden="true">' + ic + '</span><span><b>' + esc(c.label) + '</b>' + (c.detail ? " — " + esc(c.detail) : "")
+      + (c.fix ? '<span class="fix">' + esc(c.fix) + '</span>' : "") + '</span></li>';
+  }).join("");
+  say((r.checks || []).filter(function(c){ return !c.ok; }).length ? "Some checks need attention" : "All checks passed");
+}
+function runTest(id, path, body, btn){
+  if (busy) return Promise.resolve(); busy = true;
+  var label = btn.textContent; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Testing…';
+  return api("POST", path, body).then(function(r){
+    busy = false; btn.disabled = false; btn.textContent = label;
+    if (r.status === 401) return claimView();
+    if (!r.ok){ $("res_" + id).innerHTML = '<li class="bad"><span class="ic">✗</span><span>' + esc(r.body.error || "That didn't work") + '</span></li>'; return; }
+    showResults(id, r.body); return r.body;
+  });
+}
+function allOk(r, ids){ return !!r && ids.every(function(id){ return (r.checks || []).some(function(c){ return c.id === id && c.ok; }); }); }
+function saveSettings(patch){
+  return api("PUT", "settings", patch).then(function(r){
+    if (!r.ok){ err(r.body.error || "Couldn't save that"); return false; }
+    S = r.body; return true;
+  });
+}
+function err(t){ var e = $("err"); if (e) e.textContent = t || ""; if (t) say(t); }
+
+/* ---- the steps ---- */
+function dots(){
+  $("dots").innerHTML = STEPS.map(function(s, i){ return '<span class="' + (i === cur ? "on" : (i < cur ? "done" : "")) + '">' + (i < cur ? "✓ " : "") + esc(s[1]) + '</span>'; }).join("");
+}
+function go(n){
+  cur = Math.max(0, Math.min(STEPS.length - 1, n));
+  try { sessionStorage.setItem("setup.step", String(cur)); } catch(e){}
+  render();
+}
+function frame(title, help, body){
+  $("step").innerHTML = '<h2 id="stepTitle" tabindex="-1">' + esc(title) + '</h2><div class="help">' + help + '</div>' + body + '<p class="err" id="err" role="alert"></p>';
+  dots();
+  var h = $("stepTitle"); if (h) h.focus({ preventScroll: true });
+}
+function nav(back, next, nextLabel, extra){
+  return '<div class="row">' + (back ? '<button type="button" id="back">Back</button>' : "")
+    + '<button type="button" class="pri" id="next"' + (next === false ? " disabled" : "") + '>' + esc(nextLabel || "Continue") + '</button>' + (extra || "") + '</div>';
+}
+function bindBack(){ var b = $("back"); if (b) b.onclick = function(){ go(cur - 1); }; }
+
+function claimView(){
+  cur = 0; dots();
+  frame("Enter your setup code",
+    "This page is locked so nobody else can set up your server first. The code was printed in the container's log when it started. In a terminal, run <code>docker logs immichset</code>, or <code>docker exec immichset cat /data/setup-code.txt</code>.",
+    '<label for="code">Setup code</label><input id="code" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX">'
+    + '<div class="row"><button type="button" class="pri" id="next">Unlock</button></div>');
+  var go1 = function(){
+    var b = $("next"); b.disabled = true;
+    api("POST", "claim", { code: val("code") }).then(function(r){
+      b.disabled = false;
+      if (!r.ok) return err(r.body.error || "That code is not right.");
+      load().then(function(){ go(1); });
+    });
+  };
+  $("next").onclick = go1; $("code").addEventListener("keydown", function(e){ if (e.key === "Enter") go1(); });
+}
+
+function immichView(){
+  var okNow = allOk(results.immich, ["reach", "key", "albums"]);
+  frame("Connect to Immich",
+    'Your photos stay in Immich; this app only reads them. Create a <b>read-only</b> key for it:<ol>'
+    + '<li>In Immich, click your picture › <b>Account Settings</b> › <b>API Keys</b> › <b>New API Key</b>.</li>'
+    + '<li>Tick <code>album.read</code> <code>timeline.read</code> <code>asset.read</code> <code>asset.view</code> <code>asset.download</code> (and <code>album.download</code> <code>timeline.download</code> if listed). Do not choose “All”.</li>'
+    + '<li>Copy the key. Immich shows it once.</li></ol>',
+    field("IMMICH_URL", "Immich address", { type: "url", ph: "http://192.168.1.20:2283", note: 'The address <i>this server</i> uses to reach Immich. Inside a container, “localhost” means the container itself, so use your computer’s network address or the Immich container’s name.' })
+    + field("IMMICH_API_KEY", "Read-only API key", { secret: true })
+    + '<details><summary>Let me add and remove photos from the admin (optional)</summary>'
+    + '<p class="help" style="margin-top:10px">Make a <b>second</b> key with <code>asset.upload</code> <code>album.create</code> <code>albumAsset.create</code> to add photos, plus <code>asset.delete</code> <code>albumAsset.delete</code> to remove them. It is kept separate so the read key can never change anything.</p>'
+    + field("IMMICH_WRITE_KEY", "Write API key", { secret: true }) + '</details>'
+    + '<ul class="res" id="res_immich"></ul>'
+    + nav(true, okNow, "Continue", '<button type="button" id="test">Test connection</button><button type="button" class="lnk" id="anyway" hidden>Continue anyway</button>'));
+  bindBack();
+  var cont = function(){
+    saveSettings(collect(["IMMICH_URL", "IMMICH_API_KEY", "IMMICH_WRITE_KEY"])).then(function(ok){ if (ok) go(2); });
+  };
+  $("next").onclick = cont;
+  $("anyway").onclick = cont;
+  $("test").onclick = function(){
+    runTest("immich", "test/immich", { url: val("f_IMMICH_URL"), key: val("f_IMMICH_API_KEY"), writeKey: val("f_IMMICH_WRITE_KEY") }, $("test")).then(function(r){
+      if (!r) return;
+      var good = allOk(r, ["reach", "key", "albums"]);
+      $("next").disabled = !good;
+      /* a missing permission is worth fixing, but not worth being stuck: let them go on */
+      $("anyway").hidden = good || !allOk(r, ["albums"]) || !(r.checks || []).some(function(c){ return !c.ok && c.permission; });
+    });
+  };
+  if (results.immich) showResults("immich", results.immich);
+}
+
+function emailView(){
+  var tested = (results.email && (results.email.checks || []).some(function(c){ return c.id === "send" && c.ok && !c.warn; })) || (S && S.emailVerified);
+  frame("Set up email",
+    'Email sends gallery links, expiry reminders and your sign-in codes. It uses <b>Resend</b> (free to start):<ol>'
+    + '<li>Sign up at <a href="https://resend.com" target="_blank" rel="noopener">resend.com</a>, then <b>Domains › Add Domain</b>. Add the records it shows at wherever your domain’s DNS is kept, and wait for <b>Verified</b>.</li>'
+    + '<li><b>API Keys › Create API Key</b> with <b>Sending access</b>. Copy it.</li></ol>'
+    + 'No domain yet? You can skip this and add email later. Until then there are no invites or reminders, and the emailed sign-in code stays off.',
+    field("RESEND_API_KEY", "Resend API key", { secret: true })
+    + field("MAIL_FROM", "Send from", { ph: "Your Studio <hello@yourdomain.com>", note: "The address must be on the domain you verified." })
+    + field("MAIL_REPLY_TO", "Replies go to (optional)", { type: "email", auto: "email" })
+    + '<label for="mailTo">Send a test email to</label><input id="mailTo" type="email" autocomplete="email" placeholder="you@example.com">'
+    + '<ul class="res" id="res_email"></ul>'
+    + nav(true, !!tested, "Continue", '<button type="button" id="test">Send test email</button><button type="button" class="lnk" id="skip">Skip email for now</button>'));
+  bindBack();
+  $("next").onclick = function(){ saveSettings(collect(["RESEND_API_KEY", "MAIL_FROM", "MAIL_REPLY_TO"])).then(function(ok){ if (ok) go(3); }); };
+  $("skip").onclick = function(){ api("POST", "skip-email", {}).then(function(r){ if (r.ok) S = r.body; go(3); }); };
+  $("test").onclick = function(){
+    runTest("email", "test/email", { apiKey: val("f_RESEND_API_KEY"), from: val("f_MAIL_FROM"), replyTo: val("f_MAIL_REPLY_TO"), to: val("mailTo") }, $("test")).then(function(r){
+      if (!r) return; $("next").disabled = !(r.checks || []).some(function(c){ return c.id === "send" && c.ok && !c.warn; });
+    });
+  };
+  if (results.email) showResults("email", results.email);
+}
+
+function youView(){
+  var needAdmin = !S.adminExists && !S.envAdmin;
+  frame("You and your business",
+    (needAdmin ? 'This is the account you sign in with.' : 'Your admin account already exists.') + ' Your business name and address appear on galleries and in the footer of every email you send. A postal address (or PO box) is required by law before you can email your contacts, but you can add it later.',
+    (needAdmin ? field("ADMIN_EMAIL", "Your email", { type: "email", auto: "email" })
+      + '<label for="pw">Password</label><input id="pw" type="password" autocomplete="new-password"><p class="note">At least 12 characters. Pick something you don’t use anywhere else.</p>'
+      + '<label><input type="checkbox" id="showpw" style="width:auto;margin-right:6px">Show password</label>' : "")
+    + field("BRAND_NAME", "Business name", { ph: "Your Studio" })
+    + field("BRAND_ADDRESS", "Postal address", { ph: "PO Box 123, Brooklyn, NY 11201" })
+    + field("BRAND_URL", "Your website", { ph: "https://yourstudio.com" })
+    + field("BRAND_SOCIAL", "Social link (optional)", { ph: "https://instagram.com/yourstudio" })
+    + field("BRAND_SOCIAL_LABEL", "Social label (optional)", { ph: "@yourstudio" })
+    + nav(true, true, "Continue"));
+  bindBack();
+  if ($("showpw")) $("showpw").onchange = function(){ $("pw").type = this.checked ? "text" : "password"; };
+  $("next").onclick = function(){
+    var brand = collect(["BRAND_NAME", "BRAND_ADDRESS", "BRAND_URL", "BRAND_SOCIAL", "BRAND_SOCIAL_LABEL"]);
+    var next = function(){ saveSettings(brand).then(function(ok){ if (ok) go(4); }); };
+    if (!needAdmin) return next();
+    $("next").disabled = true;
+    api("POST", "admin", { email: val("f_ADMIN_EMAIL"), password: $("pw").value }).then(function(r){
+      $("next").disabled = false;
+      if (!r.ok) return err(r.body.error || "Couldn't create the account");
+      S = r.body; next();
+    });
+  };
+}
+
+function publicView(){
+  var cur_ = setting("PUBLIC_URL");
+  frame("Your public address",
+    'This is the web address your clients will use. It should be <b>https</b>. Put a reverse proxy (Caddy, nginx, or your NAS’s built-in one) or a <b>Cloudflare Tunnel</b> in front of this server (port 3000) and use that address here.',
+    field("PUBLIC_URL", "Public address", { type: "url", value: cur_.value || S.suggestedPublicUrl, ph: "https://galleries.yourstudio.com" })
+    + '<ul class="res" id="res_public"></ul>'
+    + nav(true, true, "Continue", '<button type="button" id="test">Test address</button>'));
+  bindBack();
+  $("next").onclick = function(){
+    if (!val("f_PUBLIC_URL")) return err("Enter the address clients will use.");
+    saveSettings(collect(["PUBLIC_URL"])).then(function(ok){ if (ok) go(5); });
+  };
+  $("test").onclick = function(){ runTest("public", "test/public", { url: val("f_PUBLIC_URL") }, $("test")); };
+  if (results.public) showResults("public", results.public);
+}
+
+function extrasView(){
+  var base = (val("f_PUBLIC_URL") || (setting("PUBLIC_URL").value) || S.suggestedPublicUrl || "").replace(/\/+$/, "");
+  frame("Optional extras",
+    'You can skip all of this and add it later from the admin.',
+    '<details><summary>Keep a home address up to date (dynamic DNS)</summary><p class="help" style="margin-top:10px">If your internet provider changes your address, this updates one DNS record for you. The record must already exist.</p>'
+    + field("CLOUDFLARE_TOKEN", "Cloudflare token (Zone › DNS › Edit)", { secret: true }) + field("HOSTINGER_TOKEN", "…or a Hostinger token", { secret: true })
+    + field("DNS_DOMAIN", "Domain", { ph: "yourstudio.com" }) + field("DNS_HOST", "Host name", { ph: "galleries" })
+    + '<div class="row"><button type="button" id="testDns">Test</button></div><ul class="res" id="res_dns"></ul></details>'
+    + '<details><summary>Publish a portfolio website (Cloudflare Pages)</summary>'
+    + field("CF_ACCOUNT_ID", "Cloudflare account ID") + field("CF_PAGES_PROJECT", "Pages project name")
+    + field("CF_PAGES_TOKEN", "Pages token (Account › Cloudflare Pages › Edit)", { secret: true }) + field("SITE_URL", "Your portfolio address", { type: "url", ph: "https://yourstudio.com" })
+    + '<div class="row"><button type="button" id="testPages">Test</button></div><ul class="res" id="res_pages"></ul></details>'
+    + '<details><summary>Stop mailing bounced addresses (Resend webhook)</summary><p class="help" style="margin-top:10px">In Resend › Webhooks, add <code>' + esc(base) + '/api/mail/webhook</code> with the events <code>email.bounced</code> and <code>email.complained</code>, then paste its signing secret.</p>'
+    + field("RESEND_WEBHOOK_SECRET", "Webhook signing secret", { secret: true }) + '</details>'
+    + nav(true, true, "Continue"));
+  bindBack();
+  var envs = ["CLOUDFLARE_TOKEN", "HOSTINGER_TOKEN", "DNS_DOMAIN", "DNS_HOST", "CF_ACCOUNT_ID", "CF_PAGES_PROJECT", "CF_PAGES_TOKEN", "SITE_URL", "RESEND_WEBHOOK_SECRET"];
+  $("next").onclick = function(){ saveSettings(collect(envs)).then(function(ok){ if (ok) go(6); }); };
+  $("testDns").onclick = function(){ runTest("dns", "test/cloudflare", { kind: "dns", token: val("f_CLOUDFLARE_TOKEN"), domain: val("f_DNS_DOMAIN"), host: val("f_DNS_HOST") }, $("testDns")); };
+  $("testPages").onclick = function(){ runTest("pages", "test/cloudflare", { kind: "pages", token: val("f_CF_PAGES_TOKEN"), accountId: val("f_CF_ACCOUNT_ID"), project: val("f_CF_PAGES_PROJECT") }, $("testPages")); };
+}
+
+function reviewView(){
+  var s = S.settings, rows = [], add = function(label, env, secret){
+    var x = s[env]; if (!x) return;
+    rows.push('<tr><td>' + esc(label) + '</td><td>' + (x.set ? (x.secret ? "Saved" : esc(x.value)) : '<span style="color:var(--muted)">Not set</span>') + (x.set && x.source === "env" ? ' <span class="note">(from your compose file)</span>' : "") + '</td></tr>');
+  };
+  add("Immich address", "IMMICH_URL"); add("Immich read key", "IMMICH_API_KEY"); add("Immich write key", "IMMICH_WRITE_KEY");
+  add("Resend key", "RESEND_API_KEY"); add("Send from", "MAIL_FROM"); add("Your email", "ADMIN_EMAIL");
+  add("Business name", "BRAND_NAME"); add("Postal address", "BRAND_ADDRESS"); add("Public address", "PUBLIC_URL");
+  var twoFa = S.emailVerified ? "On. A code is emailed each time you sign in." : "Off, because email isn’t set up and tested yet. You can turn it on later.";
+  frame("Ready to finish",
+    'Check the details, then finish. Your gallery server will start right away.',
+    '<table>' + rows.join("") + '<tr><td>Emailed sign-in code</td><td>' + esc(twoFa) + '</td></tr></table>'
+    + nav(true, true, "Finish setup"));
+  bindBack();
+  $("next").onclick = function(){
+    $("next").disabled = true; $("next").innerHTML = '<span class="spin"></span> Starting…';
+    api("POST", "finish", {}).then(function(r){
+      if (!r.ok){ $("next").disabled = false; $("next").textContent = "Finish setup"; return err(r.body.error || "Couldn't finish"); }
+      waitForApp();
+    });
+  };
+}
+function waitForApp(){
+  frame("Starting your gallery server…", "This takes a few seconds.", '<p><span class="spin"></span></p>');
+  $("dots").innerHTML = "";
+  var tries = 0;
+  (function poll(){
+    fetch("/healthz", { cache: "no-store" }).then(function(r){ return r.json(); }).then(function(j){
+      if (j && j.ok && !j.setup) return done();
+      throw 0;
+    }).catch(function(){ if (++tries > 60) return done(true); setTimeout(poll, 700); });
+  })();
+  function done(late){
+    try { sessionStorage.removeItem("setup.step"); } catch(e){}
+    frame("You’re all set", late ? "It's taking longer than usual to start. Wait a little, then open the admin." : "Your gallery server is running.",
+      '<p>Sign in with your email and password' + (S && S.emailVerified ? ", then enter the code emailed to you" : "") + '. Your first gallery is one click away.</p>'
+      + '<div class="row"><a href="/admin"><button type="button" class="pri">Open the admin</button></a></div>');
+    $("dots").innerHTML = "";
+  }
+}
+
+var VIEWS = { immich: immichView, email: emailView, you: youView, public: publicView, extras: extrasView, review: reviewView };
+function render(){ if (cur === 0) return claimView(); (VIEWS[STEPS[cur][0]] || immichView)(); }
+
+function load(){
+  return api("GET", "state").then(function(r){
+    if (r.status === 401){ S = null; return false; }
+    if (r.status === 404){ location.replace("/admin"); return false; }
+    S = r.body; return true;
+  });
+}
+load().then(function(ok){ if (!ok) return claimView(); if (cur === 0) cur = 1; render(); });
+})();
+</script>
+</body>
+</html>

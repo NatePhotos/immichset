@@ -1,3 +1,6 @@
+# Every setting as an environment variable, for people who prefer that to the setup page.
+# Anything set here always wins over what the setup page or Connections saved. For the short version
+# (just the image, a port and a volume) see docker-compose.quickstart.yml.
 # Copy to docker-compose.yml and fill in. Never commit the filled-in file.
 name: immichset
 

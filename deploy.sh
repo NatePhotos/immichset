@@ -37,7 +37,8 @@ say() { echo "  $*"; }
 
 FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/home.js web/admin-theme.css admin/overview.mjs
        site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs
-       site/assets/site.css site/assets/site.js zip/writer.mjs zip/queue.mjs health/watchdog.mjs mail/blast.mjs)
+       site/assets/site.css site/assets/site.js zip/writer.mjs zip/queue.mjs health/watchdog.mjs mail/blast.mjs
+       config/settings.mjs config/store.mjs setup/claim.mjs setup/checks.mjs setup/server.mjs web/setup.html)
 PREV="$DEST/.previous"
 
 # ---- rollback -------------------------------------------------------------
@@ -62,7 +63,7 @@ say "✓ server.mjs parses"
 
 # the panel and the gallery are each one file with script inside; a broken
 # script there fails silently in the browser, so it is checked here instead
-for f in web/admin.html web/index.html; do
+for f in web/admin.html web/index.html web/setup.html; do
   node --input-type=module --check < <(
     node -e '
       const fs=require("fs");
