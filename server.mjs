@@ -4,14 +4,16 @@
 
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { randomBytes, createHmac, timingSafeEqual, scryptSync } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { readdirSync, renameSync, unlinkSync, statSync, copyFileSync } from 'node:fs';
+import { randomBytes, createHmac, createHash, timingSafeEqual, scryptSync } from 'node:crypto';
+import { readFile, writeFile, open as openFile } from 'node:fs/promises';
+import { readdirSync, renameSync, unlinkSync, statSync, statfsSync, copyFileSync, createReadStream } from 'node:fs';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createSite } from './site/routes.mjs';
 import { overview } from './admin/overview.mjs';
+import { createZipWriter } from './zip/writer.mjs';
+import { DownloadQueue } from './zip/queue.mjs';
 
 const CFG = {
   port:       Number(process.env.PORT || 3000),
@@ -49,6 +51,16 @@ const CFG = {
   cfPagesToken:  process.env.CF_PAGES_TOKEN || '',
   cfPagesProject: process.env.CF_PAGES_PROJECT || '',
   siteUrl:      (process.env.SITE_URL || '').replace(/\/+$/, ''),
+  prezip:      (process.env.PREZIP || 'on').toLowerCase() !== 'off',
+  zipDir:       process.env.ZIP_DIR || '',
+  zipMaxActive: Number(process.env.ZIP_MAX_ACTIVE || 3),
+  zipTotalMbit: Number(process.env.ZIP_TOTAL_MBIT || 120),
+  zipRateMbit:  Number(process.env.ZIP_RATE_MBIT || 0),
+  zipMaxGb:     Number(process.env.ZIP_MAX_GB || 100),
+  zipMinFreeGb: Number(process.env.ZIP_MIN_FREE_GB || 50),
+  zipSweepMin:  Number(process.env.ZIP_SWEEP_MINUTES || 15),
+  zipSettleMin: Number(process.env.ZIP_SETTLE_MINUTES || 10),
+  zipStallSec:  Number(process.env.ZIP_STALL_SECONDS || 120),
 };
 for (const k of ['immichUrl', 'immichKey', 'secret', 'adminToken']) {
   if (!CFG[k]) { console.error(`FATAL: missing config: ${k}`); process.exit(1); }
@@ -91,6 +103,27 @@ CREATE TABLE IF NOT EXISTS sets (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS ix_sets ON sets(gallery_id, position);
+
+/* One ready-made zip per set, kept on disk so a download starts at once and can resume.
+   'fingerprint' is a hash of the set's photo ids: if it no longer matches the album the
+   file is out of date and is never served. */
+CREATE TABLE IF NOT EXISTS zips (
+  id          INTEGER PRIMARY KEY,
+  gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+  set_id      INTEGER NOT NULL UNIQUE REFERENCES sets(id) ON DELETE CASCADE,
+  status      TEXT NOT NULL DEFAULT 'none',   -- none | building | ready | failed | evicted
+  file        TEXT,
+  fingerprint TEXT,
+  assets      INTEGER,
+  bytes       INTEGER,
+  error       TEXT,
+  seen_fp     TEXT,
+  seen_at     INTEGER,
+  updated_at  INTEGER NOT NULL DEFAULT 0,
+  built_at    TEXT,
+  last_used_at TEXT,
+  served      INTEGER NOT NULL DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS registrations (
   id          INTEGER PRIMARY KEY,
@@ -250,6 +283,18 @@ const q = {
   setPos:     db.prepare('UPDATE sets SET position = ? WHERE id = ?'),
   setDel:     db.prepare('DELETE FROM sets WHERE id = ?'),
   setMax:     db.prepare('SELECT COALESCE(MAX(position), -1) n FROM sets WHERE gallery_id = ?'),
+  zipBySet:   db.prepare('SELECT * FROM zips WHERE set_id = ?'),
+  zipEnsure:  db.prepare('INSERT OR IGNORE INTO zips (gallery_id,set_id) VALUES (?,?)'),
+  zipForGallery: db.prepare('SELECT * FROM zips WHERE gallery_id = ? ORDER BY set_id'),
+  zipEvery:   db.prepare(`SELECT z.*, s.name set_name, s.album_id, g.slug, g.title FROM zips z
+                          JOIN sets s ON s.id = z.set_id JOIN galleries g ON g.id = z.gallery_id ORDER BY z.id`),
+  zipState:   db.prepare('UPDATE zips SET status=?, error=?, updated_at=? WHERE set_id=?'),
+  zipReady:   db.prepare(`UPDATE zips SET status='ready', file=?, fingerprint=?, assets=?, bytes=?, error=NULL,
+                          updated_at=?, built_at=datetime('now') WHERE set_id=?`),
+  zipGone:    db.prepare(`UPDATE zips SET status=?, file=NULL, bytes=NULL, updated_at=? WHERE set_id=?`),
+  zipSeen:    db.prepare('UPDATE zips SET seen_fp=?, seen_at=? WHERE set_id=?'),
+  zipUsed:    db.prepare(`UPDATE zips SET last_used_at=datetime('now'), served=served+1 WHERE id=?`),
+  zipDelSet:  db.prepare('DELETE FROM zips WHERE set_id = ?'),
   coverFile:  db.prepare('UPDATE galleries SET cover_file = ? WHERE id = ?'),
   coverFocus: db.prepare('UPDATE galleries SET cover_focus = ? WHERE id = ?'),
   sortOrder:  db.prepare('UPDATE galleries SET sort_order = ? WHERE id = ?'),
@@ -903,6 +948,40 @@ async function albumAssets(albumId) {
   return out;
 }
 
+/* Original-file sizes by asset id. The timeline lists carry no sizes; a metadata search does.
+   Kept ten minutes: this is for the admin's storage figures, not anything a client waits on. */
+const albumSizes = new Map();
+async function albumSizeMap(albumId) {
+  const c = albumSizes.get(albumId);
+  if (c && Date.now() - c.at < 600_000) return c.sizes;
+  const sizes = new Map();
+  for (let page = 1; page; ) {
+    const r = await immichJson('/api/search/metadata', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ albumIds: [albumId], withExif: true, size: 1000, page }),
+    });
+    for (const x of r.assets?.items || []) sizes.set(x.id, Number(x.exifInfo?.fileSizeInByte) || 0);
+    page = r.assets?.nextPage ? Number(r.assets.nextPage) : 0;
+  }
+  albumSizes.set(albumId, { sizes, at: Date.now() });
+  return sizes;
+}
+/* A photo that sits in two galleries is one file on disk, so the total counts it once. */
+async function storageUsage() {
+  const all = new Map(), galleries = {};
+  let unreadable = 0;
+  for (const g of q.gallAll.all()) {
+    const own = new Map();
+    for (const st of setsOf(g)) {
+      try { for (const [id, n] of await albumSizeMap(st.album_id)) own.set(id, n); }
+      catch (e) { unreadable++; console.error('storage listing failed', st.id, e.message); }
+    }
+    galleries[g.id] = { bytes: [...own.values()].reduce((a, n) => a + n, 0), photos: own.size };
+    for (const [id, n] of own) all.set(id, n);
+  }
+  return { totalBytes: [...all.values()].reduce((a, n) => a + n, 0), galleries, unreadable };
+}
+
 /* ------------------------------------------------------------------ session */
 function sessionFor(req, gallery) {
   const t = cookies(req)[`gs_${gallery.id}`];
@@ -1255,6 +1334,9 @@ async function galleryRoutes(req, res, gallery, rest, url) {
       if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
       log(gallery, who.r, 'download', img[1], req);
     }
+    /* the full-quality file played in the browser: it is the original's bytes, so it follows
+       the download rule; with downloads off the client only gets the lighter `video` stream */
+    if (size === 'video-orig' && !gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
     /* `video` is playback, not a download: it is never gated, and a single viewing
        makes many range requests, so logging each one would bury the activity log */
     return proxyImage(req, res, img[1], size);
@@ -1262,32 +1344,55 @@ async function galleryRoutes(req, res, gallery, rest, url) {
 
   if (rest === '/zip' && req.method === 'POST') {
     if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
-    const only = setsOf(gallery).find(x => x.id === Number(url.searchParams.get('set') || 0));
-    let list = only ? await albumAssets(only.album_id) : await allAssets(gallery);
-    if (url.searchParams.get('picks') === '1' && who.r) {
-      const mine = new Set(q.favMine.all(who.r).map(x => x.asset_id));
-      list = (await allAssets(gallery)).filter(a => mine.has(a.id));
-    } else if (url.searchParams.get('ids')) {
-      /* a hand-picked batch: only ids this gallery actually holds */
-      const want = new Set(String(url.searchParams.get('ids')).split(',').filter(x => /^[0-9a-f-]{36}$/i.test(x)));
-      list = (await allAssets(gallery)).filter(a => want.has(a.id));
+    const sets = setsOf(gallery);
+    const only = sets.find(x => x.id === Number(url.searchParams.get('set') || 0));
+    const picks = url.searchParams.get('picks') === '1' && !!who.r;
+    const wantIds = url.searchParams.get('ids');
+    const key = clientKey(gallery, who, req);
+
+    /* a whole set is prepared ahead and served as a file; a selection is built as it is sent */
+    const whole = !picks && !wantIds && (only || (sets.length === 1 ? sets[0] : null));
+    let spec;
+    if (CFG.prezip && whole) {
+      if (!(await albumInfo(whole.album_id)).ids.size) return json(res, 400, { error: 'nothing_selected' });
+      spec = { kind: 'set', setId: whole.id, name: zipFileName(gallery, whole, sets) };
+    } else {
+      let list = only ? await albumAssets(only.album_id) : await allAssets(gallery);
+      if (picks) {
+        const mine = new Set(q.favMine.all(who.r).map(x => x.asset_id));
+        list = (await allAssets(gallery)).filter(a => mine.has(a.id));
+      } else if (wantIds) {
+        /* a hand-picked batch: only ids this gallery actually holds */
+        const want = new Set(String(wantIds).split(',').filter(x => /^[0-9a-f-]{36}$/i.test(x)));
+        list = (await allAssets(gallery)).filter(a => want.has(a.id));
+      }
+      if (!list.length) return json(res, 400, { error: 'nothing_selected' });
+      spec = { kind: 'adhoc', ids: list.map(a => a.id),
+               name: zipFileName(gallery, only, sets, picks ? 'favourites' : wantIds ? 'selection' : '') };
     }
-    if (!list.length) return json(res, 400, { error: 'nothing_selected' });
-    log(gallery, who.r, 'download_all', null, req, list.map(a => a.id));
-    const up = await immich('/api/download/archive', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ assetIds: list.map(a => a.id) }),
-    });
-    res.writeHead(up.status, {
-      'content-type': 'application/zip',
-      'content-disposition': `attachment; filename="${gallery.slug}.zip"`,
-      ...(up.headers.get('content-length') ? { 'content-length': up.headers.get('content-length') } : {}),
-    });
-    const reader = up.body.getReader();
-    for (;;) { const { done, value } = await reader.read(); if (done) break; res.write(Buffer.from(value)); }
-    return res.end();
+    const t = zipQueue.request(key, spec);
+    return json(res, 200, await zipInfo(gallery, t.id, key));
   }
+
+  if (rest === '/zip/status' && req.method === 'GET') {
+    const info = await zipInfo(gallery, String(url.searchParams.get('t') || ''), clientKey(gallery, who, req));
+    return info ? json(res, 200, info) : json(res, 404, { error: 'gone' });
+  }
+
+  if (rest === '/zip' && req.method === 'DELETE') {
+    zipQueue.cancel(String(url.searchParams.get('t') || ''), clientKey(gallery, who, req));
+    return json(res, 200, { ok: true });
+  }
+
+  const zset = rest.match(/^\/zip\/set\/(\d+)$/);
+  if (zset && (req.method === 'GET' || req.method === 'HEAD')) {
+    const st = setsOf(gallery).find(x => x.id === Number(zset[1]));
+    if (!st) return json(res, 404, { error: 'not_found' });
+    return sendZipSet(req, res, gallery, st, who, url);
+  }
+
+  const ztick = rest.match(/^\/zip\/t\/([0-9a-f]{24})$/);
+  if (ztick && req.method === 'GET') return sendZipAdhoc(req, res, gallery, who, ztick[1]);
 
   return json(res, 404, { error: 'not_found' });
 }
@@ -1298,7 +1403,7 @@ async function proxyImage(req, res, assetId, size, cache) {
   const want = size === 'web' ? 'preview' : size;
   const path = want === 'video'
     ? `/api/assets/${assetId}/video/playback`          /* the stream a browser can actually play */
-    : want === 'original'
+    : want === 'original' || want === 'video-orig'
       ? `/api/assets/${assetId}/original`
       : `/api/assets/${assetId}/thumbnail?size=${encodeURIComponent(want)}`;
 
@@ -1313,13 +1418,17 @@ async function proxyImage(req, res, assetId, size, cache) {
     'content-type': up.headers.get('content-type') || 'application/octet-stream',
     /* an asset's bytes never change for its id, so a repeat visit need not even ask.
        A cover is addressed by the gallery, not the asset, and can be swapped. */
-    'cache-control': cache || 'private, max-age=86400, immutable',
+    /* a video's encoded copy is replaced when the owner changes Immich's transcoding, so it is
+       always revalidated rather than pinned for a day */
+    'cache-control': cache || (want === 'video' || want === 'video-orig' ? 'private, no-cache' : 'private, max-age=86400, immutable'),
     'accept-ranges': up.headers.get('accept-ranges') || 'bytes',
   };
   for (const h of ['content-disposition', 'content-length', 'content-range']) {
     const v = up.headers.get(h); if (v) headers[h] = v;
   }
   if (size === 'web') headers['content-disposition'] = 'attachment';   /* a preview, offered as a file */
+  if (size === 'video-orig') delete headers['content-disposition'];    /* it plays inline, not as a save */
+  for (const h of ['etag', 'last-modified']) { const v = up.headers.get(h); if (v) headers[h] = v; }
   res.writeHead(up.status, headers);
   if (req.method === 'HEAD') return res.end();
 
@@ -1329,12 +1438,445 @@ async function proxyImage(req, res, assetId, size, cache) {
       const { done, value } = await reader.read();
       if (done || res.destroyed) break;
       /* respect backpressure, or a large file is buffered in memory on the way out */
-      if (!res.write(Buffer.from(value))) await new Promise(r => res.once('drain', r));
+      if (!res.write(Buffer.from(value))) await waitDrain(res);
     }
   } catch { /* the viewer closed the tab or skipped ahead */ }
   try { await reader.cancel(); } catch {}
   if (!res.destroyed) res.end();
 }
+
+/* ------------------------------------------------------------ prepared downloads
+   A set's zip is built ahead of time, kept on disk and served as a plain file (so a
+   dropped phone connection resumes). A queue in front of every full-size download keeps
+   the home uplink from being split twenty ways: a few run at speed, the rest wait. */
+const ZIP_DIR = CFG.zipDir || join(CFG.dataDir, 'zips');
+if (CFG.prezip && !existsSync(ZIP_DIR)) mkdirSync(ZIP_DIR, { recursive: true });
+const ZIP_FILE = /^\.?\d+-[0-9a-f]{16}\.zip(\.part)?$/;
+const zipPath = f => join(ZIP_DIR, f);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const zipQueue = new DownloadQueue({
+  maxActive: CFG.zipMaxActive, stallMs: CFG.zipStallSec * 1000,
+  isReady: spec => spec.kind !== 'set' || zipFresh(spec.setId),
+});
+const zipBuild = { todo: [], running: null, busy: false };
+const zipReaders = new Map();      /* file -> downloads reading it now */
+const zipDeferred = new Set();     /* replaced files waiting for their readers to finish */
+const zipGrants = new Map();       /* client -> the zip it was last let download, for resuming */
+
+const fingerprintOf = ids => createHash('sha256').update([...ids].sort().join(',')).digest('hex');
+
+/* the album's current photo ids, from the same short-lived cache the image gate uses */
+async function albumInfo(albumId) {
+  let c = albumSets.get(albumId);
+  if (!c || Date.now() - c.at > 120_000) {
+    const list = await albumAssets(albumId);
+    c = { ids: new Set(list.map(a => a.id)), at: Date.now() };
+    albumSets.set(albumId, c);
+  }
+  c.fp ??= fingerprintOf(c.ids);
+  return c;
+}
+
+function zipUnlink(file) {
+  if (!file) return;
+  if (zipReaders.get(file)) { zipDeferred.add(file); return; }   /* someone is mid-download: let them finish */
+  try { unlinkSync(zipPath(file)); } catch {}
+}
+function readerOpen(file) { zipReaders.set(file, (zipReaders.get(file) || 0) + 1); }
+function readerClose(file) {
+  const n = (zipReaders.get(file) || 1) - 1;
+  if (n > 0) { zipReaders.set(file, n); return; }
+  zipReaders.delete(file);
+  if (zipDeferred.delete(file)) zipUnlink(file);
+}
+
+const zipWanted = g => CFG.prezip && !!g.published_at && !isExpired(g) && !!g.allow_download;
+const zipHasFile = z => !!(z && z.status === 'ready' && z.file && existsSync(zipPath(z.file)));
+/* quick and synchronous, for the queue: is a finished, up-to-date file there? */
+function zipFresh(setId) {
+  const z = q.zipBySet.get(setId);
+  if (!zipHasFile(z)) return false;
+  const st = q.setById.get(setId);
+  const c = st && albumSets.get(st.album_id);
+  return !c?.fp || c.fp === z.fingerprint;
+}
+
+function zipRequestBuild(setId, urgent) {
+  const at = zipBuild.todo.findIndex(x => x.setId === setId);
+  if (at >= 0) { if (urgent) { const [x] = zipBuild.todo.splice(at, 1); zipBuild.todo.unshift(x); } }
+  else if (zipBuild.running?.setId !== setId) zipBuild.todo[urgent ? 'unshift' : 'push']({ setId });
+  zipWork();
+}
+async function zipWork() {
+  if (zipBuild.busy) return;
+  zipBuild.busy = true;
+  try {
+    while (zipBuild.todo.length) {
+      const { setId } = zipBuild.todo.shift();
+      try { await buildSetZip(setId); } catch (e) { console.error('zip build:', e.message); }
+      zipQueue.tick();
+    }
+  } finally { zipBuild.busy = false; }
+}
+
+function pickName(cd, fallback) {
+  let n = '';
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(cd || '');
+  if (star) { try { n = decodeURIComponent(star[1]); } catch {} }
+  if (!n) { const m = /filename\s*=\s*"?([^";]+)"?/i.exec(cd || ''); if (m) n = m[1]; }
+  n = n.replace(/[\\/\x00-\x1f]/g, '_').trim();
+  return n || fallback;
+}
+function uniqueName(used, name) {
+  const dot = name.lastIndexOf('.'), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+  let n = name, i = 2;
+  while (used.has(n.toLowerCase())) n = `${base} (${i++})${ext}`;
+  return n;
+}
+
+/* Keep the folder under its budget by dropping the zips nobody has used for longest.
+   An evicted zip is built again only if a client asks for it. */
+function zipEnsureSpace(need, keepSetId) {
+  const rows = q.zipEvery.all().filter(z => z.status === 'ready' && z.file);
+  let used = rows.reduce((n, z) => n + (z.bytes || 0), 0);
+  const free = () => { try { const f = statfsSync(ZIP_DIR); return f.bavail * f.bsize; } catch { return Infinity; } };
+  let room = free();
+  const over = () => used + need > CFG.zipMaxGb * 1e9 || room - need < CFG.zipMinFreeGb * 1e9;
+  const order = rows.filter(z => z.set_id !== keepSetId && !zipReaders.get(z.file))
+    .sort((a, b) => String(a.last_used_at || a.built_at).localeCompare(String(b.last_used_at || b.built_at)));
+  while (over() && order.length) {
+    const z = order.shift();
+    zipUnlink(z.file);
+    q.zipGone.run('evicted', Date.now(), z.set_id);
+    used -= z.bytes || 0; room += z.bytes || 0;
+    console.log(`zip: evicted ${z.slug} / ${z.set_name} to make room`);
+  }
+  if (over()) throw new Error('over_budget');
+}
+
+async function buildSetZip(setId) {
+  const st = q.setById.get(setId), g = st && q.gallById.get(st.gallery_id);
+  if (!g || !zipWanted(g)) return;
+  q.zipEnsure.run(g.id, st.id);
+  const before = q.zipBySet.get(st.id);
+  const ctl = new AbortController();
+  const run = zipBuild.running = { setId, done: 0, total: 0, ctl };
+  if (!zipHasFile(before)) q.zipState.run('building', null, Date.now(), st.id);
+  const t0 = Date.now();
+  let fh, part, name;
+  try {
+    const list = await albumAssets(st.album_id);
+    if (!list.length) throw new Error('empty set');
+    const fp = fingerprintOf(list.map(a => a.id));
+    /* the gate and the serve check read this cache: keep it in step with what is being zipped */
+    albumSets.set(st.album_id, { ids: new Set(list.map(a => a.id)), at: Date.now(), fp });
+    const sizes = await albumSizeMap(st.album_id).catch(() => new Map());
+    run.total = list.reduce((n, a) => n + (sizes.get(a.id) || 0), 0);
+    zipEnsureSpace(run.total * 1.01 + 1e6, st.id);
+
+    name = `${st.id}-${randomBytes(8).toString('hex')}.zip`;
+    part = zipPath('.' + name + '.part');
+    fh = await openFile(part, 'w+');
+    const w = createZipWriter(fh);
+    const used = new Set();
+    for (const a of list) {
+      let lastErr = null, ok = false;
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        if (ctl.signal.aborted) throw new Error('aborted');
+        const pc = new AbortController();
+        const stop = () => pc.abort();
+        ctl.signal.addEventListener('abort', stop, { once: true });
+        let idle;
+        const arm = () => { clearTimeout(idle); idle = setTimeout(stop, 60_000); };
+        try {
+          arm();
+          const r = await immich(`/api/assets/${a.id}/original`, { signal: pc.signal });
+          if (!r.ok) throw new Error(`immich ${r.status} for ${a.id}`);
+          const fname = uniqueName(used, pickName(r.headers.get('content-disposition'), a.id));
+          const len = Number(r.headers.get('content-length'));
+          let got = 0;
+          const body = (async function* () {
+            for await (const chunk of r.body) { arm(); got += chunk.length; yield chunk; }
+          })();
+          const { size } = await w.addEntry(fname, a.created ? new Date(a.created) : new Date(), len, body);
+          used.add(fname.toLowerCase());
+          run.done += size;
+          ok = true;
+        } catch (e) {
+          lastErr = ctl.signal.aborted ? new Error('aborted') : e;
+          if (ctl.signal.aborted) throw lastErr;
+          await sleep(1000 * (attempt + 1));
+        } finally { clearTimeout(idle); ctl.signal.removeEventListener('abort', stop); }
+      }
+      if (!ok) throw lastErr;
+    }
+    const bytes = await w.finish();
+    await fh.sync(); await fh.close(); fh = null;
+    if (ctl.signal.aborted) throw new Error('aborted');
+    renameSync(part, zipPath(name)); part = null;
+    const old = q.zipBySet.get(st.id);
+    const row = q.zipReady.run(name, fp, list.length, bytes, Date.now(), st.id);
+    if (!row.changes) { zipUnlink(name); return; }            /* the set was removed while this ran */
+    if (old?.file && old.file !== name) zipUnlink(old.file);
+    console.log(`zip: ${g.slug} / ${st.name}: ${list.length} photos, ${(bytes / 1e9).toFixed(2)} GB in ${Math.round((Date.now() - t0) / 1000)}s`);
+  } catch (e) {
+    try { await fh?.close(); } catch {}
+    if (part) { try { unlinkSync(part); } catch {} }
+    const cur = q.zipBySet.get(st.id);
+    if (cur) {
+      const keep = zipHasFile(cur);
+      if (e.message === 'aborted') { if (!keep) q.zipState.run('none', null, Date.now(), st.id); }
+      else {
+        if (!keep) q.zipState.run('failed', e.message.slice(0, 200), Date.now(), st.id);
+        console.error(`zip: ${g.slug} / ${st.name} failed: ${e.message}`);
+      }
+    }
+  } finally { zipBuild.running = null; }
+}
+
+/* Every few minutes: build what is missing, rebuild what changed once the photographer has
+   stopped adding, and drop the zips of anything that is no longer shared. */
+let zipSweeping = false, zipSweepTimer = null;
+async function zipSweep() {
+  if (!CFG.prezip || zipSweeping) return;
+  zipSweeping = true;
+  try {
+    for (const g of q.gallAll.all()) {
+      if (!zipWanted(g)) { dropZips(g.id); continue; }
+      for (const st of setsOf(g)) {
+        q.zipEnsure.run(g.id, st.id);
+        const z = q.zipBySet.get(st.id);
+        if (z.status === 'building' || z.status === 'evicted') continue;
+        if (z.status === 'failed' && Date.now() - z.updated_at < 3600_000) continue;
+        let info;
+        try { info = await albumInfo(st.album_id); } catch { continue; }
+        if (!info.ids.size) continue;
+        if (!zipHasFile(z)) { zipRequestBuild(st.id, false); continue; }
+        if (z.fingerprint === info.fp) continue;
+        /* the album changed: wait until it has held still, since photos arrive in batches */
+        if (z.seen_fp !== info.fp) q.zipSeen.run(info.fp, Date.now(), st.id);
+        else if (Date.now() - z.seen_at >= CFG.zipSettleMin * 60_000) zipRequestBuild(st.id, false);
+      }
+    }
+    zipCleanOrphans();
+  } finally { zipSweeping = false; }
+}
+function zipArmSweep() {
+  clearTimeout(zipSweepTimer);
+  zipSweepTimer = setTimeout(() => zipSweep().catch(e => console.error('zip sweep:', e.message)), 60_000);
+}
+
+/* files nothing refers to: leftovers from a crash or a removed gallery */
+function zipCleanOrphans(boot) {
+  let names; try { names = readdirSync(ZIP_DIR); } catch { return; }
+  const keep = new Set(q.zipEvery.all().map(z => z.file).filter(Boolean));
+  for (const f of names) {
+    if (!ZIP_FILE.test(f)) continue;                              /* never touch anything else in the folder */
+    if (f.endsWith('.part')) { if (boot) { try { unlinkSync(zipPath(f)); } catch {} } continue; }
+    if (!keep.has(f) && !zipReaders.get(f) && !zipDeferred.has(f)) { try { unlinkSync(zipPath(f)); } catch {} }
+  }
+}
+function zipRecover() {
+  if (!CFG.prezip) return;
+  for (const z of q.zipEvery.all()) {
+    if (z.status === 'building') q.zipState.run('none', null, Date.now(), z.set_id);
+    else if (z.status === 'ready' && !zipHasFile(z)) q.zipGone.run('none', Date.now(), z.set_id);
+  }
+  zipCleanOrphans(true);
+}
+
+/* forget a gallery's (or one set's) zips: unshared, deleted, or no longer allowed to download */
+function dropZips(gid, setId, status) {
+  const rows = setId ? [q.zipBySet.get(setId)].filter(Boolean) : q.zipForGallery.all(gid);
+  for (const z of rows) {
+    if (zipBuild.running?.setId === z.set_id) zipBuild.running.ctl.abort();
+    zipBuild.todo = zipBuild.todo.filter(x => x.setId !== z.set_id);
+    zipUnlink(z.file);
+    if (status) q.zipGone.run(status, Date.now(), z.set_id);
+    else q.zipDelSet.run(z.set_id);
+  }
+}
+
+/* ---- serving ---- */
+function clientKey(gallery, who, req) {
+  if (who.r) return `g${gallery.id}:r${who.r}`;
+  const tok = cookies(req)[`gs_${gallery.id}`] || '';
+  return `g${gallery.id}:a${createHash('sha256').update(tok + '|' + clientIp(req)).digest('hex').slice(0, 16)}`;
+}
+const zipDisposition = name => {
+  const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+};
+const zipFileName = (g, st, sets, extra) => {
+  const base = [g.title, sets.length > 1 && st ? st.name : '', extra].filter(Boolean).join(' - ');
+  return (base.replace(/[\\/:*?"<>|\x00-\x1f]+/g, '').trim() || g.slug) + '.zip';
+};
+
+/* bytes per second one download may use right now; 0 means no limit */
+function zipRate() {
+  const total = CFG.zipTotalMbit * 125_000, cap = CFG.zipRateMbit * 125_000;
+  const share = total ? total / Math.max(1, zipQueue.slots.size) : 0;
+  return cap ? (share ? Math.min(cap, share) : cap) : share;
+}
+function waitDrain(res, dead) {
+  return new Promise(resolve => {
+    const done = () => { clearInterval(iv); res.off('drain', done); res.off('close', done); resolve(); };
+    const iv = setInterval(() => { if (dead?.()) { res.destroy(); done(); } }, 5000);
+    res.once('drain', done); res.once('close', done);
+  });
+}
+/* write a stream to the client at the allowed pace, never faster than the client takes it */
+async function pump(res, source, slot) {
+  let sent = 0, next = Date.now();
+  for await (const chunk of source) {
+    if (res.destroyed || slot?.expired) break;
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (!res.write(buf)) await waitDrain(res, () => slot?.expired);
+    sent += buf.length;
+    if (slot) zipQueue.progress(slot);
+    const bps = zipRate();
+    if (bps) {
+      next = Math.max(next, Date.now()) + buf.length / bps * 1000;
+      const wait = next - Date.now();
+      if (wait > 5) await sleep(Math.min(wait, 2000));
+    }
+  }
+  return sent;
+}
+
+function parseRange(h, size) {
+  if (!h) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(h).trim());
+  if (!m || (m[1] === '' && m[2] === '')) return null;           /* several ranges, or nonsense: send it all */
+  let start, end;
+  if (m[1] === '') { const n = Number(m[2]); if (!n) return 'bad'; start = Math.max(0, size - n); end = size - 1; }
+  else { start = Number(m[1]); end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1); }
+  return start >= size || start > end ? 'bad' : { start, end };
+}
+
+/* where one set's zip stands for a client right now, starting a build if it is missing or stale */
+async function zipView(st) {
+  const z = q.zipBySet.get(st.id) || (q.zipEnsure.run(st.gallery_id, st.id), q.zipBySet.get(st.id));
+  const running = zipBuild.running?.setId === st.id ? zipBuild.running : null;
+  let info; try { info = await albumInfo(st.album_id); } catch { info = null; }
+  if (zipHasFile(z) && (!info || z.fingerprint === info.fp)) return { state: 'ready', z };
+  if (!running && !zipBuild.todo.some(x => x.setId === st.id)) {
+    if (z.status === 'failed' && Date.now() - z.updated_at < 300_000) return { state: 'adhoc', z };
+    zipRequestBuild(st.id, true);
+  }
+  return { state: 'building', z, progress: running ? { done: running.done, total: running.total } : null };
+}
+
+/* what the page needs to show: its place in line, or the link to start */
+async function zipInfo(g, id, key) {
+  let s = zipQueue.status(id, key);
+  if (!s) return null;
+  let view = null;
+  if (s.spec.kind === 'set') {
+    const st = q.setById.get(s.spec.setId);
+    view = st && await zipView(st);
+    if (!st || view.state === 'adhoc') {
+      /* could not be prepared ahead: fall back to building it as it is sent */
+      const ids = st ? [...(await albumInfo(st.album_id)).ids] : [];
+      zipQueue.request(key, { kind: 'adhoc', ids, name: s.spec.name });
+      s = zipQueue.status(id, key); view = null;
+      if (!s) return null;
+    }
+  }
+  const spec = s.spec, set = spec.kind === 'set';
+  const out = { ticket: id, active: s.active, maxActive: s.maxActive, position: s.position, ahead: s.ahead,
+                name: spec.name, resumable: set, building: null, url: null, bytes: null };
+  if (s.state === 'reserved') {
+    out.state = 'ready';
+    out.url = set ? `zip/set/${spec.setId}?t=${id}&v=${(view.z.fingerprint || '').slice(0, 8)}` : `zip/t/${id}`;
+    out.bytes = set ? view.z.bytes : null;
+  } else if (set && view.state === 'building') {
+    out.state = 'building'; out.building = view.progress;
+  } else out.state = 'queued';
+  return out;
+}
+
+async function sendZipSet(req, res, gallery, st, who, url) {
+  if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
+  const z = q.zipBySet.get(st.id);
+  if (!zipHasFile(z)) return json(res, 409, { error: 'not_ready' });
+  const size = z.bytes, file = z.file;
+  const etag = `"z${z.id}-${(z.fingerprint || '').slice(0, 16)}-${size}"`;
+  const key = clientKey(gallery, who, req);
+  const spec = { kind: 'set', setId: st.id };
+
+  let range = parseRange(req.headers.range, size);
+  if (range && req.headers['if-range'] && req.headers['if-range'] !== etag) range = null;   /* changed since: start over */
+  if (range === 'bad') { res.writeHead(416, { 'content-range': `bytes */${size}` }); return res.end(); }
+  const name = zipFileName(gallery, st, setsOf(gallery));
+  const base = {
+    'content-type': 'application/zip', 'content-disposition': zipDisposition(name),
+    'accept-ranges': 'bytes', etag, 'cache-control': 'private, no-store', 'x-accel-buffering': 'no',
+  };
+  const a = range ? range.start : 0, b = range ? range.end : size - 1;
+  const head = { ...base, 'content-length': b - a + 1, ...(range ? { 'content-range': `bytes ${a}-${b}/${size}` } : {}) };
+  if (req.method === 'HEAD') { res.writeHead(range ? 206 : 200, head); return res.end(); }
+
+  const tk = url.searchParams.get('t') || '';
+  let slot = tk ? zipQueue.claim(tk, key) : null;
+  if (!slot) {
+    const gr = zipGrants.get(key);
+    if (range && range.start > 0 && gr && gr.zipId === z.id && Date.now() - gr.at < 86_400_000) slot = zipQueue.resume(key, spec);
+  }
+  if (!slot && !tk) slot = zipQueue.claimDirect(key, spec);
+  if (!slot) return tk ? json(res, 410, { error: 'ticket_expired' })
+                       : json(res, 503, { error: 'busy' }, { 'retry-after': '30' });
+  let opened = false;
+  const finish = () => { zipQueue.release(slot); if (opened) readerClose(file); opened = false; };
+  try {
+    let info = null; try { info = await albumInfo(st.album_id); } catch { finish(); return json(res, 503, { error: 'immich_unavailable' }); }
+    if (info.fp !== z.fingerprint) { finish(); zipRequestBuild(st.id, true); return json(res, 409, { error: 'stale' }); }
+    readerOpen(file); opened = true;
+    zipGrants.set(key, { zipId: z.id, at: Date.now() });
+    if (zipGrants.size > 500) for (const [k, v] of zipGrants) if (Date.now() - v.at > 86_400_000) zipGrants.delete(k);
+    q.zipUsed.run(z.id);
+    if (!range || range.start === 0) log(gallery, who.r, 'download_all', null, req, [...info.ids]);
+    res.writeHead(range ? 206 : 200, head);
+    const t0 = Date.now();
+    const sent = await pump(res, createReadStream(zipPath(file), { start: a, end: b, highWaterMark: 262144 }), slot);
+    console.log(`zip: ${gallery.slug} sent ${(sent / 1e6).toFixed(0)} of ${((b - a + 1) / 1e6).toFixed(0)} MB in ${Math.round((Date.now() - t0) / 1000)}s${sent < b - a + 1 ? ' (stopped early)' : ''}`);
+    if (!res.destroyed) res.end();
+  } catch (e) {
+    console.error('zip send:', e.message);
+    if (!res.headersSent) json(res, 500, { error: 'send_failed' }); else res.destroy();
+  } finally { finish(); }
+}
+
+/* a selection (favourites, hand-picked) cannot be prepared ahead, so Immich builds it as it goes */
+async function sendZipAdhoc(req, res, gallery, who, id) {
+  const key = clientKey(gallery, who, req);
+  const slot = zipQueue.claim(id, key);
+  if (!slot) return json(res, 410, { error: 'ticket_expired' });
+  try {
+    if (slot.spec.kind !== 'adhoc') return json(res, 400, { error: 'wrong_kind' });
+    log(gallery, who.r, 'download_all', null, req, slot.spec.ids);
+    const up = await immich('/api/download/archive', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ assetIds: slot.spec.ids }),
+    });
+    if (!up.ok) return json(res, 502, { error: 'immich_failed' });
+    res.writeHead(200, {
+      'content-type': 'application/zip', 'content-disposition': zipDisposition(slot.spec.name || `${gallery.slug}.zip`),
+      'cache-control': 'private, no-store', 'x-accel-buffering': 'no',
+      ...(up.headers.get('content-length') ? { 'content-length': up.headers.get('content-length') } : {}),
+    });
+    await pump(res, up.body, slot);
+    if (!res.destroyed) res.end();
+  } catch (e) {
+    console.error('zip adhoc:', e.message);
+    if (!res.headersSent) json(res, 500, { error: 'send_failed' }); else res.destroy();
+  } finally { zipQueue.release(slot); }
+}
+
+const zipAdminDto = z => ({ setId: z.set_id, status: z.status, bytes: z.bytes, assets: z.assets, builtAt: z.built_at,
+  lastUsedAt: z.last_used_at, served: z.served, error: z.error,
+  building: zipBuild.running?.setId === z.set_id ? { done: zipBuild.running.done, total: zipBuild.running.total } : null });
 
 async function setsDto(g) {
   const out = [];
@@ -1358,6 +1900,7 @@ function gallDto(g) {
     registrations: q.regCount.get(g.id).n,
     views: q.evCount1.get(g.id, 'view').n,
     downloads: q.evCount1.get(g.id, 'download').n + q.evCount1.get(g.id, 'download_all').n,
+    zips: q.zipForGallery.all(g.id).map(zipAdminDto),
   };
 }
 
@@ -1433,6 +1976,7 @@ async function adminRoutes(req, res, path, url) {
 
     if (req.method === 'DELETE') {
       if (all.length < 2) return json(res, 400, { error: 'A gallery needs at least one set' });
+      dropZips(g.id, st.id);
       q.setDel.run(st.id);
       q.setsFor.all(g.id).forEach((x, k) => q.setPos.run(k, x.id));
       /* the cover may have been one of its photos */
@@ -1600,6 +2144,8 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { ok: true, ids, n: ids.length, skipped: asked.length - ids.length });
   }
 
+  if (path === '/api/admin/storage' && req.method === 'GET') return json(res, 200, await storageUsage());
+
   if (path === '/api/admin/albums') {
     const albums = await immichJson('/api/albums');
     return json(res, 200, albums.map(a => ({
@@ -1654,7 +2200,7 @@ async function adminRoutes(req, res, path, url) {
 
     if (req.method === 'GET') return json(res, 200, gallDto(g));
 
-    if (req.method === 'DELETE') { dropCoverFile(g); q.gallDel.run(g.id); return json(res, 200, { ok: true }); }
+    if (req.method === 'DELETE') { dropZips(g.id); dropCoverFile(g); q.gallDel.run(g.id); return json(res, 200, { ok: true }); }
 
     if (req.method === 'PATCH') {
       const b = await readJson(req);
@@ -1674,6 +2220,11 @@ async function adminRoutes(req, res, path, url) {
           b.published !== undefined ? (b.published ? (g.published_at || new Date().toISOString()) : null) : g.published_at,
           g.id);
       } catch (e) { return json(res, 409, { error: 'That web address is already taken' }); }
+      {
+        const now = q.gallById.get(g.id);
+        if (!zipWanted(now)) dropZips(g.id);
+        else if (b.published !== undefined || b.allowDownload !== undefined) zipArmSweep();
+      }
       if (b.password !== undefined) {
         if (b.password) { const salt = randomBytes(16).toString('hex'); q.gallPw.run(hashPw(String(b.password), salt), salt, g.id); }
         else q.gallPw.run(null, null, g.id);
@@ -1691,6 +2242,27 @@ async function adminRoutes(req, res, path, url) {
       }
       return json(res, 200, gallDto(q.gallById.get(g.id)));
     }
+  }
+
+  if (path === '/api/admin/zips' && req.method === 'GET') {
+    const rows = q.zipEvery.all();
+    let free = null; try { const f = statfsSync(ZIP_DIR); free = f.bavail * f.bsize; } catch {}
+    return json(res, 200, {
+      enabled: CFG.prezip, budgetBytes: CFG.zipMaxGb * 1e9,
+      usedBytes: rows.reduce((n, z) => n + (z.status === 'ready' ? z.bytes || 0 : 0), 0), freeBytes: free,
+      queue: zipQueue.snapshot(), totalMbit: CFG.zipTotalMbit,
+      zips: rows.map(z => ({ ...zipAdminDto(z), slug: z.slug, gallery: z.title, set: z.set_name })),
+    });
+  }
+  const zadm = path.match(/^\/api\/admin\/galleries\/(\d+)\/zips$/);
+  if (zadm && req.method === 'POST') {
+    const g = q.gallById.get(Number(zadm[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+    const act = (await readJson(req)).action;
+    if (act === 'delete') dropZips(g.id, null, 'evicted');       /* stays off until a client asks again */
+    else if (act === 'rebuild' && zipWanted(g)) for (const st of setsOf(g)) { q.zipEnsure.run(g.id, st.id); zipRequestBuild(st.id, true); }
+    else return json(res, 400, { error: 'bad_action' });
+    return json(res, 200, gallDto(q.gallById.get(g.id)));
   }
 
   if (path === '/api/admin/logs') {
@@ -1898,6 +2470,56 @@ async function adminRoutes(req, res, path, url) {
     return json(res, 200, { people: [...by.values()] });
   }
 
+  /* everyone who left an email: registered, downloaded, or either, across one gallery or all of
+     them; one row per address with the galleries it came from. ?format=csv for a file. */
+  /* hidden addresses stay in the database; they are only left out of the list, copy and CSV */
+  const hiddenSet = () => { try { return new Set(JSON.parse((q.setGet.get('hidden_contacts') || {}).value || '[]')); } catch { return new Set(); } };
+  if (path === '/api/admin/contacts/hide' && req.method === 'POST') {
+    const b = await readJson(req);
+    const set = hiddenSet();
+    for (const e of Array.isArray(b.emails) ? b.emails : []) {
+      const k = String(e).trim().toLowerCase(); if (!k) continue;
+      if (b.hidden === false) set.delete(k); else set.add(k);
+    }
+    q.setPut.run('hidden_contacts', JSON.stringify([...set]));
+    return json(res, 200, { hidden: set.size });
+  }
+  if (path === '/api/admin/contacts' && req.method === 'GET') {
+    const hid = hiddenSet(), showHidden = url.searchParams.get('hidden') === '1';
+    const gid = url.searchParams.get('gallery') === 'all' || !url.searchParams.get('gallery')
+      ? null : Number(url.searchParams.get('gallery'));
+    const who = ['registered', 'downloaded'].includes(url.searchParams.get('who')) ? url.searchParams.get('who') : 'any';
+    const rows = db.prepare(`
+      SELECT r.email, r.name, r.created_at AS reg_at, g.id AS gid, g.title,
+             (SELECT MAX(e.created_at) FROM events e WHERE e.reg_id = r.id AND e.type IN ('download','download_all')) AS dl_at
+        FROM registrations r JOIN galleries g ON g.id = r.gallery_id
+       WHERE (? IS NULL OR g.id = ?)
+       ORDER BY r.created_at DESC`).all(gid, gid);
+    const by = new Map();
+    for (const r of rows) {
+      const downloaded = !!r.dl_at;
+      if (who === 'downloaded' && !downloaded) continue;
+      const k = String(r.email).trim().toLowerCase();
+      if (!k || hid.has(k) !== showHidden) continue;
+      const c = by.get(k) || { email: k, name: null, galleries: [], downloaded: false, last: r.reg_at };
+      c.name = c.name || r.name || null;
+      if (!c.galleries.includes(r.title)) c.galleries.push(r.title);
+      c.downloaded = c.downloaded || downloaded;
+      if (r.reg_at > c.last) c.last = r.reg_at;
+      by.set(k, c);
+    }
+    const list = [...by.values()];
+    if (url.searchParams.get('format') === 'csv') {
+      /* a cell that starts with = + - @ would run as a formula in a spreadsheet */
+      const cell = v => { v = String(v ?? ''); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
+      const csv = ['Email,Name,Galleries,Downloaded,Last seen',
+        ...list.map(c => [c.email, c.name, c.galleries.join('; '), c.downloaded ? 'yes' : 'no', c.last].map(cell).join(','))].join('\r\n');
+      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="contacts.csv"' });
+      return res.end('﻿' + csv);
+    }
+    return json(res, 200, { contacts: list });
+  }
+
   const st = path.match(/^\/api\/admin\/galleries\/(\d+)\/stats$/);
   if (st) {
     const g = q.gallById.get(Number(st[1]));
@@ -1924,8 +2546,13 @@ syncAdminUser();
 seedTemplates();
 if (!q.admAny.get().n) console.warn('WARNING: no admin account. Set ADMIN_EMAIL and ADMIN_PASSWORD.');
 
+zipRecover();
+
 server.listen(CFG.port, '0.0.0.0', () => {
   console.log(`gallery app listening on ${CFG.port}; immich=${CFG.immichUrl}`);
+  console.log(CFG.prezip
+    ? `downloads: zips kept in ${ZIP_DIR} (up to ${CFG.zipMaxGb} GB), ${CFG.zipMaxActive} at a time, ${CFG.zipTotalMbit || 'unlimited'} Mbit/s shared`
+    : `downloads: prepared zips off, ${CFG.zipMaxActive} at a time`);
   console.log(`backups: ${CFG.backupDir ? CFG.backupDir + ' (keep ' + CFG.backupKeep + ')' : 'off - set BACKUP_DIR'}`);
   console.log(`admin sign-in: ${CFG.adminEmail || '(none)'}${CFG.admin2fa ? ' + emailed code' : ''}`);
   console.log(mailReady()
@@ -2125,5 +2752,12 @@ setInterval(() => runBackup(), 3600_000);
 /* expiry reminders: shortly after boot, then hourly */
 setTimeout(() => expirySweep().catch(e => console.error('sweep:', e.message)), 60_000);
 setInterval(() => expirySweep().catch(e => console.error('sweep:', e.message)), 3600_000);
+
+/* prepared zips: first look shortly after boot, then on a timer; a watchdog frees stuck download slots */
+if (CFG.prezip) {
+  setTimeout(() => zipSweep().catch(e => console.error('zip sweep:', e.message)), 90_000);
+  setInterval(() => zipSweep().catch(e => console.error('zip sweep:', e.message)), CFG.zipSweepMin * 60_000);
+}
+setInterval(() => zipQueue.tick(), 15_000);
 
 site.startJobs();

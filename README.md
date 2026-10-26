@@ -22,8 +22,9 @@ everything client-facing — the gallery page, who may see it, and what they did
 - **Two independent gates per gallery** — ask for an email, require a password, both, or neither
 - **Favourites** — clients pick their photos; you see each client's list, and they can download
   just those
-- **Downloads** — web size or full resolution per photo, the set or the picks as a zip, with
-  progress and a working cancel
+- **Downloads** — web size or full resolution per photo, and each set as a zip that is built ahead of
+  time and can resume if the connection drops. Only a few downloads run at once; the rest wait in
+  line with their place shown, so a big gallery cannot starve everyone else on a home connection
 - **Link previews** — a pasted gallery link shows its cover, title and date
 - **Save to Photos on iOS** — via the share sheet, not a file dumped into Downloads
 - **Activity** — who registered, who opened it, what was downloaded
@@ -121,6 +122,21 @@ JPEG, PNG, WebP, AVIF or GIF — HEIC is refused because browsers will not displ
 full-resolution export: anything over 2400px on its long edge is resized in the browser before it
 uploads, by canvas rather than a server-side image library. An image that is already web-sized goes
 up untouched, and a GIF is never redrawn, since it may be animated. Covers are included in the nightly backup.
+
+### Download zips and the queue
+
+Each set of a published gallery that allows downloads gets one zip, built in the background and kept in
+`ZIP_DIR` (default `DATA_DIR/zips`). It is a plain store-only zip written by the app itself, so it opens
+anywhere and can be served with HTTP Range: a phone that loses signal resumes instead of starting over.
+When photos are added or removed the zip is rebuilt once the set has held still for `ZIP_SETTLE_MINUTES`,
+and an out-of-date zip is never served. Zips are deleted when a gallery is unpublished, expires, is
+deleted or has downloads switched off, and the least recently used are removed past `ZIP_MAX_GB`.
+
+Favourites and hand-picked selections can't be prepared ahead, so Immich builds them as they are sent;
+they use the same queue. Up to `ZIP_MAX_ACTIVE` downloads run at once and share `ZIP_TOTAL_MBIT` of your
+upload speed; anyone else sees "You're 2nd in line" and starts automatically. The **Downloads** tab shows
+each set's zip and the queue. Keep `ZIP_DIR` on a local disk, not a network share. Set `PREZIP=off` to
+turn the prepared zips off and keep only the queue.
 
 ### Email
 

@@ -79,6 +79,21 @@ services:
       CF_PAGES_PROJECT: ""           # the Pages project name, e.g. my-portfolio
       SITE_URL: ""                   # https://example.com - for links and the uptime check
 
+      # --- downloads ---
+      # A set's zip is built ahead of time and kept on disk, so a download starts at once and
+      # can resume. Only a few downloads run at a time; the rest wait in line, so one big
+      # gallery cannot starve everyone else's thumbnails on a home connection.
+      PREZIP: "on"                  # "off" builds each zip as it is sent, still queued
+      ZIP_DIR: "/data/zips"         # point at a local disk with room; never inside a network share
+      ZIP_MAX_GB: "100"             # prepared zips are removed, least recently used first, past this
+      ZIP_MIN_FREE_GB: "50"         # and never fill the disk below this much free space
+      ZIP_MAX_ACTIVE: "3"           # downloads at once
+      ZIP_TOTAL_MBIT: "120"         # share this much of your upload between them (0 = unlimited)
+      ZIP_RATE_MBIT: "0"            # optional cap per download
+      ZIP_SWEEP_MINUTES: "15"       # how often to look for galleries that need a zip
+      ZIP_SETTLE_MINUTES: "10"      # wait this long after the photos stop changing before rebuilding
+      ZIP_STALL_SECONDS: "120"      # a download that moves nothing for this long gives up its place
+
       # --- client sessions ---
       SESSION_DAYS: "30"
     ports:

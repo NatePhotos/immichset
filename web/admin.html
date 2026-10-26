@@ -521,8 +521,9 @@ function boot(){
   renderNav();
   Promise.all([api("/galleries"), api("/albums")]).then(function(rs){
     S.galleries = rs[0].body || []; S.albums = rs[1].body || [];
-    curSection = SECTIONS[0].key;
-    SECTIONS[0].open();   /* the lowest-order section: Home (home.js) */
+    var first = sectionOf(savedSection()) || SECTIONS[0];   /* the lowest-order section is Home (home.js) */
+    setSection(first.key);
+    first.open();
   });
 }
 
@@ -539,6 +540,10 @@ function addSection(key, label, icon, open, leave, order){
   SECTIONS.sort(function(x, y){ return (x.order - y.order) || (x.n - y.n); });
   renderNav();
 }
+/* reloading the page reopens the section you were in, not Home */
+var SECKEY = "admin.section";
+function setSection(key){ curSection = key; try { sessionStorage.setItem(SECKEY, key); } catch(e){} }
+function savedSection(){ try { return sessionStorage.getItem(SECKEY); } catch(e){ return null; } }
 function sectionOf(key){ return SECTIONS.filter(function(s){ return s.key === key; })[0]; }
 /* Picking the section you are already in only runs its optional top() (Galleries: from a gallery
    or the editor back to the list); it never reopens it, so nothing typed there is lost. */
@@ -607,7 +612,7 @@ function closeHdrMenu(refocus){
 }
 function chrome(opts){
   closeHdrMenu();
-  if (opts.section) curSection = opts.section;
+  if (opts.section) setSection(opts.section);
   var back = opts.back || null, crumb = $("tCrumb");
   crumb.hidden = !opts.crumb;
   if (opts.crumb){
@@ -679,6 +684,7 @@ function listView(){
   if (!S.galleries.length){
     h += emptyState(EI_STACK, "Galleries you create show up here", "emptyNew", "Create your first gallery");
   } else {
+    h += '<div class="status" id="stTotal" style="margin-bottom:14px"></div>';
     h += '<div class="cards">' + S.galleries.map(function(g){
       var pill = g.expired ? '<span class="pill exp">Expired</span>'
                : g.publishedAt ? '<span class="pill live">Live</span>' : '<span class="pill draft">Draft</span>';
@@ -693,6 +699,7 @@ function listView(){
         + '<div class="phwrap">' + img + pill + '</div>'
         + '<div class="body"><h3>'+esc(g.title)+'</h3>'
         + statusLine(g)
+        + '<div class="status" data-size="'+g.id+'"></div>'
         + (tags.length ? '<div class="tags">'+tags.join("")+'</div>' : '')
         + '</div></div>';
     }).join("") + '</div>';
@@ -711,6 +718,19 @@ function listView(){
     };
   });
   if ($("emptyNew")) $("emptyNew").onclick = function(){ editorView(null); };
+  if (S.galleries.length) showStorage();
+}
+/* sizes come from Immich and can take a moment on a big library, so the list paints first */
+function showStorage(){
+  api("/storage").then(function(r){
+    if (!r.ok || !r.body || !$("stTotal")) return;
+    var u = r.body;
+    $("stTotal").textContent = gb(u.totalBytes) + " across all galleries" + (u.unreadable ? " (some albums could not be read)" : "");
+    Array.prototype.forEach.call(document.querySelectorAll("[data-size]"), function(e){
+      var x = u.galleries[e.dataset.size];
+      if (x) e.textContent = gb(x.bytes) + " \u00b7 " + x.photos + (x.photos === 1 ? " file" : " files");
+    });
+  });
 }
 
 /* ---------- gallery detail shell ---------- */
@@ -738,7 +758,7 @@ function openGallery(id, tab, pane){
   var g = S.galleries.filter(function(x){return x.id===id;})[0];
   if (!g) return listView();
   S.g = g; S.editing = false; S.tab = tab || "photos"; S.pane = pane || firstPane(S.tab);
-  curSection = "galleries";
+  setSection("galleries");
   galleryChrome(g);
   renderShell();
 }
@@ -870,10 +890,14 @@ function paneAccess(g){
     + tog("fPub","Published","Draft galleries return “not found” to anyone with the link.",!!g.publishedAt)
     + '<div class="field" style="margin-top:22px"><label>Password</label>'
     +   '<input type="password" id="fPw" placeholder="'+(g.hasPassword?"•••••••• (unchanged)":"No password")+'">'
-    +   '<div class="hint">'+(g.hasPassword?'Type a new one to change it, or <button type="button" class="link" id="clearPw" style="padding:0">remove it</button>.':'Leave empty for no password.')+'</div></div>'
-    + '<button class="btn" id="saveAcc">Save changes</button>';
+    +   '<div class="hint">'+(g.hasPassword?'Type a new one to change it.':'Leave empty for no password.')+'</div></div>'
+    + (g.hasPassword ? '<button class="btn sm ghost" id="clearPw" type="button" style="margin:0 0 24px">Remove password</button>' : '')
+    + '<div><button class="btn" id="saveAcc">Save changes</button></div>';
   var cleared = false;
-  if ($("clearPw")) $("clearPw").onclick = function(){ cleared = true; $("fPw").value=""; toast("Password will be removed on save"); };
+  if ($("clearPw")) $("clearPw").onclick = function(){
+    if (!confirm("Remove the password?\n\nAnyone with the link will be able to open this gallery without one.")) return;
+    save({ password: "" }, "Password removed").then(function(ok){ if (ok) renderShell(); });
+  };
   $("saveAcc").onclick = function(){
     var patch = { requireEmail:$("fEmail").checked, allowDownload:$("fDl").checked, published:$("fPub").checked };
     if ($("fPw").value) patch.password = $("fPw").value; else if (cleared) patch.password = "";
@@ -905,7 +929,9 @@ function paneCover(g){
     +     '<div><div class="focout tall" id="focTall"></div><span>On a phone</span></div>'
     +   '</div>'
     + '</div>'
-    + '<button class="btn sm" id="saveFoc" style="margin-top:14px">Save focal point</button>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
+    +   '<button class="btn sm" id="saveFoc">Save focal point</button>'
+    +   '<button class="btn sm ghost" id="resetFoc" type="button">Reset to centre</button></div>'
     + '<h3 class="sec" style="margin-top:34px">Or pick one from the album</h3>'
     + (own ? '<p class="hint" style="margin:0 0 12px">Your uploaded image is being used. Remove it to go back to a photo from the album.</p>' : '')
     + '<div class="picker" id="picker"><div class="spin"></div></div>'
@@ -962,6 +988,7 @@ function paneCover(g){
     if (im){ if (im.complete) paintFocus(); im.addEventListener("load", paintFocus); }
     paintFocus();
   })();
+  $("resetFoc").onclick = function(){ focus = [50, 50]; paintFocus(); };   /* centred again; Save keeps it */
   $("saveFoc").onclick = function(){
     save({coverFocus: focus[0] + " " + focus[1]}, "Focal point saved")
       .then(function(ok){ if (ok) renderShell(); });   /* the strip and the card follow it */
@@ -1006,6 +1033,10 @@ function paneCover(g){
    already has a decoder and an encoder; the alternative is a server-side image library,
    which this app deliberately does without. */
 var COVER_EDGE = 2400, COVER_EASY = 1200000;
+function gb(n){
+  return n >= 1073741824 ? (n/1073741824).toFixed(n >= 10737418240 ? 1 : 2) + " GB"
+       : n >= 1048576 ? Math.round(n/1048576) + " MB" : n > 0 ? "<1 MB" : "0 MB";
+}
 function mb(n){ return n >= 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.round(n/1024) + " KB"; }
 function fitCover(file){
   /* a GIF may be animated, and redrawing it would keep only the first frame */
@@ -1705,7 +1736,36 @@ function panePicks(g){
 
 function paneDownloads(g){
   $("pane").innerHTML = head("Downloads", "Which photos each client saved. Zips list the photos they contained.")
-    + '<div id="dls"><div class="spin"></div></div>';
+    + '<div id="zipbox"></div><div id="dls"><div class="spin"></div></div>';
+  /* the ready-made zips: what is on disk, how it is doing, and who is downloading right now */
+  function gb(n){ return n >= 1e9 ? (n/1e9).toFixed(2) + " GB" : Math.max(1, Math.round(n/1e6)) + " MB"; }
+  function zipBox(){
+    api("/zips").then(function(r){
+      var box = $("zipbox"); if (!box || !r.ok || !r.body) return;
+      var z = r.body, mine = (z.zips || []).filter(function(x){ return x.slug === g.slug; });
+      if (!z.enabled) return (box.innerHTML = '<p class="hint">Prepared zips are off (PREZIP=off); downloads are built as they are sent.</p>');
+      var q = z.queue || {};
+      var h = '<div class="pick"><div class="pickhead"><b>Prepared zips</b><span class="pn">'
+        + q.active + ' of ' + q.maxActive + ' downloading' + (q.waiting ? ' · ' + q.waiting + ' waiting' : '')
+        + ' · ' + gb(z.usedBytes) + ' of ' + gb(z.budgetBytes) + ' used</span></div>';
+      if (!mine.length) h += '<p class="hint" style="margin:10px 0 0">None yet. A zip is built for each part of a published gallery that allows downloads.</p>';
+      mine.forEach(function(x){
+        var what = x.status === "ready" ? gb(x.bytes) + ' · ' + x.assets + ' photos · built ' + fmtWhen(x.builtAt) + ' · sent ' + x.served + '\u00d7'
+          : x.status === "building" ? 'building' + (x.building && x.building.total ? ' ' + Math.min(99, Math.round(x.building.done / x.building.total * 100)) + '%' : '\u2026')
+          : x.status === "failed" ? 'failed: ' + esc(x.error || "unknown")
+          : x.status === "evicted" ? 'removed to save space; built again if someone asks' : 'not built yet';
+        h += '<p class="hint" style="margin:10px 0 0"><b>' + esc(x.set) + '</b> \u2014 ' + what + '</p>';
+      });
+      if (mine.length) h += '<p style="margin:12px 0 0"><button class="btn sm ghost sec" id="zRebuild">Rebuild now</button> '
+        + '<button class="btn sm ghost sec" id="zDelete">Delete zips</button></p>';
+      box.innerHTML = h + '</div>';
+      var rb = $("zRebuild"), dl = $("zDelete");
+      if (rb) rb.onclick = function(){ post("/galleries/"+g.id+"/zips", {action:"rebuild"}).then(function(){ toast("Rebuilding"); setTimeout(zipBox, 800); }); };
+      if (dl) dl.onclick = function(){ post("/galleries/"+g.id+"/zips", {action:"delete"}).then(function(){ toast("Zips deleted"); zipBox(); }); };
+      if (mine.some(function(x){ return x.status === "building"; })) setTimeout(function(){ if ($("zipbox")) zipBox(); }, 3000);
+    });
+  }
+  zipBox();
   api("/galleries/"+g.id+"/downloads").then(function(r){
     if (!r.ok) return ($("dls").innerHTML = '<p class="empty">Couldn\'t load downloads.</p>');
     var people = (r.body && r.body.people) || [];
@@ -1876,6 +1936,87 @@ function kitOpenGallery(id, tab, pane){
   });
 }
 function kitNewGallery(){ leaveFor("galleries"); editorView(null); }
+/* ---------- contacts: the addresses collected so far, ready for a mailing ---------- */
+var CT = { seq:0, gallery:"all", who:"all", hidden:false, list:[], sel:{} };
+function contactsQs(extra){
+  return "?gallery=" + encodeURIComponent(CT.gallery) + "&who=" + (CT.who === "downloaded" ? "downloaded" : "registered")
+       + (CT.hidden ? "&hidden=1" : "") + (extra || "");
+}
+function ctPicked(){ return CT.list.filter(function(c){ return CT.sel[c.email]; }).map(function(c){ return c.email; }); }
+function ctCopy(text, n){
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function(){ toast("Copied " + n + (n === 1 ? " address" : " addresses")); })
+    .catch(function(){
+      var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast("Copied " + n + (n === 1 ? " address" : " addresses")); } catch(e){ toast("Couldn’t copy"); }
+      ta.remove();
+    });
+}
+function contactsView(){
+  var seq = ++CT.seq;
+  chrome({ title:"Contacts", summary:"Everyone who left an email address", section:"contacts", actions:[] });
+  var opts = '<option value="all">All galleries</option>' + S.galleries.map(function(g){
+    return '<option value="'+g.id+'"'+(String(g.id) === String(CT.gallery) ? " selected" : "")+'>'+esc(g.title)+'</option>'; }).join("");
+  $("root").innerHTML = '<div class="wrap" style="padding-top:26px">'
+    + '<p class="lede" style="color:var(--muted);font-size:13px;line-height:1.6;max-width:620px;margin:0 0 20px">'
+    +   'Addresses are collected when someone registers to view a gallery. Tick the ones you want, then copy them into your mail app’s Bcc line '
+    +   'or download a spreadsheet. Each address appears once. Hiding one only leaves it out of this list; it is not deleted.</p>'
+    + '<div class="row2" style="margin-bottom:18px"><div class="field"><label>Gallery</label><select id="ctG">'+opts+'</select></div>'
+    +   '<div class="field"><label>Who</label><select id="ctW">'
+    +     '<option value="all"'+(CT.who === "all" ? " selected" : "")+'>Everyone who registered</option>'
+    +     '<option value="downloaded"'+(CT.who === "downloaded" ? " selected" : "")+'>Only people who downloaded</option></select></div></div>'
+    + '<div id="ctOut"><div class="spin"></div></div></div>';
+  $("ctG").onchange = function(){ CT.gallery = this.value; CT.sel = {}; contactsView(); };
+  $("ctW").onchange = function(){ CT.who = this.value; CT.sel = {}; contactsView(); };
+  api("/contacts" + contactsQs()).then(function(r){
+    if (seq !== CT.seq || curSection !== "contacts") return;
+    var out = $("ctOut");
+    if (!r.ok){ out.innerHTML = '<p class="empty">Couldn’t load the list. Try again.</p>'; return; }
+    CT.list = r.body.contacts || [];
+    var keep = {}; CT.list.forEach(function(c){ if (CT.sel[c.email]) keep[c.email] = true; }); CT.sel = keep;
+    paintContacts();
+  }).catch(function(){ if (seq === CT.seq && $("ctOut")) $("ctOut").innerHTML = '<p class="empty">Couldn’t reach the server.</p>'; });
+}
+function paintContacts(){
+  var out = $("ctOut"); if (!out) return;
+  var n = CT.list.length, picked = ctPicked(), k = picked.length;
+  var toggle = '<button class="btn sm ghost" id="ctHidden" type="button">'+(CT.hidden ? "Back to the list" : "Show hidden")+'</button>';
+  if (!n){
+    out.innerHTML = '<p class="empty">'+(CT.hidden ? "Nothing is hidden." : "Nobody here yet.")+'</p><div style="margin-top:14px">'+toggle+'</div>';
+    $("ctHidden").onclick = function(){ CT.hidden = !CT.hidden; CT.sel = {}; contactsView(); };
+    return;
+  }
+  var all = k === n;
+  out.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">'
+    + '<button class="btn sm" id="ctCopy" type="button">'+(k ? "Copy "+k+" selected" : "Copy all "+n)+'</button>'
+    + '<button class="btn sm ghost" id="ctHide" type="button"'+(k ? "" : " disabled")+'>'+(CT.hidden ? "Unhide" : "Hide")+(k ? " "+k : "")+'</button>'
+    + '<a class="btn sm ghost" id="ctCsv" href="/api/admin/contacts'+contactsQs("&format=csv")+'" download="contacts.csv">Download CSV</a>'
+    + toggle + '</div>'
+    + '<div class="scroll"><table><tr><th style="width:34px"><input type="checkbox" id="ctAll" aria-label="Select all"'+(all ? " checked" : "")+'></th>'
+    + '<th>Email</th><th>Name</th><th>Galleries</th><th>Downloaded</th></tr>'
+    + CT.list.map(function(c){ return '<tr><td><input type="checkbox" class="ctRow" data-e="'+esc(c.email)+'" aria-label="Select '+esc(c.email)+'"'
+        + (CT.sel[c.email] ? " checked" : "")+'></td><td>'+esc(c.email)+'</td><td>'+esc(c.name||"—")+'</td><td class="muted">'
+        + esc(c.galleries.join(", "))+'</td><td class="muted">'+(c.downloaded ? "Yes" : "")+'</td></tr>'; }).join("")
+    + '</table></div>';
+  $("ctAll").onchange = function(){ CT.sel = {}; if (this.checked) CT.list.forEach(function(c){ CT.sel[c.email] = true; }); paintContacts(); };
+  Array.prototype.forEach.call(document.querySelectorAll(".ctRow"), function(b){
+    b.onchange = function(){ if (this.checked) CT.sel[this.dataset.e] = true; else delete CT.sel[this.dataset.e]; paintContacts(); };
+  });
+  $("ctCopy").onclick = function(){
+    var pick = k ? picked : CT.list.map(function(c){ return c.email; });
+    ctCopy(pick.join(", "), pick.length);
+  };
+  $("ctHide").onclick = function(){
+    var emails = ctPicked(); if (!emails.length) return;
+    post("/contacts/hide", { emails: emails, hidden: !CT.hidden }).then(function(r){
+      if (!r.ok) return toast("Couldn’t save that");
+      toast(CT.hidden ? "Unhidden" : "Hidden — find them under Show hidden");
+      CT.sel = {}; contactsView();
+    });
+  };
+  $("ctHidden").onclick = function(){ CT.hidden = !CT.hidden; CT.sel = {}; contactsView(); };
+}
+addSection("contacts", "Contacts", IC.users, contactsView, function(){ CT.seq++; }, 25);
+
 window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC,
   goSection:goSection, openGallery:kitOpenGallery, openNewGallery:kitNewGallery, coverCss:coverCss,
   galleryById:function(id){ return S.galleries.filter(function(x){ return x.id === id; })[0] || null; } };

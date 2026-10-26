@@ -51,6 +51,16 @@ button{font-family:inherit;cursor:pointer}
 .gate-box input{width:100%;padding:14px 16px;border:1px solid var(--line);background:transparent;font-family:inherit;font-size:15px;outline:none;text-align:center;letter-spacing:.04em}
 .gate-box input:focus{border-color:var(--page-fg)}
 .gate-box button{width:100%;margin-top:12px;padding:14px;border:none;background:var(--page-fg);color:#fff;font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase}
+.gate-x{position:absolute;top:calc(14px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));width:44px;height:44px;display:none;place-items:center;
+  border:0;background:none;color:var(--page-fg);opacity:.7;border-radius:50%;cursor:pointer;padding:0}
+.gate-x:hover{opacity:1;background:rgba(0,0,0,.06)}
+#gate.dismissible .gate-x{display:grid}
+.gate-field{position:relative}
+.gate-box .gate-eye{position:absolute;right:4px;top:0;bottom:0;width:auto;margin:0;padding:0 14px;background:none;color:var(--muted);
+  font-size:11px;font-weight:600;letter-spacing:.12em;cursor:pointer}
+.gate-box .gate-eye:hover{color:var(--page-fg)}
+.gate-box[data-kind=password] .gate-field input{padding-right:70px}
+.gate-box:not([data-kind=password]) .gate-eye{display:none}
 .gate-err{color:#c0392b;font-size:12.5px;margin-top:14px;min-height:18px;letter-spacing:.02em}
 
 /* ---------- cover ---------- */
@@ -175,6 +185,17 @@ footer a:hover{color:var(--page-fg)}
 @media(max-width:700px){#lb .mbar{display:flex}}
 .mbtn{padding:12px 20px;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;font-size:11px;letter-spacing:.16em;text-transform:uppercase;border-radius:2px}
 
+/* ---------- video quality ---------- */
+#lbQ{width:auto;padding:0 14px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;border:1px solid rgba(255,255,255,.4);border-radius:999px;height:34px;display:none;white-space:nowrap}
+#lbQ.on{display:block}
+#lbQm{position:absolute;z-index:4;top:calc(56px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));display:none;min-width:190px;
+  background:#1b1b1b;color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 14px 40px rgba(0,0,0,.5);padding:6px}
+#lbQm.on{display:block}
+#lbQm button{display:block;width:100%;text-align:left;border:0;background:none;color:inherit;font:inherit;font-size:13px;padding:12px 14px;cursor:pointer}
+#lbQm button:hover{background:rgba(255,255,255,.1)}
+#lbQm button.on:after{content:"\2713";float:right}
+#lbQm small{display:block;opacity:.6;font-size:11px;margin-top:2px}
+
 /* ---------- progress modal ---------- */
 #prog{position:fixed;inset:0;z-index:80;background:rgba(12,12,12,.72);backdrop-filter:blur(3px);display:none;place-items:center;padding:24px}
 #prog.on{display:grid}
@@ -188,10 +209,23 @@ footer a:hover{color:var(--page-fg)}
 .pstat{margin-top:14px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);min-height:16px}
 .pcancel{margin-top:24px;padding:11px 26px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;transition:color .2s,border-color .2s}
 .pcancel:hover{color:var(--page-fg);border-color:var(--page-fg)}
+.pgo{display:none;margin:24px 8px 0 0;padding:11px 26px;border:1px solid var(--page-fg);background:var(--page-fg);color:var(--page-bg);font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase}
+#prog.ready .pgo{display:inline-block}
+#prog.ready .pbar{display:none}
+.pgo+.pcancel{margin-top:24px}
 
 /* ---------- toast ---------- */
 #toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,16px);background:#111;color:#fff;padding:13px 22px;font-size:12px;letter-spacing:.09em;z-index:70;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;max-width:88vw;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- back to top ---------- */
+#toTop{position:fixed;right:calc(18px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);padding:0;
+  background:rgba(255,255,255,.94);color:var(--page-fg);box-shadow:0 4px 16px rgba(0,0,0,.16);cursor:pointer;z-index:40;
+  display:grid;place-items:center;opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity .25s,transform .25s,visibility .25s}
+#toTop.on{opacity:1;visibility:visible;transform:none}
+#toTop:hover{border-color:var(--page-fg)}
+#toTop svg{display:block}
+@media(max-width:700px){#toTop{right:calc(14px + env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));width:48px;height:48px}}
 </style>
 </head>
 <body>
@@ -199,10 +233,14 @@ footer a:hover{color:var(--page-fg)}
 <div id="boot"><div class="spin"></div></div>
 
 <div id="gate">
+  <button type="button" class="gate-x" id="gateX" aria-label="Close"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
   <form class="gate-box" id="gateForm">
     <h1 id="gateTitle">Private Gallery</h1>
     <p id="gateSub">Enter the password you were given</p>
-    <input id="gatePw" type="password" autocomplete="current-password" placeholder="Password" autofocus>
+    <div class="gate-field">
+      <input id="gatePw" type="password" autocomplete="current-password" placeholder="Password" autofocus>
+      <button type="button" class="gate-eye" id="gateEye" aria-label="Show password" aria-pressed="false">SHOW</button>
+    </div>
     <button type="submit" id="gateBtn">Enter</button>
     <div class="gate-err" id="gateErr"></div>
   </form>
@@ -243,6 +281,7 @@ footer a:hover{color:var(--page-fg)}
 <div id="lb">
   <div class="bar">
     <div class="idx" id="lbIdx"></div>
+    <button class="ibtn" id="lbQ" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Video quality"></button>
     <button class="ibtn" id="lbFav" title="Favourite" aria-label="Favourite">
       <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg>
     </button>
@@ -253,6 +292,7 @@ footer a:hover{color:var(--page-fg)}
       <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
     </button>
   </div>
+  <div id="lbQm" role="menu"></div>
   <div class="stage" id="lbStage"></div>
   <button class="nav prev" id="lbPrev">&#8249;</button>
   <button class="nav next" id="lbNext">&#8250;</button>
@@ -268,11 +308,12 @@ footer a:hover{color:var(--page-fg)}
     <p id="progMsg">Large galleries can take a few minutes. Please keep this page open.</p>
     <div class="pbar"><i id="progBar"></i></div>
     <div class="pstat" id="progStat">Starting\u2026</div>
-    <button class="pcancel" id="progCancel">Cancel</button>
+    <button class="pgo" id="progGo">Start download</button><button class="pcancel" id="progCancel">Cancel</button>
   </div>
 </div>
 
 <div id="toast"></div>
+<button id="toTop" type="button" aria-label="Back to top"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button>
 
 <script>
 (function(){
@@ -316,7 +357,7 @@ function progOpen(title, msg, onCancel){
   $("prog").classList.add("on");
   $("progCancel").onclick = function(){ if (onCancel) onCancel(); progClose(); };
 }
-function progClose(){ $("prog").classList.remove("on"); $("progCancel").onclick = null; }
+function progClose(){ $("prog").classList.remove("on", "ready"); $("progCancel").onclick = null; $("progGo").onclick = null; }
 function progSet(loaded, total){
   var bar = document.querySelector(".pbar");
   if (total > 0){
@@ -444,9 +485,12 @@ function notFound(r){
 
 /* ---------- password ---------- */
 function showGate(kind){
+  $("gate").classList.remove("dismissible");     /* only a heart's email prompt can be closed; the door cannot */
   $("boot").classList.add("hide");
   $("gate").classList.add("on");
   $("gate").dataset.kind = kind;
+  $("gateForm").dataset.kind = kind;
+  gateEye(false);
   if (kind === "email"){
     $("gateTitle").textContent = link && link.title ? link.title : "View this gallery";
     $("gateSub").textContent = "Enter your email to view these photos";
@@ -467,6 +511,19 @@ function showGate(kind){
   setTimeout(function(){ $("gatePw").focus(); }, 60);
 }
 
+function gateEye(show){
+  var i = $("gatePw"), b = $("gateEye");
+  if ($("gateForm").dataset.kind === "password") i.type = show ? "text" : "password";
+  b.textContent = show ? "HIDE" : "SHOW";
+  b.setAttribute("aria-pressed", show ? "true" : "false");
+  b.setAttribute("aria-label", show ? "Hide password" : "Show password");
+}
+$("gateEye").addEventListener("click", function(){ gateEye($("gatePw").type === "password"); $("gatePw").focus(); });
+function gateClose(){ $("gate").classList.remove("on","dismissible"); favPending = null; }
+$("gateX").addEventListener("click", gateClose);
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape" && $("gate").classList.contains("dismissible")) { e.stopPropagation(); gateClose(); }
+}, true);
 $("gateForm").addEventListener("submit", function(e){
   e.preventDefault();
   var kind = $("gate").dataset.kind;
@@ -520,6 +577,7 @@ function toggleFav(id, el){
       favPending = id;
       showGate("email");
       $("gateSub").textContent = "Enter your email so your picks are saved against your name";
+      $("gate").classList.add("dismissible");
       return;
     }
     if (!r.ok) return toast("Couldn't save that pick");
@@ -810,7 +868,7 @@ function open(i){
   show();
 }
 function close(){
-  stopSlides();
+  stopSlides(); vqSeq++; vqMenuClose();
   $("lb").classList.remove("vis");
   setTimeout(function(){ $("lb").classList.remove("on"); $("lbStage").innerHTML=""; document.body.classList.remove("lb-open"); }, 260);
   unlockScroll();
@@ -821,6 +879,7 @@ function show(){
   $("lbIdx").textContent = (cur+1) + " / " + view.length;
   $("lbFav").classList.toggle("on", !!favs[a.id]);
   var st = $("lbStage"); st.innerHTML = "";
+  vqMenuClose(); $("lbQ").classList.remove("on");
   if (a.isImage){
     var im = document.createElement("img");
     im.src = imgUrl(a.id, "thumbnail");
@@ -835,14 +894,108 @@ function show(){
     });
   } else {
     var v = document.createElement("video");
-    /* `video` is Immich's playback stream, served with range support, so it starts
-       and seeks instead of pulling the whole file down first */
-    v.src = BASE + "/img/" + a.id + "?size=video";
+    /* both streams support range requests, so a video starts and seeks instead of pulling the
+       whole file down first. `video` is Immich's playback copy (smaller once it has been
+       transcoded); `video-orig` is the original file and follows the download rule. */
     v.poster = imgUrl(a.id, "preview");
     v.controls = true; v.autoplay = true; v.playsInline = true; v.preload = "metadata";
     st.appendChild(v);
+    vqStart(v, a);
   }
 }
+/* ---------- video quality: Auto / Data saver / Original ---------- */
+var VQ = { small:"Data saver", orig:"Original", auto:"Auto" }, vqSeq = 0, vqNow = "small", vqEl = null;
+function vqCanOrig(){ return !link || link.allowDownload !== false; }
+function vqPref(){
+  var p = null; try { p = localStorage.getItem("vq"); } catch(e){}
+  if (!vqCanOrig()) return "small";
+  return p === "small" || p === "orig" ? p : "auto";
+}
+function vqLabel(pref){ return pref === "auto" ? "Auto \u00b7 " + VQ[vqNow] : VQ[pref]; }
+function vqSet(v, which){
+  if (vqNow === which && v.getAttribute("src")) return;
+  var t = v.currentTime || 0, paused = v.paused, a = view[cur];
+  vqNow = which;
+  v.src = imgUrl(a.id, which === "orig" ? "video-orig" : "video");
+  v.addEventListener("loadedmetadata", function(){
+    try { if (t > 0) v.currentTime = t; } catch(e){}
+    if (!paused) { var pr = v.play(); if (pr && pr.catch) pr.catch(function(){}); }
+  }, {once:true});
+  vqPaint();
+}
+function vqPaint(){
+  var b = $("lbQ"); b.textContent = vqLabel(vqPref());
+}
+function vqStart(v, a){
+  var seq = ++vqSeq, pref = vqPref(), b = $("lbQ");
+  vqEl = v; vqMenuClose();
+  b.classList.toggle("on", vqCanOrig());       /* with downloads off there is only one quality to offer */
+  vqNow = pref === "orig" ? "orig" : "small";
+  v.src = imgUrl(a.id, vqNow === "orig" ? "video-orig" : "video");
+  vqPaint();
+  if (pref !== "auto") return;
+  /* Auto: play the light stream straight away, then time a slice of the original and move up
+     only if the connection comfortably outruns its bitrate. It steps down, never up, if
+     playback then stalls. */
+  var c = navigator.connection || {};
+  if (c.saveData || /^(slow-2g|2g|3g)$/.test(c.effectiveType || "")) return;
+  var ctl = window.AbortController ? new AbortController() : null, timer = setTimeout(function(){ if (ctl) ctl.abort(); }, 3000);
+  var t0 = Date.now(), ou = imgUrl(a.id, "video-orig"), su = imgUrl(a.id, "video");
+  function head(u, r){ return fetch(u, {credentials:"same-origin", headers:{range:r}, signal: ctl ? ctl.signal : undefined}); }
+  function total(r){ return Number((/\/(\d+)$/.exec(r.headers.get("content-range") || "") || [])[1] || 0); }
+  Promise.all([head(ou, "bytes=0-262143"), head(su, "bytes=0-0")]).then(function(rs){
+    var ro = rs[0], rsm = rs[1];
+    if (!ro.ok && ro.status !== 206) return null;
+    return ro.arrayBuffer().then(function(buf){
+      return { bytes: buf.byteLength, ms: Date.now() - t0, big: total(ro), small: total(rsm) };
+    });
+  }).catch(function(){ return null; }).then(function(m){
+    clearTimeout(timer);
+    if (!m || seq !== vqSeq || vqPref() !== "auto") return;
+    if (!m.big || m.big === m.small) return;                 /* no lighter copy exists: nothing to switch to */
+    var go = function(){
+      var dur = v.duration;
+      if (!dur || !isFinite(dur)) return;
+      var need = m.big * 8 / dur, have = m.bytes * 8 / Math.max(m.ms, 1) * 1000;
+      if (have >= need * 1.5 && seq === vqSeq && vqPref() === "auto") { vqSet(v, "orig"); watch(); }
+    };
+    if (v.readyState >= 1) go(); else v.addEventListener("loadedmetadata", go, {once:true});
+  });
+  function watch(){
+    var stalls = [];
+    v.addEventListener("waiting", function onw(){
+      if (seq !== vqSeq || vqNow !== "orig" || vqPref() !== "auto") { v.removeEventListener("waiting", onw); return; }
+      var now = Date.now(); stalls = stalls.filter(function(x){ return now - x < 30000; }); stalls.push(now);
+      if (stalls.length >= 2) { v.removeEventListener("waiting", onw); vqSet(v, "small"); }
+    });
+  }
+}
+function vqMenuClose(){ $("lbQm").classList.remove("on"); $("lbQ").setAttribute("aria-expanded","false"); }
+$("lbQ").addEventListener("click", function(e){
+  e.stopPropagation();
+  var m = $("lbQm");
+  if (m.classList.contains("on")) { vqMenuClose(); return; }
+  var pref = vqPref();
+  m.innerHTML = ["auto","small","orig"].filter(function(k){ return k === "small" || vqCanOrig(); }).map(function(k){
+    var sub = k === "auto" ? "Picks for your connection" : k === "small" ? "Lighter, plays on mobile data" : "Full file, needs a fast connection";
+    return '<button type="button" role="menuitem" data-q="'+k+'"'+(k === pref ? ' class="on"' : '')+'>'+VQ[k]+'<small>'+sub+'</small></button>';
+  }).join("");
+  m.classList.add("on"); this.setAttribute("aria-expanded","true");
+});
+$("lbQm").addEventListener("click", function(e){
+  var bt = e.target.closest("button[data-q]"); if (!bt) return;
+  e.stopPropagation();
+  var k = bt.getAttribute("data-q");
+  try { localStorage.setItem("vq", k); } catch(er){}
+  vqMenuClose();
+  vqSeq++;                                              /* a probe still running no longer applies */
+  var v = vqEl, a = view[cur];
+  if (!v || !a || !v.isConnected) return;
+  if (k === "auto") { var t = v.currentTime, paused = v.paused; vqStart(v, a);
+    v.addEventListener("loadedmetadata", function(){ try { if (t > 0) v.currentTime = t; } catch(er){} if (!paused) { var pr = v.play(); if (pr && pr.catch) pr.catch(function(){}); } }, {once:true}); }
+  else vqSet(v, k);
+});
+document.addEventListener("click", function(){ vqMenuClose(); });
 function step(d){ if (!view.length) return; cur = (cur + d + view.length) % view.length; show(); }
 $("lbPrev").addEventListener("click", function(){ step(-1); });
 $("lbNext").addEventListener("click", function(){ step(1); });
@@ -1036,8 +1189,18 @@ function dlOne(size){
 }
 
 /* two sizes, because a client on a phone rarely wants the twenty-megabyte one */
+/* A video has no "web size": that copy is a still frame, which is how a download came back as a
+   .jpg. There is one choice, the file itself, and it goes straight to the browser's own
+   downloader - a video can be a gigabyte, too much to hold in the page's memory as a blob. */
+function dlVideo(a){
+  var el = document.createElement("a");
+  el.href = imgUrl(a.id, "original"); el.download = "";
+  document.body.appendChild(el); el.click(); el.remove();
+  toast("Download started");
+}
 function dlMenu(anchor){
   var old = $("dlpop"); if (old){ old.remove(); return; }
+  var cv = view[cur]; if (cv && !cv.isImage) return dlVideo(cv);
   var m = document.createElement("div");
   m.id = "dlpop"; m.className = "dlpop";
   m.innerHTML = '<button data-s="web">Web size<small>Quick, good for sharing</small></button>'
@@ -1063,6 +1226,23 @@ $("mDl").addEventListener("click", function(){ dlMenu($("mDl")); });
 /* mobile: Web Share API -> iOS share sheet -> Save Image */
 function shareOne(){
   var a = view[cur]; if (!a) return;
+  /* The share sheet needs the whole file as a blob in memory. A long video is a gigabyte, which
+     is more than a phone tab survives (it shows "Can't open this page"), so a big one goes to the
+     browser's own downloader instead and the person adds it to Photos from Files. */
+  if (!a.isImage && !shareCache[a.id]){
+    fetch(imgUrl(a.id, "original"), {credentials:"same-origin", headers:{range:"bytes=0-0"}}).then(function(r){
+      var m = /\/(\d+)$/.exec(r.headers.get("content-range") || "");
+      var big = !m || Number(m[1]) > 150 * 1048576;
+      if (big){
+        dlVideo(a);
+        toast("Large video \u2014 saving to Downloads. Open Files to add it to Photos");
+      } else shareFile(a);
+    }).catch(function(){ shareFile(a); });
+    return;
+  }
+  shareFile(a);
+}
+function shareFile(a){
   var cached = shareCache[a.id];
   if (cached && navigator.canShare && navigator.canShare({files:[cached]})) {
     navigator.share({files:[cached]}).catch(function(e){
@@ -1094,36 +1274,95 @@ function shareOne(){
 }
 $("mSave").addEventListener("click", shareOne);
 
-/* whole gallery as a zip */
+/* whole gallery as a zip. The server prepares it ahead of time and lets a few people download
+   at once, so this asks, shows where we are in line, and hands the browser a plain link:
+   the browser's own downloader then shows progress, and can resume if the connection drops. */
+function ordinal(n){ var v = n % 100; return n + (["th","st","nd","rd"][(v - 20) % 10] || ["th","st","nd","rd"][v] || "th"); }
+function startLink(url){
+  var el = document.createElement("a");
+  el.href = url; el.download = "";
+  document.body.appendChild(el); el.click(); el.remove();
+}
 $("btnAll").addEventListener("click", function(){
   if (!view.length || $("btnAll").hasAttribute("disabled")) return;
-  var ids = view.map(function(a){ return a.id; });
-  /* with more than one part on offer, "download all" means the part being viewed;
-     while the list is filtered to favourites, it means those */
   var sets = (link && link.sets) || [];
-  var here = sets.filter(function(x){ return x.id === curSet; })[0];
-  var zipName = ((album.albumName || "gallery")
-                  + (favOnly ? " - Favourites" : (sets.length > 1 && here ? " - " + here.name : "")))
-                  .replace(/[^\w\- ]+/g, "") + ".zip";
+  var qs = favOnly ? "?picks=1" : (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : "");
+  var ticket = null, timer = null, stopped = false, tries = 0;
 
-  progOpen("Preparing your download",
-           "We're packaging " + ids.length + " photos. Large galleries can take a few minutes \u2014 please keep this page open.",
-           function(){ if (dlAbort) dlAbort.abort(); });
+  function end(){ stopped = true; clearTimeout(timer); progClose(); }
+  function cancel(){
+    if (ticket) fetch(BASE + "/zip?t=" + ticket, {method:"DELETE", credentials:"include"}).catch(function(){});
+    end();
+  }
+  function show(info){
+    var bar = document.querySelector(".pbar");
+    $("prog").classList.remove("ready");
+    if (info.state === "building"){
+      $("progTitle").textContent = "Preparing your download";
+      $("progMsg").textContent = "We're packing the photos into one file. This only happens the first time. Please keep this page open.";
+      var b = info.building;
+      if (b && b.total > 0){
+        bar.classList.remove("indet");
+        $("progBar").style.width = Math.min(100, b.done / b.total * 100) + "%";
+        $("progStat").textContent = Math.min(99, Math.round(b.done / b.total * 100)) + "%";
+      } else { bar.classList.add("indet"); $("progStat").textContent = "Starting\u2026"; }
+    } else if (info.state === "queued"){
+      $("progTitle").textContent = "You\u2019re in line";
+      $("progMsg").textContent = "Downloads start one at a time so each one runs at full speed. Please keep this page open.";
+      bar.classList.add("indet");
+      $("progStat").textContent = "You\u2019re " + ordinal(info.position || 1) + " in line";
+    }
+  }
+  function ready(info){
+    end();
+    toast("Your download is starting \u2014 check your browser\u2019s downloads list");
+    startLink(BASE + "/" + info.url);
+  }
+  function handle(info){
+    if (stopped) return;
+    ticket = info.ticket;
+    if (info.state === "ready"){
+      /* the browser only allows a download from a real tap, so after a wait we ask for one */
+      if (tries === 0) return ready(info);
+      $("prog").classList.add("ready");
+      $("progTitle").textContent = "Your download is ready";
+      $("progMsg").textContent = info.bytes ? "About " + mb(info.bytes) + ". Tap to start it." : "Tap to start it.";
+      $("progStat").textContent = "";
+      $("progGo").onclick = function(){ ready(info); };
+      return;
+    }
+    show(info);
+    timer = setTimeout(poll, 3000);
+  }
+  function poll(){
+    tries++;
+    fetch(BASE + "/zip/status?t=" + ticket, {credentials:"include"}).then(function(r){
+      if (r.status === 404) return post();           /* our place was given up; join the line again */
+      if (!r.ok) throw new Error("http " + r.status);
+      return r.json().then(handle);
+    }).catch(function(){ if (!stopped) timer = setTimeout(poll, 5000); });
+  }
+  function post(){
+    return fetch(BASE + "/zip" + qs, {method:"POST", credentials:"include"}).then(function(r){
+      if (!r.ok) throw new Error("http " + r.status);
+      return r.json();
+    }).then(handle).catch(function(){
+      if (stopped) return;
+      end(); toast("Download failed \u2014 please try again");
+    });
+  }
 
-  /* ask Immich how big it will be, so the bar is meaningful */
-  fetchProgress(BASE + "/zip" + (favOnly ? "?picks=1"
-                  : (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : "")),
-                {method:"POST"}, progSet)
-   .then(function(o){
-     progClose();
-     saveBlob(o.blob, zipName);
-     toast("Download started");
-   }).catch(function(e){
-     progClose();
-     if (e && e.name === "AbortError") { toast("Download cancelled"); return; }
-     toast("Download failed \u2014 please try again");
-   });
+  progOpen("Preparing your download", "Checking on your download\u2026", cancel);
+  post();
 });
+
+(function(){
+  var b = document.getElementById("toTop"), on = false;
+  function upd(){ var v = (window.pageYOffset || document.documentElement.scrollTop) > 700; if (v !== on){ on = v; b.classList.toggle("on", v); } }
+  window.addEventListener("scroll", upd, {passive:true});
+  b.addEventListener("click", function(){ window.scrollTo({top:0, behavior:"smooth"}); });
+  upd();
+})();
 
 })();
 </script>

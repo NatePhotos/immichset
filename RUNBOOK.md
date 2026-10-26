@@ -29,6 +29,7 @@ nothing without a session.
 | File | What it is |
 |---|---|
 | `server.mjs` | The whole server. Node built-ins only — `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
+| `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`). |
 | `web/index.html` | The client gallery. One file: markup, CSS, script. |
 | `web/admin.html` | The admin panel. Same. |
 
@@ -106,6 +107,16 @@ hand.
 
 Then the certificate: `echo | openssl s_client -connect <host>:443 2>/dev/null |
 openssl x509 -noout -dates`.
+
+### Downloads are slow, or "you're Nth in line" for a long time
+
+Full-gallery downloads are limited by your upload speed, not by the NAS. `GET /api/admin/zips` (or the
+Downloads tab) shows what is running and waiting. Raise `ZIP_MAX_ACTIVE` only if your uplink can carry
+more; lower `ZIP_TOTAL_MBIT` to leave more room for browsing. A zip that shows "failed" is retried hourly,
+or on **Rebuild now**; "over_budget" means `ZIP_MAX_GB` or `ZIP_MIN_FREE_GB` leaves no room, and that
+download is built as it is sent instead. If the reverse proxy buffers responses (nginx: `proxy_buffering off`),
+it will drain a zip into its own storage and bypass the speed limit; the app sends `X-Accel-Buffering: no`
+to prevent that.
 
 ### Photos do not load but the page does
 

@@ -271,7 +271,7 @@ try {
 
   section('photos');
   const first = () => assets[0].id;
-  for (const [size, label] of [['thumbnail', 'grid'], ['preview', 'viewer'], ['web', 'web download'], ['original', 'full download']]) {
+  for (const [size, label] of [['thumbnail', 'grid'], ['preview', 'viewer'], ['web', 'web download'], ['original', 'full download'], ['video-orig', 'full-quality playback']]) {
     await check(`serves the ${label} size`, async () => {
       /* ask for the first kilobyte: an original can be a gigabyte of video, and
          pulling it down every run would make this unrunnable */
@@ -356,6 +356,64 @@ try {
     await patch(`/api/admin/galleries/${galleryId}`, { allowDownload: false });
     const r = await clientFetch(`/api/g/${SLUG}/img/${first()}?size=original`);
     is(r.status, 403, 'status');
+    await patch(`/api/admin/galleries/${galleryId}`, { allowDownload: true });
+  });
+
+  section('downloads as zips');
+  const zipPost = async (qs = '') => (await clientJson(`/api/g/${SLUG}/zip${qs}`, { method: 'POST' })).body;
+  let zipInfo = null;
+  await check('a whole-gallery download is prepared, then offered as a link', async () => {
+    zipInfo = await zipPost();
+    ok(['building', 'queued', 'ready'].includes(zipInfo.state), `state ${zipInfo.state}`);
+    for (let i = 0; i < 240 && zipInfo.state !== 'ready'; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      zipInfo = (await clientJson(`/api/g/${SLUG}/zip/status?t=${zipInfo.ticket}`)).body;
+      ok(zipInfo && zipInfo.state, 'ticket vanished while waiting');
+    }
+    is(zipInfo.state, 'ready', 'state');
+    ok(zipInfo.url, 'no link in a ready answer');
+  });
+  await check('the zip is a real archive that can be resumed', async () => {
+    const head = await clientFetch(`/api/g/${SLUG}/${zipInfo.url}`, { headers: { range: 'bytes=0-3' } });
+    is(head.status, 206, 'range status');
+    is(head.headers.get('accept-ranges'), 'bytes', 'accept-ranges');
+    ok(!!head.headers.get('etag'), 'no etag');
+    const total = Number(/\/(\d+)$/.exec(head.headers.get('content-range') || '')?.[1]);
+    ok(total > 22, 'no total in content-range');
+    is(Buffer.from(await head.arrayBuffer()).toString('latin1'), 'PK\x03\x04', 'start of archive');
+    const tail = await clientFetch(`/api/g/${SLUG}/${zipInfo.url}`, { headers: { range: 'bytes=-22' } });
+    is(tail.status, 206, 'tail status');
+    is(Buffer.from(await tail.arrayBuffer()).readUInt32LE(0), 0x06054b50, 'end record');
+    if (zipInfo.bytes) is(total, zipInfo.bytes, 'size matches what was promised');
+  });
+  await check('a prepared zip is not reachable without a session', async () => {
+    const r = await fetch(`${BASE}/api/g/${SLUG}/${zipInfo.url}`);
+    ok([401, 404].includes(r.status), `status ${r.status}`);
+    await r.arrayBuffer();
+  });
+  await check('a selection is built as it is sent and counted as a download', async () => {
+    const info = await zipPost(`?ids=${first()}`);
+    is(info.resumable, false, 'selections cannot resume');
+    ok(info.state === 'ready' && /zip\/t\//.test(info.url), `state ${info.state}`);
+    const r = await clientFetch(`/api/g/${SLUG}/${info.url}`);
+    is(r.status, 200, 'status');
+    is(Buffer.from(await r.arrayBuffer()).subarray(0, 2).toString(), 'PK', 'archive');
+    const again = await clientFetch(`/api/g/${SLUG}/${info.url}`);
+    is(again.status, 410, 'a ticket works once');
+    await again.arrayBuffer();
+  });
+  await check('the admin can see the prepared zips and the queue', async () => {
+    const z = await adminJson('/api/admin/zips');
+    ok(typeof z.maxActive === 'number' || typeof z.queue?.maxActive === 'number', 'no queue figures');
+    ok(Array.isArray(z.zips), 'no zip list');
+  });
+  await check('with downloads off nothing is offered and the zip is removed', async () => {
+    await patch(`/api/admin/galleries/${galleryId}`, { allowDownload: false });
+    const r = await clientFetch(`/api/g/${SLUG}/zip`, { method: 'POST' });
+    is(r.status, 403, 'status');
+    await r.arrayBuffer();
+    const z = await adminJson('/api/admin/zips');
+    ok(!z.zips.some(x => x.slug === SLUG), 'zip still listed');
     await patch(`/api/admin/galleries/${galleryId}`, { allowDownload: true });
   });
 
