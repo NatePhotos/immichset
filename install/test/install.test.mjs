@@ -183,3 +183,15 @@ test('commands outside an install folder say so', () => {
   const r = s.run(['status', '--dir', s.dir]);
   assert.notEqual(r.status, 0); assert.match(r.stderr, /isn't an immichset install folder/);
 });
+
+test('it refuses a folder that already holds other files, and keeps a copy of itself in its own folder', () => {
+  const s = sandbox();
+  mkdirSync(s.dir); writeFileSync(join(s.dir, 'my-project.txt'), 'mine');
+  const r = s.run(bundled(s));
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /already has files/);
+  assert.ok(!existsSync(join(s.dir, '.install-state')) && !existsSync(join(s.dir, 'docker-compose.yml')));
+  const ok = sandbox(); assert.equal(ok.run(bundled(ok)).status, 0);
+  assert.ok(existsSync(join(ok.dir, 'install.sh')), 'install.sh is copied next to the install');
+  assert.equal(ok.run(['update', '--dir', ok.dir]).status, 0);
+});

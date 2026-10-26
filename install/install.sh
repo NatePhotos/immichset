@@ -158,6 +158,10 @@ do_install() {
   step "Where things go"
   BASE_DEFAULT=$(default_base)
   [ -n "$DIR" ] || { ask "Install folder" "$BASE_DEFAULT"; DIR="$ANSWER"; }
+  # Never install on top of a folder that already holds someone's files (only our own install folder is fine)
+  if [ -d "$DIR" ] && [ ! -f "$DIR/.install-state" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
+    die "$DIR already has files in it that aren't from this installer, and I won't mix with them. Choose an empty or new folder (for example $HOME/immichset-app) and run this again."
+  fi
   UPLOAD="${PHOTOS:-}"; DBF="${DBDIR:-}"
   if [ "$WANT_IMMICH" = yes ]; then
     [ -n "$UPLOAD" ] || { ask "Folder for your photos (use your biggest disk; back it up)" "$DIR/library"; UPLOAD="$ANSWER"; }
@@ -196,6 +200,8 @@ do_install() {
 
   step "Setting up $DIR"
   mkdir -p "$DIR" "$DATA" "$BACKUPS" || die "Couldn't create $DIR. On a NAS, run with sudo, or pick a folder you own."
+  # keep a copy of this script in the install folder so "sh install.sh update" works from there
+  if [ -f "$0" ] && [ "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" != "$DIR/install.sh" ]; then cp "$0" "$DIR/install.sh" 2>/dev/null || true; fi
   if [ "$WANT_IMMICH" = yes ]; then
     mkdir -p "$UPLOAD" "$DBF" || die "Couldn't create your photo folders."
     fetch "$SRC_IMMICH/docker-compose.yml" "$DIR/docker-compose.yml"
@@ -269,8 +275,11 @@ NOTES
 
 # ------------------------------------------------------------------ the other commands
 find_dir() {
-  [ -n "$DIR" ] || DIR="$(pwd)"
-  [ -f "$DIR/.install-state" ] || die "This isn't an immichset install folder ($DIR). Run this from inside it, or pass --dir."
+  if [ -z "$DIR" ]; then
+    DIR="$(pwd)"
+    if [ ! -f "$DIR/.install-state" ]; then detect_platform; d=$(default_base); if [ -f "$d/.install-state" ]; then DIR="$d"; fi; fi
+  fi
+  [ -f "$DIR/.install-state" ] || die "This isn't an immichset install folder ($DIR). Run this from inside the folder you installed into, or pass --dir /path/to/it."
 }
 do_tunnel() {
   find_dir; need_docker
