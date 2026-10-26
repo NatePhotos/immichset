@@ -1607,7 +1607,7 @@ async function proxyImage(req, res, assetId, size, cache) {
      which, for a file of any size, looks exactly like a gallery that won't load. */
   const range = req.headers.range;
   const up = await immich(path, range ? { headers: { range } } : {});
-  if (!up.ok) { res.writeHead(up.status); return res.end(); }
+  if (!up.ok) { res.writeHead(up.status, { 'cache-control': 'no-store' }); return res.end(); }
 
   const headers = {
     'content-type': up.headers.get('content-type') || 'application/octet-stream',

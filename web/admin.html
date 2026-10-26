@@ -402,6 +402,21 @@ function post(p,d,m){ return api(p,{method:m||"POST",headers:{"Content-Type":"ap
 function fmtDate(iso){ if(!iso) return ""; var d=new Date(iso); return isNaN(d)?"":d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}); }
 function fmtWhen(s){ if(!s) return ""; var d=new Date(String(s).replace(" ","T")+"Z"); return isNaN(d)?s:d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
 function imgSrc(id,size){ return id ? "/api/admin/img/"+id+"?size="+(size||"thumbnail") : ""; }
+/* A photo added a moment ago may not have a thumbnail yet, or Immich may be too busy making hundreds
+   to answer at once. A CSS background cannot say it failed, so each tile loads through an image that
+   can be asked again, a little later each time, and the picture is put on the tile once it arrives. */
+function paintThumbs(root){
+  Array.prototype.forEach.call(root.querySelectorAll(".p[data-id]"), function(el){
+    if (el.dataset.t) return; el.dataset.t = "1";
+    var id = el.dataset.id, tries = 0;
+    (function go(){
+      var im = new Image(), src = imgSrc(id) + (tries ? "&r=" + tries : "");
+      im.onload = function(){ el.style.backgroundImage = "url('" + src + "')"; };
+      im.onerror = function(){ if (++tries <= 8) setTimeout(go, Math.min(20000, 1500 * tries * tries)); };
+      im.src = src;
+    })();
+  });
+}
 /* every cover in the panel is cropped the same way the client's is, or the focal
    point is something you set blind and only see on the gallery itself */
 function coverCss(g){
@@ -542,7 +557,13 @@ function addSection(key, label, icon, open, leave, order){
 }
 /* reloading the page reopens the section you were in, not Home */
 var SECKEY = "admin.section";
-function setSection(key){ curSection = key; try { sessionStorage.setItem(SECKEY, key); } catch(e){} }
+/* the browser tab says where you are: the section, and the gallery or page inside it, so several
+   tabs of the panel can be told apart */
+function setTabTitle(extra){
+  var sec = sectionOf(curSection);
+  document.title = (extra ? extra + " \u00b7 " : "") + (sec ? sec.label : "Admin");
+}
+function setSection(key){ curSection = key; try { sessionStorage.setItem(SECKEY, key); } catch(e){} setTabTitle(); }
 function savedSection(){ try { return sessionStorage.getItem(SECKEY); } catch(e){ return null; } }
 function sectionOf(key){ return SECTIONS.filter(function(s){ return s.key === key; })[0]; }
 /* Picking the section you are already in only runs its optional top() (Galleries: from a gallery
@@ -622,6 +643,7 @@ function chrome(opts){
   $("tBar").classList.toggle("hascrumb", !!(opts.crumb && back));
   $("tBar").classList.toggle("hasback", !!back);
   $("tTitle").textContent = opts.title;
+  setTabTitle(opts.gallery && opts.gallery.title ? opts.gallery.title : (opts.crumb ? opts.title : ""));
   $("tSub").textContent = opts.summary || opts.sub || "";
   $("backBtn").hidden = !back;
   $("backBtn").onclick = back;
@@ -941,8 +963,9 @@ function paneCover(g){
   api("/albums/"+g.albumId+"/assets?sort=" + (g.sortOrder || "newest")).then(function(r){
     var list = (r.body && r.body.assets) || [];
     $("picker").innerHTML = list.map(function(a){
-      return '<div class="p'+(a.id===cover?" on":"")+'" data-id="'+a.id+'" style="background-image:url(\''+imgSrc(a.id)+'\')"></div>';
+      return '<div class="p'+(a.id===cover?" on":"")+'" data-id="'+a.id+'"></div>';
     }).join("") || '<p class="empty" style="padding:8px">This album has no photos.</p>';
+    paintThumbs($("picker"));
     Array.prototype.forEach.call($("picker").querySelectorAll(".p"), function(el){
       el.onclick = function(){ cover = el.dataset.id;
         Array.prototype.forEach.call($("picker").querySelectorAll(".p"), function(x){ x.classList.toggle("on", x===el); }); };
@@ -1376,13 +1399,14 @@ function paneSet(g, setId){
     gridEl.className = "grid dropzone" + (chosen().length ? " picking" : "");
     gridEl.innerHTML = list.map(function(a){
       return '<div class="p' + (sel[a.id] ? " on" : "") + (a.id===S.g.coverAssetId ? " cov" : "") + '" data-id="' + a.id
-           + '" style="background-image:url(\'' + imgSrc(a.id) + '\')">'
+           + '">'
            + '<span class="tick" data-act="sel" title="Select"></span>'
            + '<button class="dots" data-act="menu" title="More">⋮</button>'
            + (a.isImage ? '' : '<span class="vbadge">▶</span>')
            + '</div>';
     }).join("") || emptyState(EI_PHOTO, "Add photos to this set", "emptyAdd", S.caps && S.caps.upload ? "Add photos" : "");
     if ($("emptyAdd")) $("emptyAdd").onclick = function(ev){ ev.stopPropagation(); $("pick").click(); };
+    paintThumbs(gridEl);
     gridEl.onclick = function(ev){
       if (busy) return;
       var el = ev.target.closest(".p"); if (!el) return;

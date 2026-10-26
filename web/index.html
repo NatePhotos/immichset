@@ -754,7 +754,13 @@ function drain(){
     if (!im.dataset.src) return;
     var r = im.getBoundingClientRect();
     im.fetchPriority = (r.bottom > 0 && r.top < vh) ? "high" : "low";
-    im.src = im.dataset.src;
+    var src = im.dataset.src, tries = 0;
+    im.onerror = function(){
+      /* a photo added a moment ago may not have its thumbnail yet: ask again, a little later each time */
+      if (++tries > 6) { im.onerror = null; return; }
+      setTimeout(function(){ im.src = src + (src.indexOf("?") < 0 ? "?" : "&") + "r=" + tries; }, 1200 * tries * tries);
+    };
+    im.src = src;
     delete im.dataset.src;
   });
   if (pending.length) setTimeout(drain, 60);
