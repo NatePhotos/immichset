@@ -18,7 +18,7 @@ docker compose logs --tail 50 immichset
 
 ## The setup page won't open
 
-- Use the address the installer printed, for example `http://192.168.1.20:3000/setup`, from a device on the same Wi-Fi.
+- Use the address the installer printed, which is different on every computer (for example `http://192.168.1.20:3000/setup`), from a device on the same Wi-Fi.
 - `localhost` only works on the same computer that runs it.
 - The **setup code** is in the log (`docker compose logs immichset`).
 - Behind a tunnel? Setup refuses the internet by design. Finish it from home.

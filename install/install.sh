@@ -81,8 +81,13 @@ timezone() {
 }
 lan_ip() {
   ip=""
-  if command -v hostname >/dev/null 2>&1; then ip=$(hostname -I 2>/dev/null | awk '{print $1}') || ip=""; fi
-  if [ -z "$ip" ] && command -v ipconfig >/dev/null 2>&1; then ip=$(ipconfig getifaddr en0 2>/dev/null) || ip=""; fi
+  # Linux: the address used to reach the internet is the home-network one (not Docker's or Tailscale's)
+  if command -v ip >/dev/null 2>&1; then ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}') || ip=""; fi
+  # Mac: Wi-Fi is usually en0, a wired connection en1 or en2
+  if [ -z "$ip" ] && command -v ipconfig >/dev/null 2>&1; then
+    for n in en0 en1 en2 en3; do ip=$(ipconfig getifaddr "$n" 2>/dev/null) || ip=""; [ -n "$ip" ] && break; done
+  fi
+  if [ -z "$ip" ] && command -v hostname >/dev/null 2>&1; then ip=$(hostname -I 2>/dev/null | awk '{print $1}') || ip=""; fi
   echo "${ip:-localhost}"
 }
 random32() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 32 || true; }
@@ -256,6 +261,7 @@ NOTES
   CODE=""; if [ -r "$DATA/setup-code.txt" ]; then CODE=$(cat "$DATA/setup-code.txt"); fi
   step "Done"
   say "Open this in your web browser:  http://$(lan_ip):$PORT/setup"
+  say "  (On this same computer you can also use  http://localhost:$PORT/setup  if that address doesn't open.)"
   [ -z "$CODE" ] || say "Setup code:  $CODE"
   [ "$WANT_IMMICH" = yes ] && say "Do the setup page FIRST. It creates your Immich account for you. Immich itself can take a few minutes to start."
   say "Notes for later are in $DIR/INSTALL-NOTES.txt"

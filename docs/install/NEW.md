@@ -61,12 +61,17 @@ It asks a few questions. Press **Enter** to accept the suggestion in brackets:
 | Turn machine learning on? | Follow the recommendation. It turns it off for small computers. |
 | A folder of photos that already exists | Optional. If you already have photos in a folder, give its path and Immich will show them without copying. |
 
-Then it downloads Immich and immichset. The first time this takes a while. When it finishes you should see:
+Then it downloads Immich and immichset. The first time this takes a while. When it finishes it prints **two lines like these**:
 
 ```
 Open this in your web browser:  http://192.168.1.20:3000/setup
 Setup code:  K7Q2-M9XD-4RTB
 ```
+
+> **These two lines are an example.** Your address and code will be different; they are made for your computer. **Use the
+> ones on your own screen, not the ones above.** The address starts with your computer's number on your home network
+> (often `192.168...` or `10...`). If it doesn't open, and you're on the same computer that's running it, try
+> `http://localhost:3000/setup`.
 
 > **If it stops with "Cannot continue"**, read the sentence after it. It tells you exactly what to fix (Docker missing,
 > not enough memory, database on a network share), and nothing was changed. Fix it and run the same command again.
