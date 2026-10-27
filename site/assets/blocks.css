@@ -27,7 +27,7 @@
 .hd-large { font-size: 2.3rem; }
 .rich, .custom-html { max-width: 44rem; margin: 1.2rem auto; padding: 0 1rem; }
 /* contain a block's own custom CSS so it cannot lay itself over the rest of the page */
-.custom-html { position: relative; overflow: hidden; }
+.custom-html { position: relative; overflow: hidden; contain: paint; }
 .blk-off { display: none; }
 .blk-empty { max-width: 44rem; margin: 1.2rem auto; padding: 0 1rem; opacity: .6; font-style: italic; }
 .rich p + p, .rich ul, .rich ol, .rich blockquote { margin-top: .9rem; }

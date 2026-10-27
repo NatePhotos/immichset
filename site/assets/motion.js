@@ -11,7 +11,7 @@
         if (e.isIntersecting) { c.add('in'); if (c.contains('m-once')) io.unobserve(e.target); }
         else if (!c.contains('m-once')) c.remove('in');
       }
-    }, { threshold: 0.15, rootMargin: '0px 0px -5% 0px' });
+    }, { threshold: [0, 0.15], rootMargin: '0px 0px -5% 0px' });
     document.documentElement.classList.add('anim');
     entering.forEach(el => io.observe(el));
   }

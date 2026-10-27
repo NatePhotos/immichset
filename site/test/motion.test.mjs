@@ -58,7 +58,7 @@ const classList = set => ({ add: (...c) => c.forEach(x => set.add(x)), remove: (
 const block = (...cls) => { const set = new Set(['blk', 'm', ...cls]); return { set, classList: classList(set) }; };
 function run({ reduce = false, io = true, blocks = [], layers = [] } = {}) {
   const html = new Set(), observed = new Set(), handlers = {};
-  let cb = null;
+  let cb = null, opts = null;
   const ctx = {
     document: { documentElement: { classList: classList(html) },
       querySelectorAll: sel => (sel === '.blk.m' ? blocks : sel === '.blk.px > .blk-bg' ? layers : []) },
@@ -67,10 +67,10 @@ function run({ reduce = false, io = true, blocks = [], layers = [] } = {}) {
     addEventListener: (t, f) => { handlers[t] = f; },
     requestAnimationFrame: f => f(),
   };
-  if (io) ctx.IntersectionObserver = class { constructor(f) { cb = f; } observe(e) { observed.add(e); } unobserve(e) { observed.delete(e); } };
+  if (io) ctx.IntersectionObserver = class { constructor(f, o) { cb = f; opts = o; } observe(e) { observed.add(e); } unobserve(e) { observed.delete(e); } };
   ctx.window = ctx;
   vm.runInNewContext(MOTION, ctx);
-  return { html, observed, handlers, fire: entries => cb(entries) };
+  return { html, observed, handlers, options: () => opts, fire: entries => cb(entries) };
 }
 
 test('blocks enter as they come into view; once means once', () => {
@@ -98,4 +98,18 @@ test('parallax moves the background layer with the scroll, and not at all for re
   const still = layer();
   run({ reduce: true, layers: [still] });
   assert.equal(still.style.transform, undefined);
+});
+
+test('a block taller than the screen still reveals as soon as any of it shows', () => {
+  const tall = block('m-slide-up');
+  const p = run({ blocks: [tall] });
+  assert.ok([].concat(p.options().threshold).includes(0), 'observer reports the first sliver');
+  p.fire([{ target: tall, isIntersecting: true, intersectionRatio: 0.01 }]);
+  assert.ok(tall.set.has('in'));
+});
+
+test('custom HTML blocks contain their own CSS, fixed-position content included', () => {
+  const rule = CSS.match(/\.custom-html \{[^}]*position: relative[^}]*\}/);
+  assert.ok(rule, 'rule found');
+  assert.match(rule[0], /contain: paint/);
 });
