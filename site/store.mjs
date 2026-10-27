@@ -2,9 +2,9 @@
    alerts - in the gallery app's own database, so the nightly backup covers it. */
 
 import { cleanPages } from './pages.mjs';
+import { FONTS } from './theme.mjs';
 
-export const FONTS = ['Roboto', 'Figtree', 'Montserrat', 'Inter', 'Lato', 'Lora',
-                      'Playfair Display', 'Cormorant Garamond', 'EB Garamond', 'Josefin Sans'];
+export { FONTS };
 export const DEFAULT_STYLE = {
   page: '#f4f5f0', band: '#e3e8df', text: '#373737', ink: '#343b2f',
   headingFont: 'Roboto', bodyFont: 'Figtree', textSize: 'normal', logo: null,

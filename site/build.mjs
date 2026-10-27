@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { esc } from './blocks/common.mjs';
 import { renderBlocks } from './blocks/registry.mjs';
 import { migratePages, resolvePages, isShownPage, pageHref } from './pages.mjs';
+import { rootVars } from './theme.mjs';
 
 const asset = n => readFileSync(new URL(`./assets/${n}`, import.meta.url), 'utf8');
 const CSS = asset('site.css');
@@ -17,9 +18,6 @@ const BRIDGE_JS = asset('edit-bridge.js');
 const EDIT_CSS = '[data-b]{cursor:pointer}[data-b]:hover{outline:2px dashed rgba(47,111,237,.55);outline-offset:-2px}'
   + '.wb-sel{outline:2px solid #2f6fed!important;outline-offset:-2px}.blk-off{display:revert;opacity:.35}'
   + '.blk-empty{margin:1rem;padding:1.2rem;text-align:center;border:1px dashed #8a94a6;color:#5b6577;font:14px system-ui,sans-serif}';
-const GAPS = { none: '0rem', tight: '.68rem', normal: '1.2rem', roomy: '2rem' };
-const RATIOS = { tall: '226 / 276', square: '1 / 1', wide: '3 / 2' };
-const SCALES = { smaller: 0.9, normal: 1, larger: 1.12 };
 const GRID_W = 800;
 export const HEADERS = '/img/*\n  Cache-Control: public, max-age=31536000, immutable\n'
   + "\n/logo.svg\n  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox\n  X-Content-Type-Options: nosniff\n";
@@ -34,12 +32,6 @@ const UP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="
 const gridSize = p => (p.width > GRID_W ? [GRID_W, Math.round(p.height * GRID_W / p.width)] : [p.width, p.height]);
 /* inlined text must not end its <script> or <style> early */
 const inline = t => t.replace(/<\/(script|style)/gi, '<\\/$1');
-
-function rootVars(st) {
-  return `:root{--page:${st.page};--band:${st.band};--text:${st.text};--ink:${st.ink};`
-    + `--font-head:'${st.headingFont}',system-ui,sans-serif;--font-body:'${st.bodyFont}',system-ui,sans-serif;`
-    + `--scale:${SCALES[st.textSize]};--gap:${GAPS[st.gap]};--card-ratio:${RATIOS[st.cardShape]}}\n`;
-}
 
 export function build(state, { base = '/', siteUrl = '', editor = false } = {}) {
   const files = new Map(), images = new Map();
