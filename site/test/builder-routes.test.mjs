@@ -165,3 +165,15 @@ test('a gallery deleted after pages were saved does not break the editor, the pr
   assert.match(r.body.html, /data-b="bdang"/);
   assert.equal((await fetch(base + '/admin/site-preview/dang/', { headers: H() })).status, 200);
 });
+
+test('a body that is not an object is refused instead of hanging', async () => {
+  const raw = (method, path, body) => fetch(base + path, { method, headers: H({ 'content-type': 'application/json' }), body });
+  for (const [method, path] of [['PUT', '/api/admin/site/pages'], ['POST', '/api/admin/site/render'], ['POST', '/api/admin/site/pages/discard']]) {
+    for (const body of ['null', '0', 'false', '[]']) {
+      const r = await raw(method, path, body);
+      assert.equal(r.status, 400, `${method} ${path} ${body}`);
+      assert.ok((await r.json()).error);
+    }
+    assert.equal((await raw(method, path, '{nope')).status, 400);
+  }
+});

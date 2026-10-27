@@ -85,7 +85,7 @@ export function createStore(db, { now = Date.now } = {}) {
     galGet: db.prepare('SELECT * FROM site_galleries WHERE id = ?'),
     galSlug: db.prepare('SELECT id FROM site_galleries WHERE slug = ? COLLATE NOCASE'),
     galMax: db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM site_galleries'),
-    galIns: db.prepare('INSERT INTO site_galleries (slug, title, position) VALUES (?, ?, ?)'),
+    galIns: db.prepare('INSERT INTO site_galleries (id, slug, title, position) VALUES (?, ?, ?, ?)'),
     galUpd: db.prepare('UPDATE site_galleries SET title = ?, show_title = ?, hidden = ?, cover_photo_id = ? WHERE id = ?'),
     galAlbum: db.prepare('UPDATE site_galleries SET immich_album_id = ? WHERE id = ?'),
     galPos: db.prepare('UPDATE site_galleries SET position = ? WHERE id = ?'),
@@ -95,7 +95,9 @@ export function createStore(db, { now = Date.now } = {}) {
     phoAll: db.prepare('SELECT * FROM site_photos ORDER BY position, id'),
     phoGet: db.prepare('SELECT * FROM site_photos WHERE id = ?'),
     phoMax: db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM site_photos WHERE gallery_id IS ?'),
-    phoIns: db.prepare('INSERT INTO site_photos (gallery_id, position, file_key, width, height, original_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    phoIns: db.prepare('INSERT INTO site_photos (id, gallery_id, position, file_key, width, height, original_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    galMaxId: db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM site_galleries'),
+    phoMaxId: db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM site_photos'),
     phoPos: db.prepare('UPDATE site_photos SET position = ? WHERE id = ?'),
     phoDel: db.prepare('DELETE FROM site_photos WHERE id = ?'),
     phoDelGal: db.prepare('DELETE FROM site_photos WHERE gallery_id = ?'),
@@ -123,6 +125,17 @@ export function createStore(db, { now = Date.now } = {}) {
   const pagesRev = () => Number(meta('_pagesRev') || 0);
   function getPages() { const raw = meta('s:pages'); return raw == null ? null : JSON.parse(raw); }
   function setPages(pages) { setMeta('s:pages', pages == null ? null : JSON.stringify(pages)); setMeta('_pagesRev', pagesRev() + 1); }
+
+  /* Row ids are never reused: saved pages keep pointing at photos and galleries by id after they are deleted, so a
+     new row must not inherit a dead one's id. The high-water marks live beside the other meta values. */
+  const SEQ = { photo: ['_photoSeq', q.phoMaxId], gallery: ['_gallerySeq', q.galMaxId] };
+  function raiseSeq(kind) {
+    const [key, max] = SEQ[kind];
+    const v = Math.max(Number(meta(key) || 0), max.get().m);
+    if (v !== Number(meta(key) || 0)) setMeta(key, v);
+    return v;
+  }
+  function nextId(kind) { const id = raiseSeq(kind) + 1; setMeta(SEQ[kind][0], id); return id; }
 
   function tx(fn) {
     db.exec('BEGIN');
@@ -208,13 +221,19 @@ export function createStore(db, { now = Date.now } = {}) {
     /* back to the pages of a published version; with none, back to the pages made from the settings */
     discardPages(snapshotJson) {
       const snap = snapshotJson ? JSON.parse(snapshotJson) : {};
-      /* the snapshot was made against galleries and photos that may have changed since: check it like a save, and
-         when it cannot be made valid, go back to the pages made from the settings rather than store a broken draft */
+      /* the snapshot was made against galleries and photos that may have changed since: check it like a save. When it
+         cannot be made valid (say a gallery now owns a published page's address) refuse and leave the draft alone,
+         rather than quietly swap the published pages for the ones made from the settings */
       let pages = snap.pages ?? null;
       if (pages != null) {
         const galleries = q.galAll.all().map(galDto);
         const photoIds = new Set(q.phoAll.all().map(p => p.id));
-        pages = cleanPages(pages, { galleries, photoIds }).pages;
+        const r = cleanPages(pages, { galleries, photoIds });
+        if (!r.pages) {
+          const e = new InputError(`The published pages can't be restored as they are: ${r.errors[0]}. Fix the clash and try again.`);
+          e.errors = r.errors; throw e;
+        }
+        pages = r.pages;
       }
       mutate(null, () => setPages(pages));
       return { pagesRev: pagesRev() };
@@ -224,8 +243,9 @@ export function createStore(db, { now = Date.now } = {}) {
       const t = text(title, 120);
       if (!t) throw new InputError('Give the gallery a name');
       return mutate(expected, () => {
-        const r = q.galIns.run(slugFor(t), t, q.galMax.get().m + 1);
-        return galDto(q.galGet.get(Number(r.lastInsertRowid)));
+        const id = nextId('gallery');
+        q.galIns.run(id, slugFor(t), t, q.galMax.get().m + 1);
+        return galDto(q.galGet.get(id));
       });
     },
     updateGallery(expected, id, patch) {
@@ -243,6 +263,7 @@ export function createStore(db, { now = Date.now } = {}) {
     },
     deleteGallery(expected, id) {
       return mutate(expected, () => {
+        raiseSeq('photo'); raiseSeq('gallery');
         for (const p of q.phoAll.all()) if (p.gallery_id === id) clearPhotoRefs(p.id);
         q.phoDelGal.run(id);
         q.galDel.run(id);
@@ -260,13 +281,14 @@ export function createStore(db, { now = Date.now } = {}) {
     addPhoto(expected, galleryId, { fileKey, width, height, originalName }) {
       return mutate(expected, () => {
         if (galleryId != null && !q.galGet.get(galleryId)) throw new InputError('No such gallery');
-        const r = q.phoIns.run(galleryId, q.phoMax.get(galleryId).m + 1, fileKey, width, height,
+        const id = nextId('photo');
+        q.phoIns.run(id, galleryId, q.phoMax.get(galleryId).m + 1, fileKey, width, height,
                                text(originalName, 200), now());
-        return phoDto(q.phoGet.get(Number(r.lastInsertRowid)));
+        return phoDto(q.phoGet.get(id));
       });
     },
     removePhoto(expected, id) {
-      return mutate(expected, () => { clearPhotoRefs(id); q.phoDel.run(id); });
+      return mutate(expected, () => { raiseSeq('photo'); clearPhotoRefs(id); q.phoDel.run(id); });
     },
     reorderPhotos(expected, galleryId, ids) {
       return mutate(expected, () => {
@@ -285,6 +307,7 @@ export function createStore(db, { now = Date.now } = {}) {
         /* Immich state is a fact about the outside world, not part of an old version: keep today's */
         const nowPhotos = new Map(q.phoAll.all().map(p => [p.id, p]));
         const nowGalleries = new Map(q.galAll.all().map(g => [g.id, g]));
+        raiseSeq('photo'); raiseSeq('gallery'); /* remember today's highest ids before the rows go */
         db.exec('DELETE FROM site_photos; DELETE FROM site_galleries;');
         for (const g of snap.galleries) {
           const cur = nowGalleries.get(g.id);
@@ -296,6 +319,7 @@ export function createStore(db, { now = Date.now } = {}) {
           q.phoRestore.run(p.id, p.gallery_id, p.position, p.file_key, p.width, p.height,
             p.original_name, imm.immich_asset_id, imm.immich_status, imm.immich_tries, p.created_at);
         }
+        raiseSeq('photo'); raiseSeq('gallery');
         putSettings(snap.settings);
         /* versions published before pages existed have no "pages": they go back to pages made from their settings */
         setPages(Object.hasOwn(snap, 'pages') ? snap.pages : null);

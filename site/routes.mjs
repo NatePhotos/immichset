@@ -184,8 +184,12 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
   const revOf = req => (req.headers['x-site-rev'] == null ? null : Number(req.headers['x-site-rev']));
   const pagesRevOf = req => (req.headers['x-pages-rev'] == null ? null : Number(req.headers['x-pages-rev']));
   async function readBody(req, res, limit) {
-    try { return await readJson(req, limit); }
-    catch (e) {
+    try {
+      const b = await readJson(req, limit);
+      if (b && typeof b === 'object' && !Array.isArray(b)) return b;
+      json(res, 400, { error: 'That request was not valid' });
+      return null;
+    } catch (e) {
       const big = /too large/.test(e.message);
       json(res, big ? 413 : 400, { error: big ? 'That is too much to save at once' : 'That request was not valid' });
       return null;
@@ -235,7 +239,10 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       const b = await readBody(req, res, PAGES_MAX); if (!b) return;
       return respond(res, () => store.putPages(pagesRevOf(req), b.pages));
     }
-    if (path === '/api/admin/site/pages/discard' && m === 'POST') return respond(res, () => discardPages());
+    if (path === '/api/admin/site/pages/discard' && m === 'POST') {
+      const b = await readBody(req, res, 1024); if (!b) return;
+      return respond(res, () => discardPages());
+    }
     if (path === '/api/admin/site/render' && m === 'POST') {
       const b = await readBody(req, res, PAGES_MAX); if (!b) return;
       return respond(res, () => renderDraft(b.pages, String(b.slug ?? '')));

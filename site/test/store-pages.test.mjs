@@ -80,14 +80,17 @@ test('discarding puts back the pages of a snapshot, or the old fixed pages when 
   assert.equal(s.getPages(), null);
 });
 
-test('discarding to a snapshot checks its pages against today: clashes fall back, dead links are dropped', () => {
+test('discarding to a snapshot whose pages clash with today is refused and leaves the draft alone', () => {
   const s = fresh();
   s.putPages(null, [...migrated(s), news({ slug: 'x' })]);
   const snap = s.snapshot();
-  s.discardPages(null);
+  s.putPages(null, migrated(s));
   assert.equal(s.addGallery(null, 'x').slug, 'x');
-  s.discardPages(snap);
-  assert.equal(s.getPages(), null, 'a page clashing with a gallery address is not stored');
+  const before = JSON.stringify(s.getPages()), rev = s.pagesRev();
+  assert.throws(() => s.discardPages(snap), e => e instanceof InputError
+    && /The published pages can't be restored as they are: .*Fix the clash and try again\./.test(e.message) && e.errors.length >= 1);
+  assert.equal(JSON.stringify(s.getPages()), before, 'the draft is untouched');
+  assert.equal(s.pagesRev(), rev);
 });
 
 test('discarding drops pages of deleted galleries and photos that no longer exist', () => {
@@ -103,4 +106,39 @@ test('discarding drops pages of deleted galleries and photos that no longer exis
   const pages = s.getPages();
   assert.ok(!pages.some(x => x.galleryId === g.id));
   assert.equal(pages.find(x => x.id === 'pnews').blocks[0].props.photoId, null);
+});
+
+test('photo and gallery ids are never reused after a delete', () => {
+  const s = fresh();
+  const g1 = s.addGallery(null, 'One'), g2 = s.addGallery(null, 'Two');
+  const p1 = s.addPhoto(null, null, photo('a')), p2 = s.addPhoto(null, null, photo('b'));
+  s.removePhoto(null, p2.id); s.deleteGallery(null, g2.id);
+  assert.equal(s.addPhoto(null, null, photo('c')).id, p2.id + 1);
+  assert.equal(s.addGallery(null, 'Three').id, g2.id + 1);
+  assert.ok(p1.id < p2.id && g1.id < g2.id);
+});
+
+test('a fresh store starts ids at 1', () => {
+  const s = fresh();
+  assert.equal(s.addGallery(null, 'First').id, 1);
+  assert.equal(s.addPhoto(null, null, photo('a')).id, 1);
+});
+
+test('an existing database whose newest rows are deleted still does not reuse their ids', () => {
+  const db = new DatabaseSync(':memory:');
+  const s = createStore(db, { now: () => 1000 });
+  s.addPhoto(null, null, photo('a')); const p = s.addPhoto(null, null, photo('b'));
+  db.exec("DELETE FROM site_settings WHERE key IN ('_photoSeq','_gallerySeq')"); /* as before the marks existed */
+  s.removePhoto(null, p.id);
+  assert.equal(s.addPhoto(null, null, photo('c')).id, p.id + 1);
+});
+
+test('restoring an older version never lowers the id marks', () => {
+  const s = fresh();
+  s.addPhoto(null, null, photo('a'));
+  const snap = s.snapshot();
+  const later = s.addPhoto(null, null, photo('b'));
+  s.removePhoto(null, later.id);
+  s.restoreSnapshot(snap);
+  assert.equal(s.addPhoto(null, null, photo('c')).id, later.id + 1);
 });

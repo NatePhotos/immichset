@@ -82,3 +82,14 @@ test('an unsaved site in the editor uses the pages made from its settings', () =
   const html = build(state(), { base: '/admin/site-preview/', editor: true }).files.get('about/index.html');
   assert.match(html, /<div class="blk" data-b="about-main"><section class="about">/);
 });
+
+test('the editor shows hidden blocks faded and selectable; the published site is unchanged', () => {
+  const s = saved();
+  s.pages[0].blocks.push(mk('bh3', 'heading', { text: 'Secret words' }, { visible: 'none' }));
+  const html = build(s, { base: '/admin/site-preview/', editor: true }).files.get('index.html');
+  assert.ok(html.includes('.blk-off{display:revert;opacity:.35}'));
+  assert.ok(html.indexOf('.blk-off{display:none') < html.indexOf('.blk-off{display:revert'), 'the editor rule comes after the block rule');
+  const pub = build(s);
+  assert.ok(!pub.files.get('style.css').includes('display:revert'));
+  assert.ok(pub.files.get('style.css').includes('.blk-off { display: none; }'));
+});

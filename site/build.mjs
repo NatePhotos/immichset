@@ -15,7 +15,7 @@ const BLOCKS_CSS = asset('blocks.css');
 const MOTION_JS = asset('motion.js');
 const BRIDGE_JS = asset('edit-bridge.js');
 const EDIT_CSS = '[data-b]{cursor:pointer}[data-b]:hover{outline:2px dashed rgba(47,111,237,.55);outline-offset:-2px}'
-  + '.wb-sel{outline:2px solid #2f6fed!important;outline-offset:-2px}.blk-off{opacity:.35}'
+  + '.wb-sel{outline:2px solid #2f6fed!important;outline-offset:-2px}.blk-off{display:revert;opacity:.35}'
   + '.blk-empty{margin:1rem;padding:1.2rem;text-align:center;border:1px dashed #8a94a6;color:#5b6577;font:14px system-ui,sans-serif}';
 const GAPS = { none: '0rem', tight: '.68rem', normal: '1.2rem', roomy: '2rem' };
 const RATIOS = { tall: '226 / 276', square: '1 / 1', wide: '3 / 2' };
