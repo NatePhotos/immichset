@@ -75,3 +75,41 @@ test('switching section can be cancelled, so unsaved edits are not lost by navig
   assert.match(builder, /function tryLeave\(\)\{[^]*?!confirm\([^]*?return false;[^]*?close\(\); return true;/);
   assert.match(siteAdmin, /SiteBuilder\.isOpen\(\) && SiteBuilder\.leave\(\) === false\) return;/, 'websiteView too');
 });
+
+import { listBlockTypes, STYLE_SCHEMA, MOTION_SCHEMA } from '../blocks/registry.mjs';
+
+test('every kind of field the server describes has a control', () => {
+  const kinds = new Set([...listBlockTypes().flatMap(t => t.fields), ...STYLE_SCHEMA, ...MOTION_SCHEMA].map(f => f.kind));
+  for (const k of kinds) assert.ok(builder.includes(`k === "${k}"`), `no control for "${k}" fields`);
+  assert.match(builder, /B\.info\.style/); assert.match(builder, /B\.info\.motion/);
+  assert.match(builder, /function shown\(f, values\)/, 'fields that only apply sometimes follow their "when"');
+});
+
+test('an unknown field kind or block type shows nothing instead of failing', () => {
+  assert.match(builder, /return null;\n\}\n\n\/\* choose one of the website/, 'control gives null for an unknown kind');
+  assert.match(builder, /if \(!c\) return;/);
+  assert.match(builder, /\|\| \{ type: t, label: String\(t\)/, 'an unknown block type still has a label and no fields');
+});
+
+test('custom HTML and CSS are edited as plain text, never rendered into the admin page', () => {
+  assert.match(builder, /if \(k === "html" \|\| k === "css"\)\{ var c = el\('<textarea class="wbcode"/);
+});
+
+test('the outline can drag, duplicate, hide and delete blocks, including inside columns', () => {
+  for (const a of ['dup', 'hide', 'del']) assert.ok(builder.includes(`data-act="${a}"`), a);
+  assert.match(builder, /sortable\(l, "\.wbit"/);
+  assert.match(builder, /data-addto=/);
+  assert.match(builder, /\(hidden\)/, 'hidden blocks are marked in the outline');
+});
+
+test('the add-block picker shows a sketch of each type and keeps columns out of columns', () => {
+  assert.match(builder, /t\.sketch/);
+  assert.match(builder, /!nested \|\| t\.nestable/);
+  assert.match(builder, /Add a block/);
+  assert.ok(listBlockTypes().filter(t => !t.nestable).map(t => t.type).sort().join() === 'columns,photo-grid');
+});
+
+test('photos are chosen from the website’s photos or uploaded through the same pipeline', () => {
+  assert.match(builder, /window\.WebsiteKit\.upload\(f, "pages"\)/);
+  assert.match(builder, /Choose a photo/);
+});

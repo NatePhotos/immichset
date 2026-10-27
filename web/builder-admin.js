@@ -57,7 +57,7 @@ document.head.appendChild(css);
 function clone(o){ return JSON.parse(JSON.stringify(o)); }
 function rid(prefix){ return prefix + (Math.random().toString(36).slice(2) + "0000000").slice(0, 7); }
 function page(){ return B.pages.filter(function(p){ return p.id === B.pageId; })[0] || B.pages[0]; }
-function typeOf(t){ return B.info.types.filter(function(x){ return x.type === t; })[0]; }
+function typeOf(t){ return B.info.types.filter(function(x){ return x.type === t; })[0] || { type: t, label: String(t), icon: "square", fields: [], defaults: {}, nestable: false }; }
 /* where a block is: its list (a page's blocks, or one column of a columns block) and its place in that list */
 function find(id, list){
   list = list || page().blocks;
@@ -384,14 +384,266 @@ function paintPagePanel(){
 }
 
 /* ---------- blocks ---------- */
+function snippet(b){
+  var p = b.props || {}, s = p.text || p.heading || p.label || p.caption || p.place || "";
+  if (!s && typeof p.html === "string") s = p.html.replace(/<[^>]*>/g, " ");
+  return (typeof s === "string" ? s : "").replace(/\s+/g, " ").trim().slice(0, 40);
+}
+function outlineList(list){
+  return (list || []).map(function(b){
+    var t = typeOf(b.type), off = b.style && b.style.visible === "none", kids = "";
+    if (b.type === "columns" && b.props && Array.isArray(b.props.columns)) kids = '<div class="wbkids">' + b.props.columns.slice(0, b.props.count).map(function(col, ci){
+      return '<div class="wbcolh"><span>Column ' + (ci + 1) + '</span><button type="button" data-addto="' + esc(b.id) + '" data-col="' + ci + '">+ Block</button></div>'
+        + '<div class="wblist" data-list="' + esc(b.id) + ':' + ci + '">' + outlineList(col) + '</div>';
+    }).join("") + '</div>';
+    return '<div class="wbit" data-id="' + esc(b.id) + '"><div class="wbbl' + (B.sel === b.id ? " on" : "") + (off ? " off" : "") + '" data-sel="' + esc(b.id) + '">'
+      + '<span class="hd" title="Drag to reorder">☰</span>' + K.lucide(t.icon, 16)
+      + '<span class="nm">' + esc(t.label) + (off ? ' (hidden)' : '') + ' <small>' + esc(snippet(b)) + '</small></span>'
+      + '<span class="acts"><button type="button" data-act="dup" title="Duplicate" aria-label="Duplicate">⧉</button>'
+      + '<button type="button" data-act="hide" title="' + (off ? "Show" : "Hide") + '" aria-label="' + (off ? "Show" : "Hide") + '" aria-pressed="' + (off ? "true" : "false") + '">' + (off ? "◌" : "◉") + '</button>'
+      + '<button type="button" data-act="del" title="Delete" aria-label="Delete">✕</button></span></div>' + kids + '</div>';
+  }).join("");
+}
+/* a list by its key: "page" for the page's own blocks, "<columns block id>:<column>" for one column; null if it is gone */
+function listOf(key){
+  if (key === "page") return page().blocks;
+  var parts = key.split(":"), f = find(parts[0]);
+  return f && f.block.type === "columns" ? f.block.props.columns[Number(parts[1])] || null : null;
+}
 function paintOutline(){
   var host = $("wbOutline"); if (!host) return;
   var p = page();
-  host.innerHTML = '<div class="wbh"><span>On this page</span></div>' + p.blocks.map(function(b){
-    return '<div class="wbbl' + (B.sel === b.id ? " on" : "") + '" data-sel="' + esc(b.id) + '">' + K.lucide(typeOf(b.type).icon, 16)
-      + '<span class="nm">' + esc(typeOf(b.type).label) + '</span></div>';
-  }).join("");
-  Array.prototype.forEach.call(host.querySelectorAll("[data-sel]"), function(row){ row.onclick = function(){ select(row.dataset.sel, true); }; });
+  host.innerHTML = '<div class="wbh"><span>On this page</span><button type="button" id="wbAddBlock">+ Block</button></div>'
+    + '<div class="wblist" data-list="page">' + outlineList(p.blocks) + '</div>'
+    + (p.blocks.length ? "" : '<p class="hint" style="padding:0 16px">This page has no blocks yet. Press + Block.</p>');
+  $("wbAddBlock").onclick = function(){ picker({ list: "page" }); };
+  Array.prototype.forEach.call(host.querySelectorAll("[data-sel]"), function(row){
+    row.onclick = function(ev){
+      var a = ev.target.closest("[data-act]"), id = row.dataset.sel;
+      if (!a) return select(id, true);
+      ev.stopPropagation();
+      if (a.dataset.act === "dup") duplicateBlock(id);
+      if (a.dataset.act === "hide") toggleHidden(id);
+      if (a.dataset.act === "del") deleteBlock(id);
+    };
+  });
+  Array.prototype.forEach.call(host.querySelectorAll("[data-addto]"), function(b){
+    b.onclick = function(){ picker({ list: b.dataset.addto + ":" + b.dataset.col }); };
+  });
+  Array.prototype.forEach.call(host.querySelectorAll(".wblist"), function(l){
+    sortable(l, ".wbit", function(ids){
+      commit(function(){
+        var arr = listOf(l.dataset.list); if (!arr) return;
+        var by = {};
+        arr.forEach(function(b){ by[b.id] = b; });
+        var next = ids.map(function(id){ return by[id]; }).filter(Boolean);
+        arr.length = 0; Array.prototype.push.apply(arr, next);
+      });
+    });
+  });
+}
+
+/* the add-block picker: a sketch of each type; inside columns, only the types that may go there */
+function picker(target){
+  var nested = target.list !== "page";
+  var types = B.info.types.filter(function(t){ return !nested || t.nestable; });
+  var box = document.createElement("div"); box.className = "wbpick";
+  box.innerHTML = '<div class="wbpickin" role="dialog" aria-modal="true" aria-labelledby="wbPickT"><div style="display:flex;justify-content:space-between;align-items:center"><h2 id="wbPickT">Add a block</h2><button class="btn sm ghost" type="button" data-x>Close</button></div>'
+    + '<div class="wbtypes">' + types.map(function(t){
+        return '<button type="button" class="wbtype" data-t="' + esc(t.type) + '"><span class="wbsk">' + t.sketch + '</span><span>' + esc(t.label) + '</span></button>'; }).join("") + '</div></div>';
+  document.body.appendChild(box);
+  function onEsc(ev){ if (ev.key === "Escape") done(); }
+  function done(){ box.remove(); document.removeEventListener("keydown", onEsc); }
+  document.addEventListener("keydown", onEsc);
+  box.onclick = function(ev){
+    if (ev.target === box || ev.target.closest("[data-x]")) return done();
+    var b = ev.target.closest("[data-t]"); if (!b) return;
+    done(); insert(b.dataset.t, target);
+  };
+  var first = box.querySelector(".wbtype"); if (first) first.focus();
+}
+/* a new block goes after the selected one when that is in the same list, else at the end */
+function insert(type, target){
+  var info = B.info.types.filter(function(t){ return t.type === type; })[0];
+  if (!info || (target.list !== "page" && !info.nestable) || !listOf(target.list)) return;
+  var nb = newBlock(type);
+  commit(function(){
+    var list = listOf(target.list), at = list.length;
+    if (B.sel){ var f = find(B.sel); if (f && f.list === list) at = f.i + 1; }
+    list.splice(at, 0, nb);
+  });
+  select(nb.id, true);
+}
+
+var TABS = [["content", "Content"], ["style", "Style"], ["motion", "Motion"]];
+function paintBlockPanel(f){
+  var b = f.block, t = typeOf(b.type);
+  $("wbTitle").textContent = t.label;
+  $("wbTabs").innerHTML = TABS.map(function(x){ return '<button type="button" data-tab="' + x[0] + '" class="' + (B.tab === x[0] ? "on" : "") + '">' + x[1] + '</button>'; }).join("");
+  Array.prototype.forEach.call($("wbTabs").querySelectorAll("button"), function(x){ x.onclick = function(){ B.tab = x.dataset.tab; paintPanel(); }; });
+  var host = $("wbBody");
+  host.innerHTML = blockActions(f);
+  if (B.tab === "content") host.appendChild(buildForm(t.fields, b.props, b.id, "props"));
+  if (B.tab === "style") host.appendChild(buildForm(B.info.style, b.style, b.id, "style"));
+  if (B.tab === "motion") host.appendChild(buildForm(B.info.motion, b.motion, b.id, "motion"));
+  wireBlockActions(f);
+}
+function shown(f, values){
+  if (!f.when) return true;
+  var v = String(values[f.when[0]]), want = String(f.when[1]);
+  return want.charAt(0) === "!" ? v !== want.slice(1) : v === want;
+}
+/* every control changes the draft through commit(), so it previews, saves and can be undone; typing merges into one undo step */
+function setProp(blockId, part, key, v, merge){
+  commit(function(){ var f = find(blockId); if (f && f.block[part]) f.block[part][key] = v; }, merge ? blockId + part + key : null);
+}
+function buildForm(fields, values, blockId, part){
+  var box = document.createElement("div");
+  (fields || []).forEach(function(f){
+    values = values || {};
+    if (!shown(f, values)) return;
+    var c = control(f, values[f.key], function(v, merge, redraw){ setProp(blockId, part, f.key, v, merge); if (redraw) paintPanel(); });
+    if (!c) return;
+    var wrap = document.createElement("div"); wrap.className = "field";
+    wrap.innerHTML = '<label>' + esc(f.label) + '</label>';
+    wrap.appendChild(c);
+    if (f.hint){ var h = document.createElement("div"); h.className = "hint"; h.textContent = f.hint; wrap.appendChild(h); }
+    box.appendChild(wrap);
+  });
+  return box;
+}
+function el(html){ var d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstChild; }
+var LBL = 'style="display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-size:14px;font-weight:400"';
+/* one control for one field; null for a kind it does not know, so nothing is shown rather than something broken */
+function control(f, v, set){
+  var k = f.kind;
+  if (k === "text" || k === "url"){
+    var i = el('<input type="text" maxlength="' + (Number(f.max) || 2000) + '">'); i.value = v == null ? "" : v;
+    if (k === "url") i.placeholder = "https://…";
+    i.oninput = function(){ set(i.value, true); }; return i;
+  }
+  if (k === "textarea"){ var ta = el('<textarea rows="7"></textarea>'); ta.value = v || ""; ta.oninput = function(){ set(ta.value, true); }; return ta; }
+  if (k === "html" || k === "css"){ var c = el('<textarea class="wbcode" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>'); c.value = v || ""; c.oninput = function(){ set(c.value, true); }; return c; }
+  if (k === "number"){
+    var r = el('<div class="dzrange"><input type="range"><output></output></div>');
+    var inp = r.querySelector("input"), out = r.querySelector("output"), unit = f.unit ? " " + f.unit : "";
+    inp.min = f.min; inp.max = f.max; inp.step = f.step || 1; inp.value = v;
+    out.textContent = inp.value + unit;
+    inp.oninput = function(){ out.textContent = inp.value + unit; set(Number(inp.value), true); }; return r;
+  }
+  if (k === "toggle"){
+    var tg = el('<label ' + LBL + '><input type="checkbox"> On</label>');
+    var cb = tg.querySelector("input"); cb.checked = !!v; cb.onchange = function(){ set(cb.checked, false); }; return tg;
+  }
+  if (k === "select" && Array.isArray(f.options) && f.options.length <= 4){
+    var seg = el('<div class="dzseg"></div>');
+    f.options.forEach(function(o){ var b = document.createElement("button"); b.type = "button"; b.textContent = o[1]; if (o[0] === v) b.className = "on"; b.onclick = function(){ set(o[0], false, true); }; seg.appendChild(b); });
+    return seg;
+  }
+  if (k === "select" && Array.isArray(f.options)){
+    var s = el("<select></select>");
+    f.options.forEach(function(o, idx){ var op = document.createElement("option"); op.value = String(idx); op.textContent = o[1]; if (o[0] === v) op.selected = true; s.appendChild(op); });
+    s.onchange = function(){ set(f.options[Number(s.value)][0], false, true); };
+    return s;
+  }
+  if (k === "color"){
+    var cw = el('<div class="dzcol" style="display:flex;gap:8px;align-items:center"><input type="color"><input type="text" maxlength="7" style="max-width:104px"></div>');
+    var ci = cw.querySelector("[type=color]"), ct = cw.querySelector("[type=text]"); ci.value = /^#[0-9a-f]{6}$/i.test(v) ? v : "#ffffff"; ct.value = v || "";
+    ci.oninput = function(){ ct.value = ci.value; set(ci.value.toLowerCase(), true); };
+    ct.oninput = function(){ if (/^#[0-9a-f]{6}$/i.test(ct.value)){ ci.value = ct.value; set(ct.value.toLowerCase(), true); } };
+    return cw;
+  }
+  if (k === "photo"){
+    var p = photoById(v);
+    var pw = el('<div>' + (p ? '<img class="wthumb" alt="" src="' + esc(thumb(p)) + '">' : "") + '<div style="display:flex;gap:8px"><button class="btn sm ghost" type="button" data-pick>' + (p ? "Change photo" : "Choose a photo") + '</button>'
+      + (p ? '<button class="btn sm ghost" type="button" data-none>Remove</button>' : "") + '</div></div>');
+    pw.querySelector("[data-pick]").onclick = function(){ photoPicker(v, function(id){ set(id, false, true); }); };
+    if (p) pw.querySelector("[data-none]").onclick = function(){ set(null, false, true); };
+    return pw;
+  }
+  if (k === "gallery"){
+    var gs = el("<select></select>");
+    gs.innerHTML = '<option value="">Choose a gallery</option>' + B.site.galleries.map(function(g){
+      return '<option value="' + esc(g.id) + '"' + (g.id === v ? " selected" : "") + '>' + esc(g.title) + (g.hidden ? " (hidden)" : "") + '</option>'; }).join("");
+    gs.onchange = function(){ set(gs.value ? Number(gs.value) : null, false, true); };
+    return gs;
+  }
+  if (k === "galleries"){
+    var all = !Array.isArray(v);
+    var gw = el('<div><label ' + LBL + '><input type="checkbox" data-all' + (all ? " checked" : "") + '> All visible galleries</label>'
+      + '<div data-list style="margin:8px 0 0 22px' + (all ? ";display:none" : "") + '"></div></div>');
+    var lw = gw.querySelector("[data-list]");
+    lw.innerHTML = B.site.galleries.map(function(g){
+      return '<label ' + LBL + '><input type="checkbox" value="' + esc(g.id) + '"' + (!all && v.indexOf(g.id) >= 0 ? " checked" : "") + '> ' + esc(g.title) + '</label>'; }).join("");
+    gw.querySelector("[data-all]").onchange = function(){
+      set(this.checked ? null : B.site.galleries.filter(function(g){ return !g.hidden; }).map(function(g){ return g.id; }), false, true); };
+    Array.prototype.forEach.call(lw.querySelectorAll("input"), function(c){ c.onchange = function(){
+      set(Array.prototype.filter.call(lw.querySelectorAll("input"), function(x){ return x.checked; }).map(function(x){ return Number(x.value); }), false); }; });
+    return gw;
+  }
+  if (k === "link"){
+    var cur = v && typeof v === "object" ? v : { kind: "url", url: "", pageId: "" };
+    var lk = el('<div><select data-k><option value="page">A page on this site</option><option value="url">A web address, email or phone</option></select><div data-v style="margin-top:8px"></div></div>');
+    var ks = lk.querySelector("[data-k]"), vh = lk.querySelector("[data-v]"); ks.value = cur.kind === "page" ? "page" : "url";
+    if (cur.kind === "page"){
+      vh.innerHTML = '<select>' + B.pages.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === cur.pageId ? " selected" : "") + '>' + esc(p.title) + '</option>'; }).join("") + '</select>';
+      vh.firstChild.onchange = function(){ set({ kind: "page", url: "", pageId: this.value }, false); };
+    } else {
+      vh.innerHTML = '<input type="text" placeholder="https://… or mailto:… or tel:…">'; vh.firstChild.value = cur.url || "";
+      vh.firstChild.oninput = function(){ set({ kind: "url", url: this.value, pageId: "" }, true); };
+    }
+    ks.onchange = function(){ set(ks.value === "page" ? { kind: "page", url: "", pageId: (B.pages[0] || {}).id || "" } : { kind: "url", url: "", pageId: "" }, false, true); };
+    return lk;
+  }
+  if (k === "richtext"){
+    /* the text is the server-sanitised HTML of this block; what is typed here is sanitised again when it is saved */
+    var rw = el('<div class="wbrich"><div class="bar"><button type="button" data-c="bold"><b>B</b></button><button type="button" data-c="italic"><i>I</i></button>'
+      + '<button type="button" data-c="h2">Heading</button><button type="button" data-c="ul">• List</button><button type="button" data-c="link">Link</button><button type="button" data-c="p">Plain</button></div>'
+      + '<div class="ed" contenteditable="true"></div></div>');
+    var ed = rw.querySelector(".ed"); ed.innerHTML = v || "";
+    var push = function(){ set(ed.innerHTML, true); };
+    ed.oninput = push;
+    rw.querySelector(".bar").onmousedown = function(ev){ ev.preventDefault(); };   /* keep the selection in the text */
+    Array.prototype.forEach.call(rw.querySelectorAll("[data-c]"), function(b){ b.onclick = function(){
+      var c = b.dataset.c;
+      if (c === "bold" || c === "italic") document.execCommand(c);
+      if (c === "h2" || c === "p") document.execCommand("formatBlock", false, c);
+      if (c === "ul") document.execCommand("insertUnorderedList");
+      if (c === "link"){ var u = prompt("Link to (https://…, mailto:… or tel:…)"); if (u) document.execCommand("createLink", false, u); }
+      push();
+    }; });
+    return rw;
+  }
+  return null;
+}
+
+/* choose one of the website's photos, or upload a new one into the "Website – Pages" Immich album, as the old forms did */
+function photoPicker(current, done){
+  var box = document.createElement("div"); box.className = "wbpick";
+  var groups = [["Page photos", B.site.pagePhotos]].concat(B.site.galleries.map(function(g){ return [g.title, g.photos]; }));
+  box.innerHTML = '<div class="wbpickin" role="dialog" aria-modal="true" aria-labelledby="wbPhT"><div style="display:flex;justify-content:space-between;align-items:center"><h2 id="wbPhT">Choose a photo</h2><button class="btn sm ghost" type="button" data-x>Close</button></div>'
+    + '<div class="wdrop" data-up>Upload a new photo<input type="file" accept="image/*" hidden></div><div class="hint" data-st></div>'
+    + groups.filter(function(g){ return g[1].length; }).map(function(g){
+        return '<div class="dzh3">' + esc(g[0]) + '</div><div class="wbphotos">' + g[1].map(function(p){
+          return '<button type="button" data-p="' + esc(p.id) + '" class="' + (p.id === current ? "on" : "") + '" aria-label="Photo ' + esc(p.id) + '"><img src="' + esc(thumb(p)) + '" alt="" loading="lazy"></button>'; }).join("") + '</div>';
+      }).join("") + '</div>';
+  document.body.appendChild(box);
+  function onEsc(ev){ if (ev.key === "Escape") finish(); }
+  function finish(){ box.remove(); document.removeEventListener("keydown", onEsc); }
+  document.addEventListener("keydown", onEsc);
+  var zone = box.querySelector("[data-up]"), inp = zone.querySelector("input"), st = box.querySelector("[data-st]");
+  zone.onclick = function(){ inp.click(); };
+  inp.onclick = function(ev){ ev.stopPropagation(); };
+  inp.onchange = function(){
+    var f = inp.files[0]; if (!f) return;
+    st.textContent = "Uploading " + f.name + "…";
+    window.WebsiteKit.upload(f, "pages").then(function(ph){ B.site.pagePhotos.push(ph); finish(); done(ph.id); }, function(e){ st.textContent = e.message; });
+  };
+  box.onclick = function(ev){
+    if (ev.target === box || ev.target.closest("[data-x]")) return finish();
+    var b = ev.target.closest("[data-p]"); if (!b) return;
+    finish(); done(Number(b.dataset.p));
+  };
 }
 function blockActions(f){
   var off = f.block.style.visible === "none";
@@ -405,11 +657,6 @@ function wireBlockActions(f){
   $("wbBDup").onclick = function(){ duplicateBlock(f.block.id); };
   $("wbBHide").onclick = function(){ toggleHidden(f.block.id); };
   $("wbBDel").onclick = function(){ deleteBlock(f.block.id); };
-}
-function paintBlockPanel(f){
-  $("wbTitle").textContent = typeOf(f.block.type).label; $("wbTabs").innerHTML = "";
-  $("wbBody").innerHTML = blockActions(f);
-  wireBlockActions(f);
 }
 function duplicateBlock(id){
   var c;
