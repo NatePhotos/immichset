@@ -3,12 +3,15 @@
    selects it; on the right, the page's settings or the chosen block's content, style and motion. Changes preview at
    once and save as a draft a moment later; Undo and Redo cover mistakes; the public site changes only on Publish.
    Forms are built from the block descriptions the server sends (site/blocks), so they offer only what it accepts.
+   The site's header, footer, theme and wording are edited here too, by sitewide-admin.js (loaded after this file)
+   through window.SiteBuilder.kit: they are part of the same draft (B.sw), so they share its preview, autosave, undo,
+   redo, Discard and Publish. B.area says what the side panels show: "page", "header", "footer", "theme" or "wording".
    Uses the panel's globals through window.AdminKit, photo uploads through window.WebsiteKit (site-admin.js), and the
    preview, device and footer styles the Design editor (design-admin.js) adds, which admin.html loads first. */
 (function(){
 var K = window.AdminKit, $ = K.$, api = K.api, esc = K.esc, toast = K.toast;
 var DEVICES = { phone: { w: 390, h: 844, label: "Phone" }, tablet: { w: 820, h: 1180, label: "Tablet" }, desktop: { w: 1440, h: 900, label: "Desktop" } };
-var B = { open: false, info: null, site: null, pages: [], pagesRev: 0, rev: 0, pageId: "home", sel: null, tab: "content",
+var B = { open: false, info: null, site: null, pages: [], sw: null, area: "page", pagesRev: 0, rev: 0, pageId: "home", sel: null, tab: "content",
   undo: [], redo: [], lastKey: null, lastAt: 0, saveT: null, saving: false, again: false, renderT: null, seq: 0,
   status: "Saved", bad: false, stale: false, errors: [], device: "desktop", scrollY: 0, frame: null, ro: null, keyFn: null, msgFn: null,
   dirty: false, canPublish: false, missing: null };
@@ -55,6 +58,12 @@ document.head.appendChild(css);
 
 /* ---------- small helpers ---------- */
 function clone(o){ return JSON.parse(JSON.stringify(o)); }
+/* the whole draft, for undo and redo: the pages and the site-wide part */
+function snap(){ return { pages: clone(B.pages), sw: clone(B.sw) }; }
+function unsnap(x){ B.pages = x.pages; B.sw = x.sw; }
+function isBand(){ return B.area === "header" || B.area === "footer"; }
+/* the selection still exists: a block of the open page, or an element of the open band */
+function selected(){ return B.area === "page" ? !!find(B.sel) : isBand() && !!window.SiteWide && SiteWide.has(B.sel); }
 function rid(prefix){ return prefix + (Math.random().toString(36).slice(2) + "0000000").slice(0, 7); }
 function page(){ return B.pages.filter(function(p){ return p.id === B.pageId; })[0] || B.pages[0]; }
 function typeOf(t){ return B.info.types.filter(function(x){ return x.type === t; })[0] || { type: t, label: String(t), icon: "square", fields: [], defaults: {}, nestable: false }; }
@@ -110,7 +119,7 @@ function sortable(container, itemSel, onDone){
 function isOpen(){ return B.open; }
 function open(pageId){
   if (B.open) return;
-  B.open = true; B.undo = []; B.redo = []; B.sel = null; B.tab = "content"; B.stale = false; B.errors = []; B.scrollY = 0;
+  B.open = true; B.undo = []; B.redo = []; B.sel = null; B.area = "page"; B.tab = "content"; B.stale = false; B.errors = []; B.scrollY = 0;
   B.status = "Saved"; B.bad = false; B.device = window.innerWidth < 900 ? "phone" : "desktop";
   chrome();
   $("root").innerHTML = '<div class="spin" style="margin:60px auto"></div>';
@@ -127,7 +136,7 @@ function open(pageId){
   }).catch(function(e){ if (B.open) $("root").innerHTML = '<p class="empty" style="padding:30px">' + esc(e.message) + '</p>'; });
 }
 function take(body){
-  B.site = body.state; B.pages = clone(body.pages); B.pagesRev = body.pagesRev; B.rev = body.rev; B.dirty = body.dirty;
+  B.site = body.state; B.pages = clone(body.pages); B.sw = clone(body.site); B.pagesRev = body.pagesRev; B.rev = body.rev; B.dirty = body.dirty;
   B.canPublish = body.canPublish; B.missing = body.missing;
 }
 function close(){
@@ -161,7 +170,7 @@ function buildShell(){
   $("root").innerHTML = '<div class="wb" id="wb">'
     + '<nav class="wbrail" aria-label="Pages and blocks">'
     +   '<div class="wbh"><span>Pages</span><button type="button" id="wbAddPage">+ Page</button></div><div id="wbPages" role="list"></div>'
-    +   '<div id="wbOutline"></div></nav>'
+    +   '<div id="wbSiteRail"></div><div id="wbOutline"></div></nav>'
     + '<section class="dzstage" aria-label="Preview">'
     +   '<div class="dzcanvas" id="wbCanvas"><div class="dzdevice" id="wbDevice"><iframe id="wbFrame" title="Page preview"></iframe></div></div>'
     +   '<div class="dzdev" id="wbDev" role="group" aria-label="Preview size"></div></section>'
@@ -174,11 +183,12 @@ function buildShell(){
   $("wbUndo").onclick = undo; $("wbRedo").onclick = redo;
   $("wbAddPage").onclick = addPage;
   B.frame = $("wbFrame");
-  B.frame.addEventListener("load", function(){ fit(); send({ type: "wb-scroll", y: B.scrollY }); send({ type: "wb-select", id: B.sel }); });
+  B.frame.addEventListener("load", function(){ fit(); send({ type: "wb-scroll", y: B.scrollY }); remark(false); });
   paintDevices();
   if (window.ResizeObserver){ B.ro = new ResizeObserver(fit); B.ro.observe($("wbCanvas")); }
 }
-function paintAll(){ paintPages(); paintOutline(); paintPanel(); paintHistory(); paintPub(); paintStale(); paintErrors(); setStatus(B.status, B.bad); }
+function paintSiteRail(){ var host = $("wbSiteRail"); if (host && window.SiteWide) SiteWide.rail(host); }
+function paintAll(){ paintPages(); paintSiteRail(); paintOutline(); paintPanel(); paintHistory(); paintPub(); paintStale(); paintErrors(); setStatus(B.status, B.bad); }
 function setStatus(t, bad, retry){
   B.status = t; B.bad = !!bad;
   var el = $("wbStatus"); if (!el) return;
@@ -206,15 +216,16 @@ function send(msg){ try { if (B.frame && B.frame.contentWindow) B.frame.contentW
 function onMessage(ev){
   if (ev.origin !== location.origin || !B.frame || ev.source !== B.frame.contentWindow) return;
   var m = ev.data || {};
-  if (m.type === "wb-select") select(m.id || null, false);
+  if (m.type === "wb-select"){ if (m.band) selectArea(m.band, m.id || null); else select(m.id || null, false); }
   if (m.type === "wb-scrolled") B.scrollY = Number(m.y) || 0;
 }
-/* the real build of the pages on screen, saved or not, as one self-contained page (see site/routes.mjs renderDraft) */
+/* the real build of the pages and site on screen, saved or not, as one self-contained page (see site/routes.mjs renderDraft) */
 function render(ms){
   clearTimeout(B.renderT);
   B.renderT = setTimeout(function(){
-    var mine = ++B.seq, p = page();
-    api("/site/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pages: B.pages, slug: p.slug }) }).then(function(r){
+    /* with the Wording panel open, the preview shows the not-found page, which most of the wording is on: "-" can never be a page's address */
+    var mine = ++B.seq, p = page(), slug = B.area === "wording" ? "-" : p.slug;
+    api("/site/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pages: B.pages, slug: slug, site: B.sw }) }).then(function(r){
       if (!B.open || mine !== B.seq) return;
       B.errors = r.ok ? [] : ((r.body && r.body.errors) || [(r.body && r.body.error) || "The preview could not be made"]);
       paintErrors();
@@ -223,24 +234,41 @@ function render(ms){
   }, ms);
 }
 function select(id, scroll){
+  var was = B.area; B.area = "page";
   B.sel = id && find(id) ? id : null; B.tab = "content";
-  paintOutline(); paintPanel(); send({ type: "wb-select", id: B.sel, scroll: !!scroll });
+  if (was !== "page"){ paintPages(); paintSiteRail(); }
+  paintOutline(); paintPanel(); remark(scroll);
+  if (was === "wording") render(0);
+}
+/* the header or footer (and one of its elements), the theme or the wording */
+function selectArea(area, id){
+  var was = B.area;
+  B.area = area; B.tab = "content"; B.sel = id || null;
+  if (B.sel && !selected()) B.sel = null;
+  paintPages(); paintSiteRail(); paintOutline(); paintPanel(); remark(false);
+  if ((was === "wording") !== (area === "wording")) render(0);
+}
+/* tell the preview what is selected: a block, an element, or a band */
+function remark(scroll){
+  if (B.area === "page") return send({ type: "wb-select", id: B.sel, kind: "b", scroll: !!scroll });
+  if (!isBand()) return send({ type: "wb-select", id: null });
+  send({ type: "wb-select", id: B.sel || B.area, kind: B.sel ? "e" : "band", scroll: !!scroll });
 }
 
 /* ---------- changing things: undo, autosave ---------- */
 function commit(fn, key){
   var now = Date.now();
-  if (!(key && B.lastKey === key && now - B.lastAt < 800)){ B.undo.push(clone(B.pages)); if (B.undo.length > 100) B.undo.shift(); }
+  if (!(key && B.lastKey === key && now - B.lastAt < 800)){ B.undo.push(snap()); if (B.undo.length > 100) B.undo.shift(); }
   B.lastKey = key || null; B.lastAt = now; B.redo = [];
   fn();
   changed();
 }
 function changed(){ B.dirty = true; if (B.stale) setStatus("Not saved: changed somewhere else", true); else setStatus("Saving…"); paintHistory(); paintPub(); paintPages(); paintOutline(); render(250); saveSoon(900); }
-function undo(){ if (!B.undo.length) return; B.redo.push(clone(B.pages)); B.pages = B.undo.pop(); B.lastKey = null; afterHistory(); }
-function redo(){ if (!B.redo.length) return; B.undo.push(clone(B.pages)); B.pages = B.redo.pop(); B.lastKey = null; afterHistory(); }
+function undo(){ if (!B.undo.length) return; B.redo.push(snap()); unsnap(B.undo.pop()); B.lastKey = null; afterHistory(); }
+function redo(){ if (!B.redo.length) return; B.undo.push(snap()); unsnap(B.redo.pop()); B.lastKey = null; afterHistory(); }
 function afterHistory(){
   if (!B.pages.some(function(p){ return p.id === B.pageId; })) B.pageId = B.pages[0].id;
-  if (B.sel && !find(B.sel)) B.sel = null;
+  if (B.sel && !selected()) B.sel = null;
   changed(); paintPanel();
 }
 function saveSoon(ms){ clearTimeout(B.saveT); B.saveT = setTimeout(saveNow, ms); }
@@ -248,7 +276,7 @@ function saveNow(){
   clearTimeout(B.saveT); B.saveT = null;
   if (B.stale) return;
   if (B.saving){ B.again = true; return; }
-  var body = JSON.stringify({ pages: B.pages });
+  var body = JSON.stringify({ pages: B.pages, site: B.sw });
   if (body.length > 2 * 1024 * 1024){ setStatus("Not saved: these pages are too large. Remove some text or blocks.", true); return; }
   B.saving = true;
   api("/site/pages", { method: "PUT", headers: { "Content-Type": "application/json", "x-pages-rev": String(B.pagesRev), "x-site-rev": String(B.rev) }, body: body }).then(function(r){
@@ -277,7 +305,7 @@ function paintStale(){
     if (!body) return;
     take(body); B.stale = false; B.undo = []; B.redo = [];
     if (!B.pages.some(function(p){ return p.id === B.pageId; })) B.pageId = B.pages[0].id;
-    if (B.sel && !find(B.sel)) B.sel = null;
+    if (B.sel && !selected()) B.sel = null;
     paintAll(); render(0); setStatus("Saved");
   }); };
 }
@@ -298,20 +326,20 @@ function publish(){
   }).catch(function(e){ toast(e.message); }).then(function(){ var x = $("wbPublish"); if (x) x.disabled = false; });
 }
 function discard(){
-  if (!confirm("Throw away your unpublished page changes?\n\nThe pages go back to what the public site shows now. Galleries and photos are not affected.")) return;
+  if (!confirm("Throw away your unpublished changes?\n\nThe pages, header, footer, theme and wording go back to what the public site shows now. Galleries, photos and the logo are not affected.")) return;
   settled().then(function(){ return api("/site/pages/discard", { method: "POST" }); }).then(function(r){
     if (!r.ok) return toast((r.body && r.body.error) || "Couldn’t discard");
-    B.pages = clone(r.body.pages); B.pagesRev = r.body.pagesRev; if (r.body.rev) B.rev = r.body.rev; B.undo = []; B.redo = []; B.stale = false; B.errors = [];
+    B.pages = clone(r.body.pages); B.sw = clone(r.body.site); B.pagesRev = r.body.pagesRev; if (r.body.rev) B.rev = r.body.rev; B.undo = []; B.redo = []; B.stale = false; B.errors = [];
     if (!B.pages.some(function(p){ return p.id === B.pageId; })) B.pageId = B.pages[0].id;
-    if (B.sel && !find(B.sel)) B.sel = null;
-    paintAll(); render(0); setStatus("Saved"); toast("Back to the published pages.");
+    if (B.sel && !selected()) B.sel = null;
+    paintAll(); render(0); setStatus("Saved"); toast("Back to the published version.");
   }).catch(function(){ toast("Couldn’t discard — check your connection"); });
 }
 function paintPub(){
   var box = $("wbPub"); if (!box) return;
   var wait = B.dirty || dirtyLocal();
   box.className = "dzpub" + (wait ? " wait" : "");
-  box.innerHTML = '<p>' + (wait ? "Your changes are a draft. The public site shows the published pages until you publish." : "Published. The public site shows exactly these pages.") + '</p>'
+  box.innerHTML = '<p>' + (wait ? "Your changes are a draft. The public site shows the published version until you publish." : "Published. The public site shows exactly this.") + '</p>'
     + '<div class="acts"><button class="btn sm ghost" id="wbDiscard" type="button"' + (wait ? "" : " disabled") + '>Discard changes</button></div>';
   $("wbDiscard").onclick = discard;
 }
@@ -327,12 +355,12 @@ function paintPages(){
   var host = $("wbPages"); if (!host) return;
   host.innerHTML = B.pages.map(function(p){
     var where = p.id !== "home" ? "/" + p.slug + "/" : "/";
-    return '<div class="wbpg' + (p.id === B.pageId ? " on" : "") + '" role="listitem" data-id="' + esc(p.id) + '"><span class="hd" title="Drag to reorder">☰</span>'
+    return '<div class="wbpg' + (B.area === "page" && p.id === B.pageId ? " on" : "") + '" role="listitem" data-id="' + esc(p.id) + '"><span class="hd" title="Drag to reorder">☰</span>'
       + K.lucide(p.id !== "home" ? (p.galleryId != null ? "images" : "type") : "house", 16)
       + '<span class="nm">' + esc(p.title) + ' <small>' + esc(where) + (p.inMenu ? "" : " · not in menu") + '</small></span></div>';
   }).join("");
   Array.prototype.forEach.call(host.querySelectorAll(".wbpg"), function(el){
-    el.onclick = function(){ B.pageId = el.dataset.id; B.sel = null; B.scrollY = 0; paintPages(); paintOutline(); paintPanel(); render(0); };
+    el.onclick = function(){ B.pageId = el.dataset.id; B.area = "page"; B.sel = null; B.scrollY = 0; paintPages(); paintSiteRail(); paintOutline(); paintPanel(); render(0); };
   });
   sortable(host, ".wbpg", function(ids){
     commit(function(){ B.pages = ids.map(function(id){ return B.pages.filter(function(p){ return p.id === id; })[0]; }); });
@@ -343,12 +371,12 @@ function addPage(){
   var p = { id: rid("p"), title: t.trim().slice(0, 120), slug: slugify(t), inMenu: true, seoTitle: "", seoDescription: "", galleryId: null, blocks: [newBlock("heading")] };
   p.blocks[0].props.text = p.title; p.blocks[0].props.level = 1;
   commit(function(){ B.pages.push(p); });
-  B.pageId = p.id; B.sel = null; paintAll(); render(0);
+  B.pageId = p.id; B.area = "page"; B.sel = null; paintAll(); render(0);
 }
 function duplicatePage(p){
   var c = clone(p); c.id = rid("p"); c.galleryId = null; c.title = (p.title + " copy").slice(0, 120); c.slug = slugify(c.title); c.blocks.forEach(reid);
   commit(function(){ B.pages.splice(B.pages.indexOf(p) + 1, 0, c); });
-  B.pageId = c.id; B.sel = null; paintAll(); render(0);
+  B.pageId = c.id; B.area = "page"; B.sel = null; paintAll(); render(0);
 }
 function deletePage(p){
   if (!confirm("Delete the page “" + p.title + "”?\n\nUndo brings it back. The public site keeps it until you publish.")) return;
@@ -357,6 +385,7 @@ function deletePage(p){
 }
 function paintPanel(){
   if (!$("wbBody")) return;
+  if (B.area !== "page" && window.SiteWide) return SiteWide.panel();
   var f = B.sel ? find(B.sel) : null;
   if (!f){ B.sel = null; return paintPagePanel(); }
   paintBlockPanel(f);
@@ -414,6 +443,7 @@ function listOf(key){
 }
 function paintOutline(){
   var host = $("wbOutline"); if (!host) return;
+  if (B.area !== "page"){ if (window.SiteWide) SiteWide.outline(host); else host.innerHTML = ""; return; }
   var p = page();
   host.innerHTML = '<div class="wbh"><span>On this page</span><button type="button" id="wbAddBlock">+ Block</button></div>'
     + '<div class="wblist" data-list="page">' + outlineList(p.blocks) + '</div>'
@@ -485,9 +515,9 @@ function paintBlockPanel(f){
   Array.prototype.forEach.call($("wbTabs").querySelectorAll("button"), function(x){ x.onclick = function(){ B.tab = x.dataset.tab; paintPanel(); }; });
   var host = $("wbBody");
   host.innerHTML = blockActions(f);
-  if (B.tab === "content") host.appendChild(buildForm(t.fields, b.props, b.id, "props"));
-  if (B.tab === "style") host.appendChild(buildForm(B.info.style, b.style, b.id, "style"));
-  if (B.tab === "motion") host.appendChild(buildForm(B.info.motion, b.motion, b.id, "motion"));
+  if (B.tab === "content") host.appendChild(buildForm(t.fields, b.props, blockSetter(b.id, "props")));
+  if (B.tab === "style") host.appendChild(buildForm(B.info.style, b.style, blockSetter(b.id, "style")));
+  if (B.tab === "motion") host.appendChild(buildForm(B.info.motion, b.motion, blockSetter(b.id, "motion")));
   wireBlockActions(f);
 }
 function shown(f, values){
@@ -499,12 +529,16 @@ function shown(f, values){
 function setProp(blockId, part, key, v, merge){
   commit(function(){ var f = find(blockId); if (f && f.block[part]) f.block[part][key] = v; }, merge ? blockId + part + key : null);
 }
-function buildForm(fields, values, blockId, part){
+function blockSetter(blockId, part){ return function(key, v, merge){ setProp(blockId, part, key, v, merge); }; }
+/* a form for fields the server describes; onSet(key, value, merge) changes the draft. extra(f, value, set) may supply
+   a control for a kind this file does not know (sitewide-admin.js's menu editor) */
+function buildForm(fields, values, onSet, extra){
   var box = document.createElement("div");
   (fields || []).forEach(function(f){
     values = values || {};
     if (!shown(f, values)) return;
-    var c = control(f, values[f.key], function(v, merge, redraw){ setProp(blockId, part, f.key, v, merge); if (redraw) paintPanel(); });
+    var set = function(v, merge, redraw){ onSet(f.key, v, merge); if (redraw) paintPanel(); };
+    var c = (extra && extra(f, values[f.key], set)) || control(f, values[f.key], set);
     if (!c) return;
     var wrap = document.createElement("div"); wrap.className = "field";
     wrap.innerHTML = '<label>' + esc(f.label) + '</label>';
@@ -681,4 +715,7 @@ function deleteBlock(id){
 
 window.SiteBuilder = { open: open, close: close, isOpen: isOpen };
 window.SiteBuilder.leave = tryLeave;
+/* what sitewide-admin.js builds on */
+window.SiteBuilder.kit = { B: B, commit: commit, buildForm: buildForm, el: el, sortable: sortable, rid: rid, clone: clone,
+  selectArea: selectArea, paintPanel: paintPanel, paintPub: paintPub, render: render, LBL: LBL };
 })();

@@ -44,11 +44,11 @@ test('preview messages are only taken from the preview frame, on this origin', (
   for (const t of ['wb-select', 'wb-scroll', 'wb-scrolled']) { assert.ok(builder.includes(`"${t}"`), t); assert.ok(bridge.includes(`'${t}'`), t); }
 });
 
-test('Publish waits for the last save; Discard only touches the pages', () => {
+test('Publish waits for the last save; Discard only touches the draft', () => {
   assert.match(builder, /function settled\(\)/);
   assert.match(builder, /settled\(\)\.then\(function\(\)\{\s*if \(B\.bad\)/);
   assert.match(builder, /api\("\/site\/pages\/discard"/);
-  assert.match(builder, /Your changes are a draft\. The public site shows the published pages until you publish\./);
+  assert.match(builder, /Your changes are a draft\. The public site shows the published version until you publish\./);
 });
 
 test('pages: add, rename, address, menu, SEO, duplicate, delete, reorder; home and gallery pages are protected', () => {
