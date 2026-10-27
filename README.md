@@ -254,8 +254,12 @@ Optional. The admin panel's **Website** section builds a portfolio site and publ
 public site never depends on this machine. Pages are made of blocks (banner, heading, text, photo, image and text,
 gallery cards, photo grid, button, space or line, columns, contact details, video or map, custom HTML) that you add,
 arrange, style and animate in a full-screen page editor with a live preview at phone, tablet and desktop size.
-Edits are an autosaved draft with undo and redo; the public site changes only when you press **Publish**. A site
-made before the page editor existed keeps looking exactly the same until you change it. Entrance and hover effects
+The header and its menu, the footer, the theme (colours, fonts, text size, photo spacing, card shape and logo) and the
+words the site writes by itself (the "not found" page, the photo viewer's buttons) are edited in the same editor: click
+the header or footer in the preview, or pick Header, Footer, Theme or Wording beside the pages. On phones the menu can
+fold behind a menu button that works without JavaScript. Edits are an autosaved draft with undo and redo; the public
+site changes only when you press **Publish**. A site made before the page editor existed keeps looking exactly the same
+until you change it. Entrance and hover effects
 respect visitors who ask their device for less motion, and the content of every page shows without JavaScript
 (photo grids appear as a plain grid instead of the staggered layout, and the photo viewer needs JavaScript).
 Uploaded originals also go to Immich, into a `Website – <gallery>` (or `Website – Pages`) album, using the write key.
