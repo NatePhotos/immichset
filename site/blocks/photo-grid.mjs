@@ -8,7 +8,7 @@ export const sketch = '<svg viewBox="0 0 100 60"><rect x="6" y="6" width="27" he
 export const defaults = Object.freeze({ galleryId: null, columns: 0, hover: 'none' });
 export const fields = [
   { key: 'galleryId', label: 'Gallery', kind: 'gallery', hint: 'The name above the photos follows the gallery’s own “Show the name” setting.' },
-  { key: 'columns', label: 'Columns on computers', kind: 'select', options: [[0, 'Same as the Style tab'], [2, '2'], [3, '3'], [4, '4'], [5, '5']] },
+  { key: 'columns', label: 'Columns on computers', kind: 'select', options: [[0, 'Same as the theme'], [2, '2'], [3, '3'], [4, '4'], [5, '5']] },
   { key: 'hover', label: 'On hover', kind: 'select', options: HOVER_IMAGE.slice(0, 4) },
 ];
 export const validate = (props, ctx) => cleanFields(props, fields, defaults, ctx);

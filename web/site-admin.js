@@ -1,9 +1,10 @@
-/* Website section: the public site's galleries, pages, style and publishing.
+/* Website section: the public site's galleries and publishing, and the way into the page editor, where the pages,
+   header, footer, theme and wording are edited.
    Uses the panel's globals: $, api, esc, toast, chrome, listView, tog. */
 (function(){
 var K = window.AdminKit, $ = K.$, api = K.api, esc = K.esc, toast = K.toast, chrome = K.chrome, listView = K.listView, tog = K.tog;
 var W = { state:null, rev:0, screen:"galleries", gid:null, publishes:[], dirty:false, canPublish:false,
-          missing:null, fonts:[], defaults:null, liveUrl:null, queue:[], uploading:false, showVersions:false, active:false, liveDeploymentId:null, dirtyForm:false };
+          missing:null, liveUrl:null, queue:[], uploading:false, showVersions:false, active:false, liveDeploymentId:null };
 
 var css = document.createElement("style");
 css.textContent = [
@@ -28,9 +29,7 @@ css.textContent = [
 ".wdrop{border:2px dashed var(--input-line);border-radius:10px;padding:20px;text-align:center;color:var(--muted);cursor:pointer}",
 ".wdrop.on{border-color:var(--primary);color:var(--fg)}",
 ".wver div{display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}.wver div span{flex:1}",
-".wthumb{width:120px;height:120px;object-fit:cover;border-radius:8px;background:var(--raised);display:block;margin-bottom:8px}",
-".wcol{display:flex;gap:8px;align-items:center}.wcol input[type=color]{width:42px;height:32px;border:1px solid var(--input-line);border-radius:6px;padding:0;background:none}",
-".wsample{font-size:20px;margin-top:6px;color:var(--fg)}"
+".wthumb{width:120px;height:120px;object-fit:cover;border-radius:8px;background:var(--raised);display:block;margin-bottom:8px}"
 ].join("\n");
 document.head.appendChild(css);
 
@@ -40,7 +39,7 @@ function load(){
     if (!r.ok) throw new Error((r.body && r.body.error) || "Could not load the website");
     var b = r.body;
     W.state = b.state; W.rev = b.rev; W.publishes = b.publishes; W.dirty = b.dirty;
-    W.canPublish = b.canPublish; W.missing = b.missing; W.fonts = b.fonts; W.defaults = b.defaults; W.liveUrl = b.liveUrl; W.liveDeploymentId = b.liveDeploymentId || null;
+    W.canPublish = b.canPublish; W.missing = b.missing; W.liveUrl = b.liveUrl; W.liveDeploymentId = b.liveDeploymentId || null;
   });
 }
 /* every change carries the revision it was made against; a stale one means another tab won */
@@ -58,14 +57,8 @@ function changed(msg){
   if (!W.active) return Promise.resolve();
   return load().then(function(){ render(); if (msg) toast(msg); }, function(e){ toast(e.message); });
 }
-/* after an upload run: rebuild the screen, unless the person is part-way through typing on a form */
-function settled(){
-  if (!W.active) return;
-  if (!W.dirtyForm || (W.screen !== "pages" && W.screen !== "style")){ changed(); return; }
-  load().then(function(){
-    var st = document.querySelector(".wbar"); if (st) st.outerHTML = statusHtml();
-  }, function(e){ toast(e.message); });
-}
+/* after an upload run: rebuild the screen */
+function settled(){ if (W.active) changed(); }
 /* the status banner under the header: warn while there is something to publish */
 function statusHtml(){
   return W.dirty ? '<div class="wbar warn" role="status"><b>Unpublished changes</b> — publish to put them on the live site</div>'
@@ -191,7 +184,8 @@ function wchrome(){
 function render(){
   if (!W.active) return;
   wchrome();
-  var tabs = [["galleries","Galleries"],["pages","Pages"],["style","Style"]].map(function(t){
+  if (W.screen === "style") W.screen = "pages";   /* the old Style tab: its settings are the editor's Theme now */
+  var tabs = [["galleries","Galleries"],["pages","Pages and look"]].map(function(t){
     return '<button data-s="'+t[0]+'" class="'+(W.screen===t[0]?"on":"")+'">'+t[1]+'</button>'; }).join("");
   $("root").innerHTML = '<div class="wrap" style="padding-top:22px">'
     + statusHtml()
@@ -201,10 +195,7 @@ function render(){
     b.onclick = function(){ W.screen = b.dataset.s; W.gid = null; render(); };
   });
   wireVersions();
-  W.dirtyForm = false;
-  $("wbody").addEventListener("input", function(){ W.dirtyForm = true; });
   if (W.screen === "pages") return pagesScreen();
-  if (W.screen === "style") return styleScreen();
   return W.gid ? galleryScreen(gal(W.gid)) : galleriesScreen();
 }
 function publish(){
@@ -307,84 +298,14 @@ function galleryScreen(g){
 }
 
 /* ---------- pages ---------- */
-/* the pages themselves are edited in the full-screen page editor (builder-admin.js); what stays here is site-wide */
+/* the pages, header, footer, theme and wording are all edited in the full-screen page editor (builder-admin.js,
+   sitewide-admin.js); the logo too, in its Theme panel */
 function pagesScreen(){
-  var s = W.state.settings;
-  $("wbody").innerHTML = '<h3 class="sec">Pages</h3>'
-    + '<p class="hint" style="margin:0 0 12px">Home, About, Contact, a page for each gallery and any page you add are made of blocks you can add, arrange, style and animate, with a live preview. Changes stay a draft until you publish.</p>'
-    + '<button class="btn" id="wedit">Open the page editor</button>'
-    + '<h3 class="sec">Site</h3>'
-    + '<div class="field"><label>Site name</label><input type="text" id="wsn" value="'+esc(s.siteName)+'"><div class="hint">Shown in browser tabs, and instead of a logo if you have none.</div></div>'
-    + '<h3 class="sec">Footer</h3>'
-    + '<div class="row2"><div class="field"><label>Copyright line</label><input type="text" id="wfc" value="'+esc(s.footer.copyright)+'"></div>'
-    + '<div class="field"><label>Instagram link</label><input type="url" id="wfi" value="'+esc(s.footer.instagram)+'" placeholder="https://www.instagram.com/…"></div></div>'
-    + '<button class="btn" id="wsavep">Save changes</button>';
+  $("wbody").innerHTML = '<h3 class="sec">Pages and look</h3>'
+    + '<p class="hint" style="margin:0 0 12px">Home, About, Contact, a page for each gallery and any page you add are made of blocks you can add, arrange, style and animate, with a live preview. '
+    + 'The header and its menu, the footer, the theme (colours, fonts, sizes, spacing and logo) and the site’s own wording are edited there too. Changes stay a draft until you publish.</p>'
+    + '<button class="btn" id="wedit">Open the page editor</button>';
   $("wedit").onclick = function(){ if (window.SiteBuilder){ W.active = false; SiteBuilder.open(); } };
-  $("wsavep").onclick = function(){
-    send("/settings", "PUT", { siteName: $("wsn").value, footer: { copyright: $("wfc").value, instagram: $("wfi").value } })
-      .then(function(r){ if (r) changed("Saved"); });
-  };
-}
-
-/* ---------- style ---------- */
-function fontSample(name){
-  var id = "wf-" + name.replace(/\s+/g, "-");
-  if (!document.getElementById(id)){
-    var l = document.createElement("link"); l.id = id; l.rel = "stylesheet";
-    l.href = "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(name).replace(/%20/g, "+") + ":wght@400;500&display=swap";
-    document.head.appendChild(l);
-  }
-}
-function styleScreen(){
-  var st = W.state.settings.style;
-  W.fonts.forEach(fontSample);
-  function color(id, label, v){ return '<div class="field"><label>'+label+'</label><div class="wcol"><input type="color" id="'+id+'" value="'+esc(v)+'"><input type="text" id="'+id+'t" value="'+esc(v)+'" style="max-width:110px"></div></div>'; }
-  function select(id, label, v, opts, hint){
-    return '<div class="field"><label>'+label+'</label><select id="'+id+'">' + opts.map(function(o){
-      return '<option value="'+esc(o[0])+'"'+(String(o[0])===String(v)?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")
-      + '</select>' + (hint ? '<div class="hint">'+hint+'</div>' : '') + '</div>';
-  }
-  var fonts = W.fonts.map(function(f){ return [f, f]; });
-  $("wbody").innerHTML = '<h3 class="sec">Colours</h3><div class="row2">'
-    + color("wsp", "Page background", st.page) + color("wsb", "Header and footer", st.band) + '</div><div class="row2">'
-    + color("wst", "Body text", st.text) + color("wsi", "Headings and menu", st.ink) + '</div>'
-    + '<h3 class="sec">Text</h3><div class="row2">'
-    + select("wshf", "Heading font", st.headingFont, fonts) + select("wsbf", "Body font", st.bodyFont, fonts) + '</div>'
-    + '<div class="wsample" id="wsample">Portraits · Hi! This is how your text will look.</div>'
-    + select("wsts", "Text size", st.textSize, [["smaller","Smaller"],["normal","Normal"],["larger","Larger"]])
-    + '<h3 class="sec">Logo</h3><div class="field">'
-    + (st.logo ? '<img class="wthumb" style="object-fit:contain;background:'+esc(st.band)+'" src="/api/admin/site/img/'+esc(st.logo)+'?v='+W.rev+'" alt="">' : '<p class="hint">No logo — the site name is shown instead.</p>')
-    + '<input type="file" id="wlogo" accept=".png,.svg,image/png,image/svg+xml"> '
-    + (st.logo ? '<button class="btn sm ghost" id="wlogox">Remove logo</button>' : '') + '</div>'
-    + '<h3 class="sec">Layout</h3><div class="row2">'
-    + select("wscd", "Gallery columns on computers", st.colsDesktop, [[2,"2"],[3,"3"],[4,"4"],[5,"5"]])
-    + select("wscp", "Gallery columns on phones", st.colsPhone, [[1,"1"],[2,"2"]]) + '</div><div class="row2">'
-    + select("wsg", "Space between photos", st.gap, [["none","None"],["tight","Tight"],["normal","Normal"],["roomy","Roomy"]])
-    + select("wsc", "Home page cards", st.cardShape, [["tall","Tall"],["square","Square"],["wide","Wide"]]) + '</div>'
-    + '<button class="btn" id="wsaves">Save style</button> <button class="btn ghost" id="wsreset">Reset to current look</button>';
-  ["wsp","wsb","wst","wsi"].forEach(function(id){
-    $(id).oninput = function(){ $(id + "t").value = $(id).value; };
-    $(id + "t").oninput = function(){ if (/^#[0-9a-f]{6}$/i.test($(id + "t").value)) $(id).value = $(id + "t").value; };
-  });
-  function sample(){ var s = $("wsample"); s.style.fontFamily = "'" + $("wsbf").value + "'"; s.firstChild.textContent = "Portraits · Hi! This is how your text will look."; }
-  $("wshf").onchange = sample; $("wsbf").onchange = sample; sample();
-  function values(){
-    return { page:$("wspt").value, band:$("wsbt").value, text:$("wstt").value, ink:$("wsit").value,
-      headingFont:$("wshf").value, bodyFont:$("wsbf").value, textSize:$("wsts").value,
-      colsDesktop:Number($("wscd").value), colsPhone:Number($("wscp").value), gap:$("wsg").value, cardShape:$("wsc").value };
-  }
-  $("wsaves").onclick = function(){ send("/settings", "PUT", { style: values() }).then(function(r){ if (r) changed("Style saved"); }); };
-  $("wsreset").onclick = function(){
-    if (!confirm("Go back to the original colours, fonts and layout? Your logo stays.")) return;
-    var d = {}; for (var k in W.defaults) if (k !== "logo") d[k] = W.defaults[k];
-    send("/settings", "PUT", { style: d }).then(function(r){ if (r) changed("Style reset"); });
-  };
-  $("wlogo").onchange = function(){
-    var f = $("wlogo").files[0]; if (!f) return;
-    fetch("/api/admin/site/logo?name=" + encodeURIComponent(f.name), { method:"POST", credentials:"same-origin", body:f })
-      .then(function(r){ return r.json().then(function(j){ toast(r.ok ? "Logo updated" : (j.error || "Logo upload failed")); changed(); }); });
-  };
-  if ($("wlogox")) $("wlogox").onclick = function(){ send("/logo", "DELETE").then(function(r){ if (r) changed("Logo removed"); }); };
 }
 
 /* one entry in the heading's section menu; leaving stops background repaints */
