@@ -62,12 +62,39 @@ Log out and back in. On a Raspberry Pi use the **64-bit** operating system, and 
 The installer is a command you type. A NAS has no terminal on its screen, so you turn on **SSH** (a way to connect a
 terminal from your own computer):
 
-1. In the NAS settings, find **SSH** (on a Synology: **Control Panel › Terminal & SNMP › Enable SSH service**) and switch it on.
+1. In the NAS settings, find **SSH** and switch it on:
+   - **Synology:** Control Panel › Terminal & SNMP › Enable SSH service.
+   - **Ugreen (UGOS):** Control Panel › Terminal (or SSH), then turn SSH on. Note the port, normally 22.
+   - **QNAP:** Control Panel › Network & File Services › Telnet / SSH, then Allow SSH connection.
+   - **Unraid:** Settings › Management Access › Use SSH.
+   - Menu names change between software versions. If you can't find it, search the NAS settings for "SSH".
 2. On your own computer, open a terminal and connect, using your NAS login and its address:
 
 ```bash
 ssh yourname@192.168.1.20
 ```
+
+   Not sure of the NAS's name or address? From your own computer, any of these will tell you:
+
+```bash
+arp -a
+```
+
+   lists every device on your network with its name and address (a device with no name shows as `?`).
+
+```bash
+dns-sd -B _smb._tcp local.
+```
+
+   (Mac) lists devices that share files, which includes most NASes, by name. Press Ctrl+C to stop it.
+
+```bash
+nslookup 192.168.1.20
+```
+
+   gives the name for an address you already know. Use the address from the list, or the name with `.local` after it
+   (`ssh yourname@mynas.local`). The NAS must be switched on and on the same network as your computer. Your router's list of
+   connected devices and the NAS's own settings show the name too.
 
 3. You should now see a prompt on the NAS. Run the installer there. When you're done, you can switch SSH off again.
 
