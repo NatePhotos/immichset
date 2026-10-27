@@ -8,6 +8,7 @@ import { esc } from './blocks/common.mjs';
 import { renderBlocks } from './blocks/registry.mjs';
 import { migratePages, resolvePages, isShownPage, pageHref } from './pages.mjs';
 import { rootVars } from './theme.mjs';
+import { IG, UP } from './bands.mjs';
 
 const asset = n => readFileSync(new URL(`./assets/${n}`, import.meta.url), 'utf8');
 const CSS = asset('site.css');
@@ -23,11 +24,6 @@ export const HEADERS = '/img/*\n  Cache-Control: public, max-age=31536000, immut
   + "\n/logo.svg\n  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox\n  X-Content-Type-Options: nosniff\n";
 
 export { esc };
-
-const IG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">'
-  + '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="0.6" fill="currentColor"/></svg>';
-const UP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">'
-  + '<path d="M12 20V4M5 11l7-7 7 7"/></svg>';
 
 const gridSize = p => (p.width > GRID_W ? [GRID_W, Math.round(p.height * GRID_W / p.width)] : [p.width, p.height]);
 /* inlined text must not end its <script> or <style> early */

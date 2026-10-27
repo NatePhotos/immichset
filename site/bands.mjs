@@ -216,3 +216,49 @@ export function cleanBand(raw, which, ids = new Set()) {
   }
   return { band: { style: s.props, elements }, errors };
 }
+
+/* ---- writing ----
+   ctx: { base, editor, siteName, logoHtml, wording, menuPages: [{ id, title, href }], pageHref(id), siteHref(path) }.
+   An element with nothing set in motion or visibility is written as its own markup, with no wrapper, and one with
+   nothing to show keeps its place as an empty span: that is what keeps a band made from the old settings identical. */
+export function renderElement(e, ctx) {
+  const t = ELEMENT_TYPES.get(e.type);
+  if (!t || (e.visible === 'none' && !ctx.editor)) return null;
+  let inner = t.render(e, ctx);
+  if (!inner) inner = ctx.editor ? `<span class="el-empty">${esc(t.label)}</span>` : '<span></span>';
+  const m = e.motion, cls = ['el'], vars = [];
+  if (e.visible === 'desktop' || e.visible === 'phone') cls.push(`vis-${e.visible}`);
+  if (e.visible === 'none') cls.push('blk-off');
+  if (m.entrance !== 'none') { cls.push('m', `m-${esc(m.entrance)}`); vars.push(`--m-dur:${Number(m.duration) || 0}ms`, `--m-delay:${Number(m.delay) || 0}ms`); }
+  if (m.hover !== 'none') cls.push(`eh-${esc(m.hover)}`);
+  if (cls.length === 1 && !ctx.editor) return inner;
+  return `<div class="${cls.join(' ')}"${ctx.editor ? ` data-e="${esc(e.id)}"` : ''}${vars.length ? ` style="${vars.join(';')}"` : ''}>${inner}</div>`;
+}
+
+const PAD = { compact: ' bp-compact', normal: '', roomy: ' bp-roomy' };
+function open(tag, cls, s, which, ctx, extraStyle = '') {
+  let c = cls + (PAD[s.padding] ?? '') + (s.alignment === 'spread' ? '' : ` ba-${esc(s.alignment)}`);
+  const style = [];
+  if (s.background === 'color') { c += ' bg-own'; style.push(`--band-bg:${esc(s.bgColor)}`); }
+  if (s.sticky) c += ' sticky';
+  if (extraStyle) style.push(extraStyle);
+  return `<${tag} class="${c}"${style.length ? ` style="${style.join(';')}"` : ''}${ctx.editor ? ` data-band="${which}"` : ''}>`;
+}
+
+export function renderHeader(h, ctx) {
+  const c = { ...ctx, band: 'header' };
+  const parts = h.elements.map(e => renderElement(e, c)).filter(x => x != null);
+  return `${open('header', 'top', h.style, 'header', ctx)}\n  ${parts.join('\n  ')}\n</header>`;
+}
+
+/* spread out, the footer is a grid: the first element at the left, the last at the right and the rest between, as
+   the old footer's three were; any other count gets its own columns */
+export function renderFooter(f, ctx) {
+  const c = { ...ctx, band: 'footer' };
+  const parts = f.elements.map(e => renderElement(e, c)).filter(x => x != null);
+  if (f.style.toTop) parts.push(`<a class="totop" href="#" aria-label="${esc(ctx.wording.toTop)}">${UP}</a>`);
+  const n = parts.length;
+  const cols = f.style.alignment === 'spread' && n !== 3
+    ? `grid-template-columns:${n <= 1 ? '1fr' : `1fr${' auto'.repeat(n - 2)} 1fr`};column-gap:1.5rem` : '';
+  return `${open('footer', 'foot', f.style, 'footer', ctx, cols)}\n  ${parts.join('\n  ')}\n</footer>`;
+}
