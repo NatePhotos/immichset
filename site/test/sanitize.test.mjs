@@ -12,7 +12,8 @@ test('URLs: only http(s), mailto and tel, however they are disguised', () => {
 });
 
 test('entities decode, including numeric ones, and unknown names are left alone', () => {
-  assert.equal(decodeEntities('&lt;b&gt; &amp; &#106;&#x41; &nbsp;&copy;'), '<b> & jA  &copy;');
+  assert.equal(decodeEntities('&lt;b&gt; &amp; &#106;&#x41; &nbsp;&copy;'), '<b> & jA \u00a0&copy;');
+  assert.equal(decodeEntities('a&nbsp;b'), 'a\u00a0b');
 });
 
 test('scripts, styles and frames go with their content; handlers and style attributes go', () => {
@@ -53,4 +54,9 @@ test('class values are limited to plain names', () => {
 test('sanitising twice changes nothing', () => {
   const once = sanitizeHtml('<p>A &amp; B&nbsp;<a href="https://e.com" target="_blank">l</a><b>x', 'rich');
   assert.equal(sanitizeHtml(once, 'rich'), once);
+});
+
+test('dropped containers are closed correctly even when lower-casing changes string length', () => {
+  assert.equal(sanitizeHtml('<style>İİİ</style>keep me', 'custom'), 'keep me');
+  assert.equal(sanitizeHtml('<SCRIPT>x</ScRiPt>ok', 'custom'), 'ok');
 });

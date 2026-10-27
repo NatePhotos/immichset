@@ -2,7 +2,7 @@
    allow-listed tags and attributes, checks every link, and writes the result out from the parsed pieces, never from the
    source, so nothing that was not allowed can come out. The same idea as design/css.mjs. Pure. */
 
-const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
 export function decodeEntities(s) {
   return String(s).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);?/gi, (m, e) => {
     if (e[0] === '#') {
@@ -73,7 +73,6 @@ export function sanitizeHtml(src, mode = 'rich') {
   const allow = TAGS[mode];
   if (!allow) throw new Error(`unknown sanitiser mode ${mode}`);
   const s = String(src ?? '');
-  const lower = s.toLowerCase();
   const open = [];
   let i = 0, out = '';
   while (i < s.length) {
@@ -91,9 +90,11 @@ export function sanitizeHtml(src, mode = 'rich') {
     const attrSrc = s.slice(i + m[0].length, end);
     i = end + 1;
     if (!closing && DROP.has(name)) {
-      const close = lower.indexOf(`</${name}`, i);
-      if (close < 0) { i = s.length; continue; }
-      const e = tagEnd(s, close + name.length + 2);
+      const re = new RegExp(`</${name}`, 'ig');
+      re.lastIndex = i;
+      const found = re.exec(s);
+      if (!found) { i = s.length; continue; }
+      const e = tagEnd(s, found.index + name.length + 2);
       i = e < 0 ? s.length : e + 1;
       continue;
     }
