@@ -108,7 +108,7 @@ test("layout choices produce their rules", () => {
   assert.match(designCss({ ...DEFAULT_DESIGN, cover: "none" }), /#cover\{display:none\}/);
   assert.match(designCss({ ...DEFAULT_DESIGN, cover: "banner", coverHeight: 60 }), /#cover\{height:60svh;min-height:280px\}/);
   assert.match(designCss({ ...DEFAULT_DESIGN, gridStyle: "tiles" }), /#grid\.tiles\{display:grid/);
-  assert.match(designCss({ ...DEFAULT_DESIGN, header: "centered" }), /\.htitle\{flex-basis:100%/);
+  assert.match(designCss({ ...DEFAULT_DESIGN, header: "centered" }), /\.hhead\{flex-basis:100%/);
   assert.match(designCss({ ...DEFAULT_DESIGN, rowHeight: 330 }), /--row-h-tablet:260/);
   assert.match(designCss({ ...DEFAULT_DESIGN, radius: 8 }), /--radius:8px/);
 });
@@ -190,7 +190,7 @@ test("the page has the hooks designCss targets", () => {
 import { COVER_LAYOUTS, COLOR_PRESETS, TYPE_PRESETS, COVER_CSS } from "../design.mjs";
 
 test("new settings default to today's look and are validated", () => {
-  for (const [k, v] of Object.entries({ coverLayout: "center", titleFont: "body", titleCase: "upper", titleWeight: 700, titleTracking: 0.085, titleSize: 100, navStyle: "text" }))
+  for (const [k, v] of Object.entries({ coverLayout: "center", titleFont: "body", titleCase: "upper", titleWeight: 700, titleTracking: 0.085, titleSize: 100, navStyle: "icons" }))
     assert.equal(DEFAULT_DESIGN[k], v, k);
   assert.ok(normaliseDesign({ coverLayout: "spiral" }).errors.coverLayout);
   assert.ok(normaliseDesign({ titleFont: "comic" }).errors.titleFont);
@@ -211,14 +211,15 @@ test("every preset is valid; every colour preset reads well", () => {
 
 test("the title rules are written only when they differ from the original", () => {
   const base = designCss(DEFAULT_DESIGN);
-  for (const re of [/font-family:'?Playfair|text-transform:none|font-weight:|letter-spacing:|font-size:calc|\.hbtn span|#grid\.columns/]) assert.doesNotMatch(base, re);
+  for (const re of [/font-family:'?Playfair|text-transform:none|font-weight:|letter-spacing:|font-size:calc|#grid\.columns/]) assert.doesNotMatch(base, re);
   assert.match(designCss({ ...DEFAULT_DESIGN, titleFont: "playfair-display" }), /\.cover-inner h1,\.htitle\{font-family:'Playfair Display'/);
   assert.match(designCss({ ...DEFAULT_DESIGN, titleCase: "none" }), /text-transform:none/);
   assert.match(designCss({ ...DEFAULT_DESIGN, titleWeight: 300 }), /\.cover-inner h1\{font-weight:300\}/);
   assert.match(designCss({ ...DEFAULT_DESIGN, titleTracking: 0.2 }), /letter-spacing:0\.2em/);
   assert.match(designCss({ ...DEFAULT_DESIGN, titleSize: 120 }), /clamp\(30px,6\.2vw,62px\)\*1\.2/);
   assert.match(designCss({ ...DEFAULT_DESIGN, navStyle: "icons" }), /\.hbtn span\{display:none\}/);
-  assert.match(designCss({ ...DEFAULT_DESIGN, gridStyle: "columns" }), /#grid\.columns\{column-width/);
+  assert.doesNotMatch(designCss({ ...DEFAULT_DESIGN, navStyle: "text" }), /\.hbtn span/);
+  assert.match(designCss({ ...DEFAULT_DESIGN, gridStyle: "columns" }), /#grid\.columns\{display:flex/);
 });
 
 test("the font link follows the body and title fonts, and the default is unchanged", () => {

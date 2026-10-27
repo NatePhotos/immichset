@@ -7,7 +7,10 @@
    Uses the panel's globals through window.AdminKit. */
 (function(){
 var K = window.AdminKit, $ = K.$, api = K.api, esc = K.esc, toast = K.toast;
-var DEVICES = { phone: { w: 390, h: 844, label: "Phone" }, tablet: { w: 820, h: 1180, label: "Tablet" }, desktop: { w: 1440, h: 900, label: "Desktop" } };
+var DEVICES = { phone: { w: 390, h: 844, label: "Phone" }, tablet: { w: 820, h: 1180, label: "Tablet" }, desktop: { desk: true, ratio: 16 / 9, label: "Desktop" }, fit: { desk: true, label: "Fit" } };
+/* Both computer sizes follow the preview area at full scale, so the words never change size: Fit fills the area,
+   Desktop is the largest standard 16:9 screen that fits in it. */
+function isDesk(k){ return !!DEVICES[k].desk; }
 var SECTIONS = [["cover", "Cover"], ["type", "Typography"], ["color", "Color"], ["grid", "Grid"]];
 /* section icons: Lucide, the same set as the rest of the panel */
 var ICONS = { cover: "image", type: "type", color: "palette", grid: "layout-grid", advanced: "sliders-horizontal" };
@@ -125,7 +128,7 @@ function open(g, pane){
   }
   close();
   D.open = true; D.gid = g.id; D.section = m.s; D.sub = m.sub; D.undo = []; D.redo = []; D.errors = {}; D.warnings = []; D.last = null;
-  D.status = "Saved"; D.bad = false; D.device = window.innerWidth < 900 ? "phone" : "desktop"; D.land = false;
+  D.status = "Saved"; D.bad = false; D.device = window.innerWidth < 900 ? "phone" : "fit"; D.land = false;
   chrome();
   $("root").innerHTML = '<div class="spin" style="margin:60px auto"></div>';
   var mine = ++D.seq;
@@ -220,19 +223,25 @@ function paintDevices(){
   $("dzDev").innerHTML = Object.keys(DEVICES).map(function(k){ return '<button type="button" data-d="' + k + '" class="' + (D.device === k ? "on" : "") + '">' + DEVICES[k].label + '</button>'; }).join("")
     + '<button type="button" id="dzRot" aria-label="Rotate" title="Rotate">⟳</button>';
   Array.prototype.forEach.call($("dzDev").querySelectorAll("button[data-d]"), function(b){
-    b.onclick = function(){ D.device = b.dataset.d; if (D.device === "desktop") D.land = false; paintDevices(); fit(); };
+    b.onclick = function(){ D.device = b.dataset.d; if (isDesk(D.device)) D.land = false; paintDevices(); fit(); };
   });
-  $("dzRot").onclick = function(){ if (D.device !== "desktop"){ D.land = !D.land; fit(); } };
+  $("dzRot").onclick = function(){ if (!isDesk(D.device)){ D.land = !D.land; fit(); } };
 }
 function fit(){
   var host = $("dzCanvas"), fr = D.frame; if (!host || !fr) return;
-  var d = DEVICES[D.device], w = D.land ? d.h : d.w, h = D.land ? d.w : d.h;
-  var pad = D.device === "desktop" ? 0 : 20;
-  var k = Math.min(1, (host.clientWidth - pad) / w, (host.clientHeight - pad) / h);
-  if (!(k > 0)) return;
+  var d = DEVICES[D.device], desk = isDesk(D.device);
+  var w, h, k;
+  if (desk){
+    w = host.clientWidth; h = host.clientHeight; k = 1;
+    if (d.ratio){ if (w / h > d.ratio) w = Math.round(h * d.ratio); else h = Math.round(w / d.ratio); }
+  } else {
+    w = D.land ? d.h : d.w; h = D.land ? d.w : d.h;
+    k = Math.min(1, (host.clientWidth - 20) / w, (host.clientHeight - 20) / h);
+  }
+  if (!(k > 0) || !(w > 0)) return;
   fr.style.width = w + "px"; fr.style.height = h + "px"; fr.style.transform = "scale(" + k + ")";
   var box = $("dzDevice"); box.style.width = Math.round(w * k) + "px"; box.style.height = Math.round(h * k) + "px";
-  box.className = "dzdevice " + (D.device === "desktop" ? "" : D.device);
+  box.className = "dzdevice " + (desk ? "" : D.device);
 }
 function send(msg){ try { if (D.frame && D.frame.contentWindow) D.frame.contentWindow.postMessage(msg, location.origin); } catch (e) {} }
 function scrollPreview(){ send({ type: "ims-scroll", to: D.section === "grid" ? "grid" : "cover" }); }

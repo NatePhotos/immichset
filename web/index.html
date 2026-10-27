@@ -19,7 +19,7 @@
   --line:#e6e6e6;
   --cover-scrim:0.28;
   --gap:10px;
-  --maxw:1680px;
+  --maxw:3840px;
   /* Set by a gallery design (see design/design.mjs); these defaults are the original look. */
   --accent:#1a1a1a;
   --accent-fg:#ffffff;
@@ -112,36 +112,44 @@ button{font-family:inherit;cursor:pointer}
 
 /* ---------- header ---------- */
 body.lb-open header{visibility:hidden}
-.sets{display:flex;gap:26px;overflow-x:auto;padding:0 28px 11px;-webkit-overflow-scrolling:touch;
-  scrollbar-width:none}
-.sets::-webkit-scrollbar{display:none}
-.sets button{background:none;border:0;padding:3px 0 7px;cursor:pointer;white-space:nowrap;color:var(--page-fg);
-  opacity:.5;font-size:10.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;
-  border-bottom:1.5px solid transparent;transition:opacity .2s,border-color .2s;font-family:inherit}
+.sets{display:flex;gap:4px 24px;flex-wrap:wrap;align-items:center}
+.sets[hidden]{display:none}
+.sets button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:6px 0;cursor:pointer;white-space:nowrap;color:var(--page-fg);
+  opacity:.5;font-size:12.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  transition:opacity .2s,border-color .2s;font-family:inherit}
 .sets button:hover{opacity:.85}
 .sets button.on{opacity:1;border-bottom-color:currentColor}
-@media(max-width:700px){.sets{gap:20px;padding:0 16px 10px}}
 
 header{position:sticky;top:0;z-index:30;background:var(--header-bg);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
-.hwrap{max-width:var(--maxw);margin:0 auto;padding:0 20px;height:62px;display:flex;align-items:center;gap:16px}
-.htitle{flex:1 1 auto;min-width:0;font-size:12px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hcount{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;flex:0 0 auto;margin-right:4px}
-.hbtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;padding:10px 6px;border:none;background:transparent;color:var(--page-fg);opacity:.72;font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;transition:opacity .22s}
+/* the header and the grid share one width and one side margin, so the title lines up with the first photo */
+:root{--edge:max(var(--gap),14px)}
+.hwrap{max-width:var(--maxw);margin:0 auto;padding:14px var(--edge);min-height:78px;display:flex;align-items:center;flex-wrap:wrap;gap:8px 36px}
+.hhead{min-width:0;flex:0 1 auto}
+.htitle{font-size:20px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;line-height:1.2;overflow-wrap:anywhere}
+.hsub{margin-top:6px;color:var(--muted);font-size:11px;font-weight:500;letter-spacing:.24em;text-transform:uppercase}
+.hsub:empty{display:none}
+.hact{margin-left:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.hcount{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;margin-right:10px}
+.hbtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;padding:10px 8px;border:none;background:transparent;color:var(--page-fg);opacity:.72;font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;transition:opacity .22s}
 .hbtn:hover{opacity:1}
 .hbtn svg{display:none;flex:0 0 auto}
 .hbtn[disabled]{opacity:.3;cursor:default}
 @media(max-width:700px){
   .hcount{display:none}
-  .hwrap{gap:8px;padding:0 14px;height:56px}
+  .hwrap{gap:6px 12px;padding:10px var(--edge);min-height:64px}
+  .hhead{flex:1 1 0}
+  .htitle{font-size:15px;letter-spacing:.1em}
+  .hsub{margin-top:4px;font-size:10px}
+  .sets{order:3;flex:0 0 100%;gap:2px 20px}
+  .sets button{font-size:11.5px}
   .hbtn span{display:none}
   .hbtn svg{display:block;width:19px;height:19px}
   .hbtn{width:40px;height:40px;padding:0;gap:0;flex:0 0 auto;opacity:.85}
-  .htitle{font-size:11px;letter-spacing:.14em;min-width:0}
+  .hact{gap:0}
 }
 /* tablets: a little more room than a phone, less than a desktop */
 @media(min-width:701px) and (max-width:1100px){
-  .hwrap{padding:0 24px;height:60px;gap:12px}
-  .sets{padding:0 24px 10px}
+  .hwrap{gap:8px 24px}
   .cover-inner h1{font-size:clamp(34px,6vw,54px)}
 }
 /* touch screens: bigger targets, and clear of a notch in landscape */
@@ -151,12 +159,13 @@ header{position:sticky;top:0;z-index:30;background:var(--header-bg);backdrop-fil
   .nav{width:56px;height:56px}
   #toTop{width:48px;height:48px}
 }
-@media(pointer:coarse) and (min-width:701px){
-  .hwrap{padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
+@media(pointer:coarse){
+  .hwrap{padding-left:max(var(--edge),env(safe-area-inset-left));padding-right:max(var(--edge),env(safe-area-inset-right))}
 }
 
 /* ---------- grid ---------- */
 #grid{max-width:var(--maxw);margin:0 auto;padding:var(--gap)}
+@media(pointer:coarse){#grid{padding-left:max(var(--gap),env(safe-area-inset-left));padding-right:max(var(--gap),env(safe-area-inset-right))}}
 .row{display:flex;gap:var(--gap);margin-bottom:var(--gap)}
 .cell{position:relative;overflow:hidden;background:var(--tile-bg);border-radius:var(--radius);cursor:zoom-in}
 .cell img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .55s ease,transform .7s ease}
@@ -192,6 +201,7 @@ footer a:hover{color:var(--page-fg)}
 #lb .stage{position:absolute;inset:0;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);
   place-items:center;padding:62px 70px;touch-action:none;overflow:hidden}
 #lb img,#lb video{max-width:100%;max-height:100%;object-fit:contain;width:auto;height:auto}
+#lb video{width:100%;height:100%;background:#000}
 #lb img{transform-origin:50% 50%;will-change:transform}
 #lb .bar{position:absolute;top:0;left:0;right:0;min-height:60px;display:flex;align-items:center;gap:8px;z-index:2;
   padding:env(safe-area-inset-top) calc(14px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));color:#fff;
@@ -241,6 +251,24 @@ footer a:hover{color:var(--page-fg)}
 #prog.ready .pbar{display:none}
 .pgo+.pcancel{margin-top:24px}
 
+/* ---------- share ---------- */
+#share{position:fixed;inset:0;z-index:75;background:rgba(12,12,12,.62);display:none;place-items:center;padding:20px}
+#share.on{display:grid}
+.sbox{position:relative;width:min(460px,100%);background:var(--surface);color:var(--page-fg);padding:38px 38px 34px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.sbox h3{margin:0 0 26px;font-size:16px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.sx{position:absolute;top:12px;right:12px;width:40px;height:40px;border:0;background:none;color:var(--muted);display:grid;place-items:center;padding:0;cursor:pointer}
+.sx:hover{color:var(--page-fg)}
+.slink{display:flex;margin-bottom:34px;background:var(--tile-bg)}
+.slink input{flex:1 1 auto;min-width:0;border:0;background:none;padding:16px;font:inherit;font-size:14px;color:inherit;outline:none}
+.slink button{flex:0 0 auto;border:0;background:var(--accent);color:var(--accent-fg);padding:0 26px;font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase}
+.sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:28px 8px}
+.sgrid button{display:flex;flex-direction:column;align-items:center;gap:10px;border:0;background:none;color:var(--muted);font-size:12.5px;letter-spacing:.02em;padding:0;cursor:pointer}
+.sgrid button:hover{color:var(--page-fg)}
+.sgrid i{width:56px;height:56px;border-radius:50%;background:var(--muted);color:var(--surface);display:grid;place-items:center;font-style:normal;transition:background .2s}
+.sgrid button:hover i{background:var(--page-fg)}
+.sgrid svg{width:28px;height:28px;fill:currentColor}
+@media(max-width:420px){.sbox{padding:30px 22px 26px}.sgrid{gap:22px 4px}.sgrid i{width:48px;height:48px}.sgrid button{font-size:11px}}
+
 /* ---------- toast ---------- */
 #toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,16px);background:#111;color:#fff;padding:13px 22px;font-size:12px;letter-spacing:.09em;z-index:70;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;max-width:88vw;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
@@ -287,13 +315,16 @@ footer a:hover{color:var(--page-fg)}
 
   <header id="hdr">
     <div class="hwrap">
-      <div class="htitle" id="hTitle"></div>
-      <div class="hcount" id="hCount"></div>
-      <button class="hbtn" id="btnFav" aria-label="Favourites" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg><span>Favourites</span></button>
-      <button class="hbtn" id="btnSlides" aria-label="Slideshow"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5z"/></svg><span>Slideshow</span></button>
-      <button class="hbtn" id="btnAll" aria-label="Download all"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg><span>Download All</span></button>
+      <div class="hhead"><div class="htitle" id="hTitle"></div><div class="hsub" id="hSub"></div></div>
+      <nav class="sets" id="setRow" hidden></nav>
+      <div class="hact">
+        <div class="hcount" id="hCount"></div>
+      <button class="hbtn" id="btnFav" aria-label="Favourites" title="Favourites" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg><span>Favourites</span></button>
+      <button class="hbtn" id="btnAll" aria-label="Download all" title="Download all"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg><span>Download All</span></button>
+      <button class="hbtn" id="btnShare" aria-label="Share" title="Share"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5l6 5.5-6 5.5v-3.2c-4.4 0-7.3 1.3-9.5 4.7.6-4.6 3.2-8.2 9.5-8.9z"/></svg><span>Share</span></button>
+      <button class="hbtn" id="btnSlides" aria-label="Slideshow" title="Slideshow"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5z"/></svg><span>Slideshow</span></button>
+      </div>
     </div>
-    <nav class="sets" id="setRow" hidden></nav>
   </header>
 
   <div id="grid"></div>
@@ -326,6 +357,15 @@ footer a:hover{color:var(--page-fg)}
   <div class="mbar">
     <button class="mbtn" id="mSave">Save to Photos</button>
     <button class="mbtn" id="mDl">Download</button>
+  </div>
+</div>
+
+<div id="share" role="dialog" aria-modal="true" aria-labelledby="shareT">
+  <div class="sbox">
+    <button type="button" class="sx" id="shareX" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+    <h3 id="shareT">Share</h3>
+    <div class="slink"><input id="shareUrl" readonly aria-label="Gallery link"><button type="button" id="shareCopy">Copy</button></div>
+    <div class="sgrid" id="shareGrid"><button type="button" data-via="messenger"><i><svg viewBox="0 0 24 24"><path d="M12 3C6.9 3 3 6.8 3 11.6c0 2.6 1.2 4.9 3.1 6.4V21l2.9-1.6c.9.3 1.9.4 3 .4 5.1 0 9-3.8 9-8.6S17.100 3 12 3zm.9 11.5l-2.3-2.4-4.500 2.400 5-5.300 2.400 2.400 4.400-2.400-5 5.300z"/></svg></i><span>Messenger</span></button><button type="button" data-via="whatsapp"><i><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 00-7.700 13.600L3 21l4.500-1.200A9 9 0 1012 3zm4.600 12.300c-.2.600-1.200 1.100-1.700 1.200-.4.100-1 .1-1.600-.1-1.700-.6-3.600-2-4.800-4-.8-1.200-1-2.300-.9-3 .1-.7.800-1.500 1.200-1.600.3-.1.500 0 .7.400l.6 1.400c.1.300 0 .5-.2.700l-.4.500c.8 1.500 1.800 2.300 3.200 3l.5-.6c.2-.2.400-.3.700-.2l1.500.7c.3.100.4.300.4.600z"/></svg></i><span>WhatsApp</span></button><button type="button" data-via="facebook"><i><svg viewBox="0 0 24 24"><path d="M13.500 21v-7.500h2.600l.4-3h-3V8.600c0-.9.300-1.400 1.500-1.400h1.600V4.500c-.3 0-1.200-.1-2.300-.1-2.300 0-3.800 1.400-3.800 3.900v2.200H7.900v3h2.600V21z"/></svg></i><span>Facebook</span></button><button type="button" data-via="email"><i><svg viewBox="0 0 24 24"><path d="M4 6h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7a1 1 0 011-1zm.8 1.800l7.200 5.200 7.200-5.200-.6-.8L12 11.800 5.400 7z"/></svg></i><span>Email</span></button><button type="button" data-via="x"><i><svg viewBox="0 0 24 24"><path d="M17.800 4h2.900l-6.300 7.200L21.800 20H16l-4.500-5.900L6.300 20H3.400l6.700-7.700L2.900 4h5.900l4.100 5.400zm-1 14.300h1.600L7.900 5.600H6.200z"/></svg></i><span>X (Twitter)</span></button><button type="button" data-via="pinterest"><i><svg viewBox="0 0 24 24"><path d="M12.200 3C7.800 3 5.500 6 5.500 8.900c0 1.500.8 3.300 2.100 3.900.2.100.3 0 .3-.2l.3-1.200c0-.2 0-.3-.1-.4-.4-.5-.7-1.400-.7-2.200 0-2.100 1.600-4.100 4.300-4.100 2.400 0 4 1.600 4 3.900 0 2.600-1.300 4.400-3.100 4.400-1 0-1.700-.8-1.500-1.800.3-1.100.8-2.400.8-3.300 0-.8-.4-1.400-1.200-1.400-1 0-1.800 1-1.800 2.400 0 .9.300 1.500.3 1.500l-1.200 5c-.2 1-.1 2.200 0 3 0 .2.300.2.400.1.100-.1 1.200-1.500 1.600-2.900l.6-2.400c.3.600 1.200 1.100 2.200 1.100 2.900 0 4.900-2.600 4.900-6.200C18.500 5.500 16 3 12.200 3z"/></svg></i><span>Pinterest</span></button><button type="button" data-via="threads"><i><svg viewBox="0 0 24 24"><path d="M16.800 11.200c-.1 0-.2-.1-.3-.1-.2-2.700-1.700-4.200-4.200-4.200-1.500 0-2.800.6-3.500 1.800l1.300.9c.5-.8 1.300-1 2.200-1 1.200 0 2 .6 2.200 1.700a9 9 0 00-2.100-.1c-2.100.1-3.400 1.300-3.300 2.900.1 1.600 1.500 2.600 3.300 2.500 1.500-.1 2.600-.7 3-2.300.3.200.5.500.7.800.6 1 .4 2.600-1.100 3.800-1.100.9-2.400 1.300-4.100 1.300-1.900 0-3.400-.6-4.300-1.800-.9-1.100-1.300-2.700-1.300-4.600s.4-3.500 1.300-4.600c.9-1.200 2.400-1.800 4.300-1.800 2 0 3.500.6 4.500 1.800.5.600.8 1.300 1.100 2.100l1.500-.4c-.3-1.100-.8-2-1.500-2.700C16.900 5.900 15 5.100 12.600 5.100c-2.400 0-4.200.8-5.400 2.300C6.100 8.700 5.600 10.500 5.600 12.800s.5 4.100 1.600 5.400c1.200 1.500 3 2.300 5.400 2.300 2.100 0 3.800-.6 5-1.700 1.900-1.500 2-3.800 1.100-5.300-.5-.8-1.100-1.400-1.900-1.800zm-4.100 4c-.9.100-1.800-.3-1.800-1.100 0-.7.700-1.300 1.800-1.300.5 0 1 0 1.400.1-.1 1.700-.9 2.300-1.400 2.300z"/></svg></i><span>Threads</span></button><button type="button" data-via="more"><i><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.800"/><circle cx="12" cy="12" r="1.800"/><circle cx="18" cy="12" r="1.800"/></svg></i><span>More</span></button></div>
   </div>
 </div>
 
@@ -728,6 +768,7 @@ function render(){
   document.title = title;
   $("coverTitle").textContent = title;
   $("hTitle").textContent = title;
+  $("hSub").textContent = BRAND.name || "";
   $("coverMark").innerHTML = BRAND.url
     ? '<a href="'+esc(BRAND.url)+'" target="_blank" rel="noopener">'+MARK+'</a>' : MARK;
   $("footMark").innerHTML = BRAND.url
@@ -899,6 +940,28 @@ function layout(){
     row = []; sum = 0;
   }
 
+  /* columns: each photo goes into the shortest column, so the order still reads left to right
+     along the top and then fills in whichever column has room, and the bottoms stay level */
+  if (mode === "columns"){
+    var minW = cssNum("--tile-min", 240);
+    var n = Math.max(1, Math.floor((W + gap) / (minW + gap)));
+    var cols = [], heights = [];
+    for (var ci = 0; ci < n; ci++){
+      var col = document.createElement("div"); col.className = "col";
+      host.appendChild(col); cols.push(col); heights.push(0);
+    }
+    view.forEach(function(a,i){
+      a._i = i;
+      var c = makeCell(a);
+      var r = a.ratio || 1;
+      c.style.aspectRatio = String(r);
+      var k = 0;
+      for (var j = 1; j < n; j++) if (heights[j] < heights[k] - 0.001) k = j;
+      cols[k].appendChild(c);
+      heights[k] += 1 / r;   /* equal widths, so height is proportional to 1 / ratio */
+    });
+    return;
+  }
   if (tiles){
     view.forEach(function(a,i){
       a._i = i;
@@ -1236,6 +1299,57 @@ $("btnFav").addEventListener("click", function(){
   favOnly = !favOnly; render(); paintFavUi();
 });
 $("btnSlides").addEventListener("click", startSlides);
+
+/* ---------- share ---------- */
+function shareUrl(){ return location.origin + location.pathname; }
+function shareOpen(){
+  $("shareUrl").value = shareUrl();
+  $("share").classList.add("on");
+  $("shareCopy").textContent = "Copy";
+}
+function shareClose(){ $("share").classList.remove("on"); }
+function copyText(t){
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t);
+  return new Promise(function(ok, no){
+    var i = $("shareUrl"); i.focus(); i.select();
+    try { document.execCommand("copy") ? ok() : no(); } catch(e){ no(e); }
+  });
+}
+function shareCopy(msg){
+  copyText(shareUrl()).then(function(){
+    $("shareCopy").textContent = "Copied";
+    if (msg) toast(msg);
+  }, function(){ $("shareUrl").select(); toast("Press copy on your keyboard to copy the link"); });
+}
+function shareVia(via){
+  var u = encodeURIComponent(shareUrl()), t = encodeURIComponent(((album && album.albumName) || "Gallery") + (BRAND.name ? " by " + BRAND.name : ""));
+  var tu = encodeURIComponent(((album && album.albumName) || "Gallery") + " " + shareUrl());
+  var go = function(url){ window.open(url, "_blank", "noopener"); };
+  if (via === "whatsapp") go("https://wa.me/?text=" + tu);
+  else if (via === "facebook") go("https://www.facebook.com/sharer/sharer.php?u=" + u);
+  else if (via === "email") location.href = "mailto:?subject=" + t + "&body=" + u;
+  else if (via === "x") go("https://twitter.com/intent/tweet?url=" + u + "&text=" + t);
+  else if (via === "threads") go("https://www.threads.net/intent/post?text=" + tu);
+  else if (via === "pinterest"){
+    var m = link && link.cover ? encodeURIComponent(new URL(link.cover, location.href).href) : "";
+    go("https://www.pinterest.com/pin/create/button/?url=" + u + (m ? "&media=" + m : "") + "&description=" + t);
+  }
+  else if (via === "messenger"){
+    if (window.matchMedia("(pointer:coarse)").matches) location.href = "fb-messenger://share/?link=" + u;
+    else shareCopy("Link copied \u2014 paste it into Messenger");
+  }
+  else if (via === "more"){
+    if (navigator.share) navigator.share({ title: (album && album.albumName) || "Gallery", url: shareUrl() }).catch(function(){});
+    else shareCopy("Link copied");
+  }
+}
+$("btnShare").addEventListener("click", shareOpen);
+$("shareX").addEventListener("click", shareClose);
+$("share").addEventListener("click", function(e){ if (e.target === $("share")) shareClose(); });
+$("shareCopy").addEventListener("click", function(){ shareCopy(); });
+$("shareUrl").addEventListener("focus", function(){ this.select(); });
+$("shareGrid").addEventListener("click", function(e){ var b = e.target.closest("button"); if (b) shareVia(b.dataset.via); });
+document.addEventListener("keydown", function(e){ if (e.key === "Escape" && $("share").classList.contains("on")){ shareClose(); e.stopPropagation(); } }, true);
 
 /* ---------- downloads ---------- */
 function filenameFrom(r, i){

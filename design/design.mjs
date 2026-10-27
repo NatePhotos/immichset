@@ -56,7 +56,7 @@ export const RANGES = {
   tileAspect: { min: 0.5, max: 2, step: 0.05, unit: '' },
   gap: { min: 0, max: 40, step: 1, unit: 'px' },
   radius: { min: 0, max: 24, step: 1, unit: 'px' },
-  maxWidth: { min: 960, max: 2560, step: 10, unit: 'px' },
+  maxWidth: { min: 960, max: 3840, step: 10, unit: 'px' },
   coverHeight: { min: 30, max: 100, step: 5, unit: '%' },
   coverScrim: { min: 0, max: 70, step: 1, unit: '%' },
   titleWeight: { min: 300, max: 700, step: 100, unit: '' },
@@ -67,9 +67,9 @@ export const RANGES = {
 /* The defaults are exactly what the gallery page looked like before designs existed. */
 export const DEFAULT_DESIGN = Object.freeze({
   theme: 'light', background: null, text: null, accent: null, font: 'montserrat',
-  gridStyle: 'justified', rowHeight: 330, tileMinWidth: 240, tileAspect: 1, gap: 10, radius: 0, maxWidth: 1680,
+  gridStyle: 'justified', rowHeight: 330, tileMinWidth: 240, tileAspect: 1, gap: 10, radius: 0, maxWidth: 3840,
   cover: 'full', coverHeight: 100, coverScrim: 28, header: 'bar', customCss: '',
-  coverLayout: 'center', titleFont: 'body', titleCase: 'upper', titleWeight: 700, titleTracking: 0.085, titleSize: 100, navStyle: 'text',
+  coverLayout: 'center', titleFont: 'body', titleCase: 'upper', titleWeight: 700, titleTracking: 0.085, titleSize: 100, navStyle: 'icons',
   coverMotion: 'on', slideshow: 'on', favourites: 'on', photoCount: 'on',
 });
 const KEYS = Object.keys(DEFAULT_DESIGN);
@@ -159,7 +159,10 @@ export function normaliseDesign(input, { partial = false } = {}) {
 
 /* site is a full design (or null), own is a sparse override object (or null). */
 export function effectiveDesign(site, own) {
-  return { ...DEFAULT_DESIGN, ...(site || {}), ...(own || {}) };
+  const d = { ...DEFAULT_DESIGN, ...(site || {}), ...(own || {}) };
+  /* 1680 was the old default width, saved into every design made before the gallery went full width */
+  if (d.maxWidth === 1680) d.maxWidth = DEFAULT_DESIGN.maxWidth;
+  return d;
 }
 
 export function isDefaultDesign(d) {
@@ -228,7 +231,7 @@ export function designCss(d) {
   const f = fontById(d.font);
   const light = palette(d.theme === 'dark' ? 'dark' : 'light', d);
   const scheme = d.theme === 'dark' ? 'dark' : d.theme === 'system' ? 'light dark' : 'light';
-  let css = `:root{color-scheme:${scheme};${vars(light)};--cover-scrim:${d.coverScrim / 100};--gap:${d.gap}px;--maxw:${d.maxWidth}px;` +
+  let css = `:root{color-scheme:${scheme};${vars(light)};--cover-scrim:${d.coverScrim / 100};--gap:${d.gap}px;--maxw:${d.maxWidth === 1680 ? DEFAULT_DESIGN.maxWidth : d.maxWidth}px;` +
     `--font:${f.stack};--radius:${d.radius}px;--row-h:${d.rowHeight};--row-h-tablet:${Math.round(d.rowHeight * 260 / 330)};` +
     `--tile-min:${d.tileMinWidth}px;--tile-aspect:${d.tileAspect};--ims-cover:${d.cover};--ims-grid:${d.gridStyle};--ims-header:${d.header};--ims-cover-layout:${d.coverLayout}}`;
   if (d.theme === 'system') css += `@media (prefers-color-scheme:dark){:root{${vars(THEMES.dark)}}}`;
@@ -236,10 +239,11 @@ export function designCss(d) {
   else if (d.cover === 'banner') css += `#cover{height:${d.coverHeight}svh;min-height:280px}`;
   if (d.gridStyle === 'tiles') css += '#grid.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(var(--tile-min),calc(50% - var(--gap))),1fr));gap:var(--gap)}' +
     '#grid.tiles .cell{aspect-ratio:var(--tile-aspect)}';
-  if (d.header === 'centered') css += '@media (min-width:701px){.hwrap{flex-wrap:wrap;justify-content:center;height:auto;padding-block:14px}' +
-    '.htitle{flex-basis:100%;text-align:center}}';
-  if (d.gridStyle === 'columns') css += '#grid.columns{column-width:var(--tile-min);column-gap:var(--gap)}' +
-    '#grid.columns .cell{display:block;break-inside:avoid;margin-bottom:var(--gap)}';
+  if (d.header === 'centered') css += '@media (min-width:701px){.hwrap{justify-content:center}' +
+    '.hhead{flex-basis:100%;text-align:center}.hact{margin-left:0}}';
+  if (d.gridStyle === 'columns') css += '#grid.columns{display:flex;align-items:flex-start;gap:var(--gap)}' +
+    '#grid.columns .col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:var(--gap)}' +
+    '#grid.columns .cell{width:100%}';
   /* titles: only what differs from the original look is written */
   if (d.titleFont !== 'body') css += `.cover-inner h1,.htitle{font-family:${fontById(d.titleFont).stack}}`;
   if (d.titleCase === 'none') css += '.cover-inner h1,.htitle,.gate-box h1{text-transform:none}';
@@ -250,6 +254,7 @@ export function designCss(d) {
     css += `.cover-inner h1{font-size:calc(clamp(30px,6.2vw,62px)*${k})}@media(min-width:701px) and (max-width:1100px){.cover-inner h1{font-size:calc(clamp(34px,6vw,54px)*${k})}}`;
   }
   if (d.navStyle === 'icons') css += '@media(min-width:701px){.hbtn span{display:none}.hbtn svg{display:block;width:19px;height:19px}.hbtn{width:40px;height:40px;padding:0;gap:0}}';
+  else css += '@media(min-width:701px){.hbtn svg{display:none}}';
   /* cover animation off: the cover is shown at once, in its final place */
   if (d.coverMotion === 'off') css += '#cover .bg{transition:none;transform:none}.cover-inner{transition:none;transform:none}';
   /* things clients can do: off hides the control (the heart on each photo and in the viewer, the Favourites button; the Slideshow button) */
