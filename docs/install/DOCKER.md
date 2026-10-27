@@ -74,20 +74,17 @@ terminal from your own computer):
 ssh yourname@192.168.1.20
 ```
 
-   Not sure of the NAS's name or address? From your own computer, this lists every device on your network:
+   The part **before** the `@` is your **account username**: the one you type on the NAS's web sign-in page (often `admin`).
+   It is **not** the NAS's name. The part after the `@` is the NAS's address.
 
-```bash
-arp -a
-```
+   You can find the NAS's name and address on its **About** page: open the NAS's web page, then look for **About** (or
+   **System information**, or **Network**) in its settings. It shows the device name and the IP address (a number like
+   `192.168.1.20`).
 
-   Each line is a device with its name and address, like `mynas (192.168.1.20)`. Pick out your NAS. It is usually the one named
-   after the brand or a name you gave it. Ignore the router (often ending in `.1`), printers, phones, and lines with `?` or
-   addresses starting `224.`, `239.` or `255.`. Then connect with the address, or the name with `.local` after it
-   (`ssh yourname@mynas.local`).
-
-   Still can't tell which one it is? Your router's list of connected devices and the NAS's own settings show its name, and
-   `nslookup 192.168.1.20` (with the address you suspect) gives the name for that address. The NAS must be switched on and on
-   the same network as your computer.
+   It asks for a password: that is the **password of your NAS account** (the one you use to sign in to the NAS's web page),
+   not your computer's. Nothing appears on screen as you type it; that is normal. Press Enter when done. The first time it
+   asks "Are you sure you want to continue connecting?" type `yes`. Use an administrator account on the NAS. "Permission denied"
+   means the username or password is wrong, or that account isn't allowed to use SSH; try the administrator account.
 
 3. You should now see a prompt on the NAS. Run the installer there. When you're done, you can switch SSH off again.
 
