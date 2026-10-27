@@ -24,7 +24,7 @@ const BRIDGE_JS = asset('edit-bridge.js');
 const BANDS_CSS = asset('bands.css');
 const BANDS_JS = asset('bands.js');
 const EDIT_CSS = ':is([data-b],[data-e],[data-band]){cursor:pointer}:is([data-b],[data-e],[data-band]):hover{outline:2px dashed rgba(47,111,237,.55);outline-offset:-2px}'
-  + '.wb-sel{outline:2px solid #2f6fed!important;outline-offset:-2px}.blk-off{display:revert;opacity:.35}'
+  + '.wb-sel{outline:2px solid #2f6fed!important;outline-offset:-2px}.blk-off{display:revert;opacity:.35}.el.blk-off{display:flex}'
   + '.blk-empty{margin:1rem;padding:1.2rem;text-align:center;border:1px dashed #8a94a6;color:#5b6577;font:14px system-ui,sans-serif}';
 const GRID_W = 800;
 export const HEADERS = '/img/*\n  Cache-Control: public, max-age=31536000, immutable\n'

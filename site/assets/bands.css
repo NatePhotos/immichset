@@ -22,6 +22,8 @@
 
 /* ---- elements ---- */
 .el { display: flex; align-items: center; }
+/* the display above would otherwise beat the equal-specificity hide rules of blocks.css */
+.el.blk-off { display: none; }
 .el-empty { opacity: .6; font-style: italic; }
 .site-name { font: 500 1.3rem var(--font-head); color: var(--ink); letter-spacing: .05rem; }
 .lg-small img { width: 3.2rem; height: 3.2rem; }
@@ -39,6 +41,7 @@
 .esp-medium { width: 2.5rem; }
 .esp-large { width: 5rem; }
 .esp-fill { flex: 1; }
+.el:has(> .esp-fill) { flex: 1; }
 
 /* ---- the phone menu: a checkbox and its label, so it opens without JavaScript ---- */
 .nav-t { display: none; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -57,6 +60,7 @@
 .eh-grow:hover .nav-b { transform: scale(1.06); }
 
 @media (max-width: 760px) {
+  .el.vis-desktop { display: none; }
   .top { min-height: 5.4rem; }
   .top.bp-compact, .foot.bp-compact { min-height: 4rem; }
   .top.bp-roomy, .foot.bp-roomy { min-height: 6.6rem; }
@@ -84,3 +88,4 @@
   .eh-lift:hover, .eh-grow:hover, .eh-lift:hover .nav-b, .eh-grow:hover .nav-b { transform: none; }
   .nav-b { transition: none !important; }
 }
+@media (min-width: 761px) { .el.vis-phone { display: none; } }

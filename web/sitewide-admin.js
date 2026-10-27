@@ -203,8 +203,17 @@ function menuControl(f, v, set){
       row.querySelector("[data-l]").oninput = function(){ var t = this.value; change(function(a){ a.forEach(function(x){ if (x.id === it.id) x.label = t; }); return a; }, true); };
       row.querySelector("[data-u]").oninput = function(){ var t = this.value; change(function(a){ a.forEach(function(x){ if (x.id === it.id) x.url = t; }); return a; }, true); };
     }
-    var rm = X.el('<button type="button" class="btn sm ghost" aria-label="Remove from the menu">✕</button>');
-    rm.onclick = function(){ change(function(a){ return a.filter(function(x){ return x.id !== it.id; }); }); };
+    var isPage = it.kind === "page";
+    var rmTitle = isPage ? "Remove from the menu (also turns off 'Show in the menu' for this page)" : "Remove from the menu";
+    var rm = X.el('<button type="button" class="btn sm ghost" aria-label="' + esc(rmTitle) + '" title="' + esc(rmTitle) + '">✕</button>');
+    rm.onclick = function(){
+      if (!isPage) { change(function(a){ return a.filter(function(x){ return x.id !== it.id; }); }); return; }
+      /* a page still marked "Show in the menu" would be added back at the end, so one commit also turns that off */
+      X.commit(function(){
+        var m = findEl(id); if (m && Array.isArray(m.el.props.items)) m.el.props.items = m.el.props.items.filter(function(x){ return x.id !== it.id; });
+        B.pages.forEach(function(pg){ if (pg.id === it.pageId) pg.inMenu = false; });
+      }, "site:menu-rm");
+    };
     row.appendChild(rm);
     list.appendChild(row);
   });

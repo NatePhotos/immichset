@@ -178,7 +178,11 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     if (!pages) { const e = new InputError(errors[0]); e.errors = errors; throw e; }
     let site = st.site;
     if (rawSite !== undefined) {
-      const r = cleanSite(rawSite);
+      let r;
+      try { r = cleanSite(rawSite); } catch (err) {
+        if (!(err instanceof TypeError)) throw err;
+        r = { errors: ['The header, footer, theme or wording has a value of the wrong kind'] };
+      }
       if (!r.site) { const e = new InputError(r.errors[0]); e.errors = r.errors; throw e; }
       site = r.site;
     }
