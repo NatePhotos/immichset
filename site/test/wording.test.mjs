@@ -28,3 +28,15 @@ test('the viewer script renames the buttons site.js made, and nothing else', () 
   assert.deepEqual(made, { '.lb .lb-close': ['aria-label', 'Schließen "x"'], '.lb .lb-prev': ['aria-label', 'Previous'], '.lb .lb-next': ['aria-label', '</script>'] });
   vm.runInNewContext(viewerScript(WORDING_DEFAULTS), { document: { querySelector: () => null } });
 });
+
+test('the viewer script holds no raw "<" and still evaluates to the labels, however odd', () => {
+  const labels = ['<!--<script>', '</script>', 'a "q" \'s\'', 'back\\slash', 'line sep '];
+  for (const l of labels) {
+    const js = viewerScript({ ...WORDING_DEFAULTS, viewerClose: l });
+    assert.ok(!js.includes('<'), l);
+    let got = null;
+    const document = { querySelector: s => (s === '.lb .lb-close' ? { setAttribute: (_, v) => { got = v; } } : null) };
+    vm.runInNewContext(js, { document });
+    assert.equal(got, l);
+  }
+});

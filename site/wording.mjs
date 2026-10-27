@@ -25,10 +25,10 @@ export function cleanWording(raw) {
 }
 
 /* added to the published site.js once the wording has been saved: site.js makes the photo viewer's buttons with
-   today's names, and this renames them. JSON keeps the words a plain string; build.mjs's inline() stops a "</script"
-   inside them from ending the editor preview's script. */
+   today's names, and this renames them. JSON keeps the words a plain string, and every "<" is written \u003c so no label can open or
+   close a tag, a comment or a script when the editor preview inlines this. */
 export function viewerScript(w) {
   const names = { '.lb-close': w.viewerClose, '.lb-prev': w.viewerPrev, '.lb-next': w.viewerNext };
-  return `// The photo viewer's buttons, in the site's own words\n(function () {\n  const names = ${JSON.stringify(names)};\n`
+  return `// The photo viewer's buttons, in the site's own words\n(function () {\n  const names = ${JSON.stringify(names).replace(/</g, '\\u003c')};\n`
     + `  for (const sel in names) { const b = document.querySelector('.lb ' + sel); if (b) b.setAttribute('aria-label', names[sel]); }\n})();\n`;
 }

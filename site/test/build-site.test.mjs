@@ -124,3 +124,21 @@ test('the Menu wording is escaped in the phone menu button and the scripts stay 
   assert.equal((ed.match(/<script>/g) || []).length, 2);
   assert.equal((ed.match(/<\/script>/g) || []).length, 2);
 });
+
+test('a wording label that looks like an HTML comment cannot break the editor preview scripts', () => {
+  const ed = build(own(m => { m.wording.viewerClose = '<!--<script>'; }), { editor: true }).files.get('index.html');
+  assert.ok(!ed.includes('<!--<script>'));
+  assert.equal((ed.match(/<script/g) || []).length, 2);
+  assert.equal((ed.match(/<\/script>/g) || []).length, 2);
+  assert.ok(!build(own(m => { m.wording.viewerClose = '<!--<script>'; })).files.get('site.js').includes('<'.concat('!--')));
+});
+
+test('a saved site with no saved pages, published, ships all four assets and the viewer script', () => {
+  const s = state(); s.site = cleanSite(migrateSite(s.settings)).site;
+  assert.equal(s.pages, undefined);
+  const { files } = build(s);
+  const css = files.get('style.css'), js = files.get('site.js');
+  assert.ok(css.includes(asset('blocks.css')) && css.includes(asset('bands.css')));
+  assert.ok(js.includes(asset('motion.js')) && js.includes(asset('bands.js')));
+  assert.ok(js.endsWith(viewerScript(WORDING_DEFAULTS)));
+});
