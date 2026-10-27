@@ -1,0 +1,125 @@
+/* Blocks, and their style, motion and hover settings. build.mjs adds this after site.css once the site's pages have
+   been saved from the page editor; a site that never used the editor keeps exactly the old stylesheet.
+   Only transform and opacity are ever animated. */
+
+/* ---- the wrapper a block gets when it has style or motion ---- */
+.blk { position: relative; }
+.blk.bg-color { background: var(--bg); }
+.blk.bg-photo { overflow: hidden; color: #fff; }
+.blk-bg { position: absolute; inset: 0; background: #111 center / cover no-repeat; z-index: 0; }
+.blk.px > .blk-bg { inset: -15% 0; will-change: transform; }
+.blk > :not(.blk-bg) { position: relative; z-index: 1; }
+.pad-s { padding-block: 1.2rem; }
+.pad-m { padding-block: 3rem; }
+.pad-l { padding-block: 6rem; }
+.w-contained { max-width: 64rem; margin-inline: auto; padding-inline: 1rem; }
+.w-full > * { max-width: none; }
+.al-left { text-align: left; }
+.al-center { text-align: center; }
+.al-right { text-align: right; }
+@media (max-width: 760px) { .vis-desktop { display: none; } }
+@media (min-width: 761px) { .vis-phone { display: none; } }
+
+/* ---- blocks ---- */
+.hd { font-family: var(--font-head); color: var(--ink); font-weight: 400; line-height: 1.3; max-width: 56rem; margin: 2.4rem auto 1rem; padding: 0 1rem; text-align: center; }
+.hd-small { font-size: 1.1rem; }
+.hd-medium { font-size: 1.5rem; }
+.hd-large { font-size: 2.3rem; }
+.rich, .custom-html { max-width: 44rem; margin: 1.2rem auto; padding: 0 1rem; }
+/* contain a block's own custom CSS so it cannot lay itself over the rest of the page */
+.custom-html { position: relative; overflow: hidden; }
+.blk-off { display: none; }
+.blk-empty { max-width: 44rem; margin: 1.2rem auto; padding: 0 1rem; opacity: .6; font-style: italic; }
+.rich p + p, .rich ul, .rich ol, .rich blockquote { margin-top: .9rem; }
+.rich ul, .rich ol { padding-left: 1.4rem; }
+.rich h2, .rich h3, .rich h4 { font-family: var(--font-head); color: var(--ink); font-weight: 400; margin: 1.6rem 0 .6rem; }
+.rich a, .custom-html a { text-decoration: underline; }
+.rich blockquote { border-left: 2px solid var(--band); padding-left: 1rem; font-style: italic; }
+.img-block { margin: 1.8rem auto; padding: 0 1rem; text-align: center; }
+.img-block img { margin: 0 auto; }
+.size-small { max-width: 18rem; }
+.size-medium { max-width: 32rem; }
+.size-large { max-width: 56rem; }
+.size-full { max-width: none; padding: 0; }
+.img-block figcaption { font-size: .85rem; margin-top: .6rem; color: var(--ink); }
+.frame { display: block; position: relative; overflow: hidden; }
+.about-right { flex-direction: row-reverse; }
+.about-right .about-card { margin-left: 0; margin-right: -3.4rem; }
+.banner { position: relative; }
+.banner.hero-tall { height: min(80vh, 40rem); }
+.banner.hero-full { height: 100svh; }
+.hero-shade { position: absolute; inset: 0; background: #000; }
+.hero-in { position: relative; text-align: center; color: #fff; padding: 0 1rem; }
+.hero-in h1 { color: #fff; font: 500 2.3rem var(--font-head); text-transform: uppercase; letter-spacing: .07rem; }
+.hero-sub { margin-top: .6rem; font-size: 1.05rem; text-align: center; }
+.btn-row { text-align: center; margin: 1.6rem 0; }
+.sbtn { position: relative; display: inline-block; isolation: isolate; padding: .7rem 1.8rem; font: 500 .9rem var(--font-head); letter-spacing: .08rem; text-transform: uppercase; border: 1px solid var(--ink); }
+.sbtn-solid { background: var(--ink); color: var(--page); }
+.sbtn-outline { color: var(--ink); }
+.hero-in .sbtn { margin-top: 1.4rem; border-color: #fff; }
+.spacer { display: flex; align-items: center; max-width: 56rem; margin: 0 auto; padding: 0 1rem; }
+.sp-small { height: 1.5rem; }
+.sp-medium { height: 3.5rem; }
+.sp-large { height: 7rem; }
+.spacer hr { flex: 1; border: 0; border-top: 1px solid var(--band); }
+.cols { display: grid; gap: 2rem; max-width: 64rem; margin: 1.8rem auto; padding: 0 1rem; align-items: start; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.gap-tight { gap: 1rem; }
+.gap-roomy { gap: 3.5rem; }
+.col > .hd, .col > .rich, .col > .img-block, .col > .custom-html, .col > .embed { padding: 0; }
+.embed { max-width: 56rem; margin: 1.8rem auto; padding: 0 1rem; }
+.embed iframe { display: block; width: 100%; height: auto; border: 0; background: var(--band); }
+.r-16x9 iframe { aspect-ratio: 16 / 9; }
+.r-4x3 iframe { aspect-ratio: 4 / 3; }
+.r-1x1 iframe { aspect-ratio: 1 / 1; }
+@media (max-width: 760px) {
+  .cols-2, .cols-3 { grid-template-columns: 1fr; }
+  .about-right { flex-direction: column; }
+  .about-right .about-card { margin: -2rem 0 0; }
+  .hd-large { font-size: 1.8rem; }
+}
+
+/* ---- hover effects on photos ---- */
+.hv-zoom :is(.card, .m-item) { display: block; overflow: hidden; }
+.hv-zoom img { transition: transform .5s ease; }
+.hv-zoom :is(.card, .m-item):hover img, .img-block.hv-zoom:hover img, .about.hv-zoom .about-photo:hover { transform: scale(1.05); }
+.hv-lift :is(.card, .m-item), .img-block.hv-lift .frame, .about.hv-lift .about-photo { display: block; transition: transform .3s ease; }
+.hv-lift :is(.card, .m-item):hover, .img-block.hv-lift:hover .frame, .about.hv-lift .about-photo:hover { transform: translateY(-6px); }
+.hv-darken :is(.card, .m-item) { display: block; position: relative; }
+.hv-darken :is(.card, .m-item)::after, .img-block.hv-darken .frame::after { content: ""; position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+.hv-darken :is(.card, .m-item):hover::after, .img-block.hv-darken:hover .frame::after { opacity: .28; }
+.hv-caption .cap { opacity: 0; transform: translateY(.4rem); transition: opacity .3s ease, transform .3s ease; }
+.hv-caption .card:is(:hover, :focus-visible) .cap, .img-block.hv-caption:is(:hover, :focus-within) .cap { opacity: 1; transform: none; }
+@media (hover: none) { .hv-caption .cap { opacity: 1; transform: none; } }
+
+/* ---- hover effects on buttons ---- */
+.bh-fill { overflow: hidden; }
+.bh-fill::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--text); transform: scaleX(0); transform-origin: left; transition: transform .35s ease; }
+.sbtn-outline.bh-fill::before { background: var(--ink); }
+.bh-fill:hover::before { transform: scaleX(1); }
+.sbtn-outline.bh-fill:hover { color: var(--page); }
+.bh-lift { transition: transform .25s ease; }
+.bh-lift:hover { transform: translateY(-3px); }
+.bh-glow::after { content: ""; position: absolute; inset: 0; box-shadow: 0 0 1.2rem var(--ink); opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+.bh-glow:hover::after { opacity: .6; }
+
+/* ---- entrances: hidden only once motion.js has added .anim, and only if the visitor allows motion ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .anim .blk.m { transition: opacity var(--m-dur, 700ms) ease var(--m-delay, 0ms), transform var(--m-dur, 700ms) cubic-bezier(.2, .7, .2, 1) var(--m-delay, 0ms); }
+  .anim .blk.m:not(.in) { opacity: 0; }
+  .anim .m-slide-up:not(.in) { transform: translateY(2.5rem); }
+  .anim .m-slide-down:not(.in) { transform: translateY(-2.5rem); }
+  .anim .m-slide-left:not(.in) { transform: translateX(2.5rem); }
+  .anim .m-slide-right:not(.in) { transform: translateX(-2.5rem); }
+  .anim .m-zoom-in:not(.in) { transform: scale(.92); }
+  .anim .m-blur-in:not(.in) { transform: scale(1.04); }
+}
+
+/* ---- less motion: hover effects stand still too ---- */
+@media (prefers-reduced-motion: reduce) {
+  .hv-zoom img, .hv-lift :is(.card, .m-item), .img-block.hv-lift .frame, .about.hv-lift .about-photo, .hv-darken :is(.card, .m-item)::after,
+  .img-block.hv-darken .frame::after, .hv-caption .cap, .sbtn, .sbtn::before, .sbtn::after { transition: none !important; }
+  .hv-zoom :is(.card, .m-item):hover img, .img-block.hv-zoom:hover img, .about.hv-zoom .about-photo:hover,
+  .hv-lift :is(.card, .m-item):hover, .img-block.hv-lift:hover .frame, .about.hv-lift .about-photo:hover, .bh-lift:hover { transform: none; }
+}
