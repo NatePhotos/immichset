@@ -1,0 +1,74 @@
+/* The header and footer once they have been saved from the page editor: band style, the elements, the phone menu
+   button and the elements' hover and entrance effects. build.mjs adds this after site.css and blocks.css; a site that
+   never saved them keeps exactly the old stylesheet. Only transform and opacity are ever animated. */
+
+/* ---- bands ---- */
+.top { position: relative; z-index: 4; }
+.top.sticky { position: sticky; top: 0; }
+.top.bg-own, .foot.bg-own { background: var(--band-bg); }
+.top.bp-compact, .foot.bp-compact { height: 4.6rem; }
+.top.bp-roomy, .foot.bp-roomy { height: 8.6rem; }
+.top.ba-left, .top.ba-center, .top.ba-right { gap: 2rem; }
+.top.ba-left { justify-content: flex-start; }
+.top.ba-center { justify-content: center; }
+.top.ba-right { justify-content: flex-end; }
+.foot.ba-left, .foot.ba-center, .foot.ba-right { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; }
+.foot.ba-left { justify-content: flex-start; }
+.foot.ba-center { justify-content: center; }
+.foot.ba-right { justify-content: flex-end; }
+.foot > :last-child:not(:first-child) { justify-self: end; }
+
+/* ---- elements ---- */
+.el { display: flex; align-items: center; }
+.el-empty { opacity: .6; font-style: italic; }
+.site-name { font: 500 1.3rem var(--font-head); color: var(--ink); letter-spacing: .05rem; }
+.lg-small img { width: 3.2rem; height: 3.2rem; }
+.lg-large img { width: 5.6rem; height: 5.6rem; }
+.foot .logo img { width: 3rem; height: 3rem; }
+.foot nav { display: flex; flex-wrap: wrap; gap: 1.4rem; }
+.el-link { font: 400 .94rem var(--font-head); color: var(--ink); }
+.foot nav a:hover, .el-link:hover, .soc:hover { opacity: .6; }
+.soc svg { width: 1.1rem; height: 1.1rem; }
+.hbtn { display: inline-block; padding: .55rem 1.3rem; font: 500 .85rem var(--font-head); letter-spacing: .06rem; text-transform: uppercase; border: 1px solid var(--accent, var(--ink)); }
+.hbtn-solid { background: var(--accent, var(--ink)); color: var(--page); }
+.hbtn-outline { color: var(--accent, var(--ink)); }
+.esp { display: block; }
+.esp-small { width: 1rem; }
+.esp-medium { width: 2.5rem; }
+.esp-large { width: 5rem; }
+.esp-fill { flex: 1; }
+
+/* ---- the phone menu: a checkbox and its label, so it opens without JavaScript ---- */
+.nav-t { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.nav-b { display: none; }
+
+/* ---- hover effects ---- */
+.eh-fade, .eh-lift, .eh-grow { transition: opacity .25s ease, transform .25s ease; }
+.eh-fade:hover { opacity: .6; }
+.eh-lift:hover { transform: translateY(-3px); }
+.eh-grow:hover { transform: scale(1.06); }
+
+@media (max-width: 760px) {
+  .top.bp-compact, .foot.bp-compact { height: 4rem; }
+  .top.bp-roomy, .foot.bp-roomy { height: 6.6rem; }
+  .nav-b { display: block; position: relative; width: 2.2rem; height: 2.2rem; cursor: pointer; color: var(--ink); }
+  .nav-b span, .nav-b span::before, .nav-b span::after { content: ""; position: absolute; height: 2px; background: currentColor; }
+  .nav-b span { top: 50%; left: .3rem; right: .3rem; margin-top: -1px; }
+  .nav-b span::before { top: -.5rem; left: 0; right: 0; }
+  .nav-b span::after { top: .5rem; left: 0; right: 0; }
+  .nav-t:focus-visible + .nav-b { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .top .nav-c { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 6; flex-direction: column; gap: 1.1rem; padding: 1rem 1.2rem 1.4rem; background: var(--band-bg, var(--band)); }
+  .top .nav-t:checked ~ .nav-c { display: flex; }
+}
+
+/* ---- entrances: hidden only once bands.js has added .anim, and only if the visitor allows motion ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .anim .el.m { transition: opacity var(--m-dur, 700ms) ease var(--m-delay, 0ms), transform var(--m-dur, 700ms) cubic-bezier(.2, .7, .2, 1) var(--m-delay, 0ms); }
+  .anim .el.m:not(.in) { opacity: 0; }
+}
+
+/* ---- less motion: hover effects stand still too ---- */
+@media (prefers-reduced-motion: reduce) {
+  .eh-fade, .eh-lift, .eh-grow { transition: none !important; }
+  .eh-lift:hover, .eh-grow:hover { transform: none; }
+}
