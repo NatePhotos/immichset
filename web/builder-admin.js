@@ -216,7 +216,7 @@ function send(msg){ try { if (B.frame && B.frame.contentWindow) B.frame.contentW
 function onMessage(ev){
   if (ev.origin !== location.origin || !B.frame || ev.source !== B.frame.contentWindow) return;
   var m = ev.data || {};
-  if (m.type === "wb-select"){ if (m.band) selectArea(m.band, m.id || null); else select(m.id || null, false); }
+  if (m.type === "wb-select"){ if (m.band === "header" || m.band === "footer") selectArea(m.band, m.id || null); else select(m.id || null, false); }
   if (m.type === "wb-scrolled") B.scrollY = Number(m.y) || 0;
 }
 /* the real build of the pages and site on screen, saved or not, as one self-contained page (see site/routes.mjs renderDraft) */
@@ -263,7 +263,7 @@ function commit(fn, key){
   fn();
   changed();
 }
-function changed(){ B.dirty = true; if (B.stale) setStatus("Not saved: changed somewhere else", true); else setStatus("Saving…"); paintHistory(); paintPub(); paintPages(); paintOutline(); render(250); saveSoon(900); }
+function changed(){ B.dirty = true; if (B.stale) setStatus("Not saved: changed somewhere else", true); else setStatus("Saving…"); paintHistory(); paintPub(); paintPages(); paintSiteRail(); paintOutline(); render(250); saveSoon(900); }
 function undo(){ if (!B.undo.length) return; B.redo.push(snap()); unsnap(B.undo.pop()); B.lastKey = null; afterHistory(); }
 function redo(){ if (!B.redo.length) return; B.undo.push(snap()); unsnap(B.redo.pop()); B.lastKey = null; afterHistory(); }
 function afterHistory(){

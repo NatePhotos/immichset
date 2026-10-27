@@ -16,7 +16,7 @@ test('one draft: the site-wide part is saved, previewed, undone and discarded wi
 });
 
 test('clicking the header or footer in the preview selects it, and the preview is told what is selected by kind', () => {
-  assert.match(builder, /if \(m\.type === "wb-select"\)\{ if \(m\.band\) selectArea\(m\.band, m\.id \|\| null\); else select\(m\.id \|\| null, false\); \}/);
+  assert.match(builder, /if \(m\.type === "wb-select"\)\{ if \(m\.band === "header" \|\| m\.band === "footer"\) selectArea\(m\.band, m\.id \|\| null\); else select\(m\.id \|\| null, false\); \}/);
   assert.match(builder, /send\(\{ type: "wb-select", id: B\.sel, kind: "b", scroll: !!scroll \}\)/);
   assert.match(builder, /send\(\{ type: "wb-select", id: B\.sel \|\| B\.area, kind: B\.sel \? "e" : "band", scroll: !!scroll \}\)/);
   assert.match(builder, /'<div id="wbSiteRail"><\/div><div id="wbOutline"><\/div><\/nav>'/);
