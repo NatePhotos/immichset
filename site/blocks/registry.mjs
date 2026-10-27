@@ -1,6 +1,11 @@
 /* Every website block type, and the checks and rendering that apply to all of them. A block type is one module in this
    folder exporting type, label, icon, sketch, defaults, fields, validate, render (and nestable = false if it may not go
    inside columns); list it in TYPES, in the order the add-block picker shows them. Pure. */
+import * as hero from './hero.mjs';
+import * as image from './image.mjs';
+import * as imageText from './image-text.mjs';
+import * as galleryCards from './gallery-cards.mjs';
+import * as photoGrid from './photo-grid.mjs';
 import * as heading from './heading.mjs';
 import * as richText from './rich-text.mjs';
 import * as button from './button.mjs';
@@ -8,7 +13,7 @@ import * as spacer from './spacer.mjs';
 import { cleanStyle, cleanMotion, wrap, esc } from './common.mjs';
 export { STYLE_DEFAULTS, STYLE_SCHEMA, MOTION_DEFAULTS, MOTION_SCHEMA } from './common.mjs';
 
-const TYPES = [heading, richText, button, spacer];
+const TYPES = [hero, heading, richText, image, imageText, galleryCards, photoGrid, button, spacer];
 export const BLOCK_TYPES = new Map(TYPES.map(t => [t.type, t]));
 const ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
