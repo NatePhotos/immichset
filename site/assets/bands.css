@@ -57,7 +57,7 @@
 .eh-grow:hover .nav-b { transform: scale(1.06); }
 
 @media (max-width: 760px) {
-  .top, .foot { min-height: 5.4rem; }
+  .top { min-height: 5.4rem; }
   .top.bp-compact, .foot.bp-compact { min-height: 4rem; }
   .top.bp-roomy, .foot.bp-roomy { min-height: 6.6rem; }
   .lg-large img { width: 4.2rem; height: 4.2rem; }

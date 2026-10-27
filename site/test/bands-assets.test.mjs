@@ -76,7 +76,9 @@ test('band heights are minimums and a large logo fits the phone band', () => {
   assert.match(CSS, /\.top\.bp-compact, \.foot\.bp-compact \{ min-height: 4\.6rem; \}/);
   const m = media('max-width: 760px').body;
   assert.match(m, /\.lg-large img \{ width: 4\.2rem; height: 4\.2rem; \}/);
-  assert.match(m, /\.top, \.foot \{ min-height: 5\.4rem; \}/);
+  assert.match(m, /\.top \{ min-height: 5\.4rem; \}/);
+  assert.doesNotMatch(m, /\.foot\s*\{[^}]*min-height/, 'the default footer keeps its 6.6rem on phones');
+  assert.doesNotMatch(m, /\.top, \.foot \{ min-height/);
 });
 
 test('hover effects never put a transform or opacity on an element holding the folding menu', () => {
