@@ -177,3 +177,15 @@ test('a body that is not an object is refused instead of hanging', async () => {
     assert.equal((await raw(method, path, '{nope')).status, 400);
   }
 });
+
+test('the other write routes answer 400 for a body that is not an object', async () => {
+  const raw = (method, path, body) => fetch(base + path, { method, headers: H({ 'content-type': 'application/json' }), body });
+  for (const [method, path] of [['PUT', '/api/admin/site/settings'], ['POST', '/api/admin/site/galleries'], ['PUT', '/api/admin/site/galleries/order'],
+    ['PATCH', '/api/admin/site/galleries/1'], ['PUT', '/api/admin/site/galleries/1/photos/order'], ['POST', '/api/admin/site/restore']]) {
+    for (const body of ['null', '0', 'false', '[]', '{nope']) {
+      const r = await raw(method, path, body);
+      assert.equal(r.status, 400, `${method} ${path} ${body}`);
+      assert.ok((await r.json()).error);
+    }
+  }
+});

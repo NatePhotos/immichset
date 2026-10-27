@@ -11,7 +11,10 @@ export const fields = [
 ];
 export function validate(props, ctx) {
   const r = cleanFields(props, fields, defaults, ctx);
-  if (r.props.email && !/^[^\s@<>"]+@[^\s@<>"]+$/.test(r.props.email)) r.errors.email = 'that does not look like an email address';
+  if (r.props.email && !/^[^\s@<>"'`,;?%&]+@[^\s@<>"'`,;?%&]+$/.test(r.props.email)) {
+    r.errors.email = 'that does not look like an email address (no spaces, quotes, commas, ? % or &)';
+    r.props.email = '';
+  }
   return r;
 }
 export function render(b) {

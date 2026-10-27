@@ -27,7 +27,7 @@ export function cleanFields(raw, fields, defaults, ctx = {}) {
         else { out[f.key] = d; errors[f.key] = `choose one of: ${f.options.map(o => o[1]).join(', ')}`; }
         break;
       case 'number': {
-        const n = Number(v);
+        const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
         if (Number.isInteger(n) && n >= f.min && n <= f.max) out[f.key] = n;
         else { out[f.key] = d; errors[f.key] = `must be a whole number from ${f.min} to ${f.max}`; }
         break;

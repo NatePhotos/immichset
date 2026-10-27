@@ -15,7 +15,7 @@ export function decodeEntities(s) {
 }
 
 /* Links on the website may only be web pages, email addresses and phone numbers. */
-const URL_OK = /^(?:https?:\/\/[^\s"'<>\\]+|mailto:[^\s"'<>\\]+|tel:\+?[0-9().-]+)$/i;
+const URL_OK = /^(?:https?:\/\/[^\s"'<>\\]+|mailto:[^\s"'<>\\]+|tel:\+?(?=[^0-9]*[0-9])[0-9().-]+)$/i;
 export function safeUrl(u) {
   const s = decodeEntities(String(u ?? '')).trim();
   if (s.length > 2000 || /[\u0000-\u001f\u007f]/.test(s)) return '';

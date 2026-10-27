@@ -107,3 +107,20 @@ test("a different scope can be given, for website blocks", () => {
   assert.equal(compileCustomCss("a:is(.x,.y){color:red}", { scope: "#b-x1" }).css, "#b-x1 a:is(.x,.y){color:red}");
   assert.equal(compileCustomCss("p{color:red}").css, `${SCOPE} p{color:red}`, "the gallery scope is still the default");
 });
+
+test("block scope: a sibling combinator right after the root cannot reach the following blocks", () => {
+  const scope = "#b-x";
+  for (const src of [":root ~ *{display:none}", ":scope + *{color:red}", "html ~ p{color:red}", "body + div{color:red}", ":root:hover ~ *{color:red}"]) {
+    const r = compileCustomCss(src, { scope });
+    assert.ok(r.error, src); assert.equal(r.css, ""); assert.match(r.error.message, /outside this block/);
+    assert.ok(Number.isInteger(r.error.line) && Number.isInteger(r.error.col));
+  }
+  assert.equal(compileCustomCss(":root > p{color:red}", { scope }).css, "#b-x > p{color:red}");
+  assert.equal(compileCustomCss(":root p ~ p{color:red}", { scope }).css, "#b-x p ~ p{color:red}");
+  assert.equal(compileCustomCss("p + p{color:red}", { scope }).css, "#b-x p + p{color:red}");
+  assert.equal(compileCustomCss(":root{color:red}", { scope }).css, "#b-x{color:red}");
+});
+
+test("gallery scope is unchanged: sibling combinators after the root still compile", () => {
+  assert.equal(compileCustomCss(":root ~ p{color:red}").error, null);
+});

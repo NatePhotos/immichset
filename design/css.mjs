@@ -130,18 +130,21 @@ function splitCommas(toks) {
 function complexSelector(toks, nested, scope = SCOPE) {
   if (!toks.length) throw new CssError('There is an empty selector', null);
   const out = [];
-  let k = 0, rooted = false, afterComb = false;
-  const space = (t) => { if (t.ws && out.length && !afterComb) out.push(' '); afterComb = false; };
+  let k = 0, rooted = false, afterComb = false, atRoot = false;
+  const blockScope = scope !== SCOPE; /* a website block: nothing may reach past it */
+  const space = (t) => { if (t.ws && out.length && !afterComb) { out.push(' '); atRoot = false; } afterComb = false; };
   const isRoot = (a, b) => a.t === 'ident' && ['html', 'body'].includes(a.v.toLowerCase()) ? 1
     : a.t === 'delim' && a.v === ':' && b && b.t === 'ident' && ['root', 'scope'].includes(b.v.toLowerCase()) ? 2 : 0;
   if (!nested) {
     const n = isRoot(toks[0], toks[1]);
-    if (n) { out.push(scope); rooted = true; k = n; }
+    if (n) { out.push(scope); rooted = true; atRoot = true; k = n; }
   }
   while (k < toks.length) {
     const t = toks[k], nx = toks[k + 1];
     if (t.t === 'delim' && ['>', '+', '~'].includes(t.v)) {
       if (!out.length || afterComb) throw new CssError('A selector cannot start with this', t);
+      if (blockScope && rooted && atRoot && (t.v === '+' || t.v === '~')) throw new CssError('A sibling selector after the root would reach outside this block', t);
+      if (t.v === '>') atRoot = false;
       while (out[out.length - 1] === ' ') out.pop();
       out.push(` ${t.v} `); afterComb = true; k++; continue;
     }

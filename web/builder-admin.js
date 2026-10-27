@@ -95,6 +95,7 @@ function sortable(container, itemSel, onDone){
   items().forEach(function(el){
     el.draggable = true;
     el.ondragstart = function(e){ e.stopPropagation(); dragging = el; start = order().join(","); el.classList.add("drag"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", el.dataset.id); };
+    el.ondrop = function(e){ e.preventDefault(); };
     el.ondragend = function(e){ e.stopPropagation(); el.classList.remove("drag"); dragging = null; var now = order(); if (now.join(",") !== start) onDone(now); };
     el.ondragover = function(e){
       if (!dragging || dragging === el || dragging.parentNode !== container) return;
@@ -262,7 +263,7 @@ function saveNow(){
 }
 function reloadSite(){
   return api("/site").then(function(r){ if (!r.ok) throw new Error((r.body && r.body.error) || "Couldn’t load the website"); return r.body; })
-    .catch(function(e){ toast(e.message); throw e; });
+    .catch(function(e){ toast(e.message); return null; });
 }
 /* another tab, or a restored version, changed the pages: the owner chooses, nothing is overwritten silently */
 function paintStale(){
@@ -271,8 +272,9 @@ function paintStale(){
   box.innerHTML = '<div class="wbstale" role="alert"><b>These pages were changed somewhere else</b>'
     + '<span>Another tab, or restoring an earlier version, changed them after you opened the editor. Your latest edits are not saved yet.</span>'
     + '<div class="acts"><button class="btn sm" type="button" id="wbKeep">Keep my version</button><button class="btn sm ghost" type="button" id="wbTheirs">Load the latest</button></div></div>';
-  $("wbKeep").onclick = function(){ reloadSite().then(function(body){ B.site = body.state; B.pagesRev = body.pagesRev; B.rev = body.rev; B.stale = false; paintStale(); saveNow(); }); };
+  $("wbKeep").onclick = function(){ reloadSite().then(function(body){ if (!body) return; B.site = body.state; B.pagesRev = body.pagesRev; B.rev = body.rev; B.stale = false; paintStale(); saveNow(); }); };
   $("wbTheirs").onclick = function(){ reloadSite().then(function(body){
+    if (!body) return;
     take(body); B.stale = false; B.undo = []; B.redo = [];
     if (!B.pages.some(function(p){ return p.id === B.pageId; })) B.pageId = B.pages[0].id;
     if (B.sel && !find(B.sel)) B.sel = null;
@@ -303,7 +305,7 @@ function discard(){
     if (!B.pages.some(function(p){ return p.id === B.pageId; })) B.pageId = B.pages[0].id;
     if (B.sel && !find(B.sel)) B.sel = null;
     paintAll(); render(0); setStatus("Saved"); toast("Back to the published pages.");
-  });
+  }).catch(function(){ toast("Couldn’t discard — check your connection"); });
 }
 function paintPub(){
   var box = $("wbPub"); if (!box) return;
@@ -324,9 +326,9 @@ window.addEventListener("beforeunload", function(ev){ if (B.open && unsaved()){ 
 function paintPages(){
   var host = $("wbPages"); if (!host) return;
   host.innerHTML = B.pages.map(function(p){
-    var where = p.slug ? "/" + p.slug + "/" : "/";
+    var where = p.id !== "home" ? "/" + p.slug + "/" : "/";
     return '<div class="wbpg' + (p.id === B.pageId ? " on" : "") + '" role="listitem" data-id="' + esc(p.id) + '"><span class="hd" title="Drag to reorder">☰</span>'
-      + K.lucide(p.slug ? (p.galleryId != null ? "images" : "type") : "house", 16)
+      + K.lucide(p.id !== "home" ? (p.galleryId != null ? "images" : "type") : "house", 16)
       + '<span class="nm">' + esc(p.title) + ' <small>' + esc(where) + (p.inMenu ? "" : " · not in menu") + '</small></span></div>';
   }).join("");
   Array.prototype.forEach.call(host.querySelectorAll(".wbpg"), function(el){
@@ -360,7 +362,7 @@ function paintPanel(){
   paintBlockPanel(f);
 }
 function paintPagePanel(){
-  var p = page(), gal = p.galleryId != null, home = p.slug === "" && !gal;
+  var p = page(), gal = p.galleryId != null, home = p.id === "home" && !gal;
   $("wbTitle").textContent = p.title; $("wbTabs").innerHTML = "";
   $("wbBody").innerHTML = field("Name", '<input type="text" id="wbPTitle" maxlength="120" value="' + esc(p.title) + '"' + (gal ? " disabled" : "") + '>',
         gal ? "A gallery page takes its name and address from the gallery. Change them in the Galleries tab." : "")
@@ -663,8 +665,13 @@ function duplicateBlock(id){
   commit(function(){ var f = find(id); c = reid(clone(f.block)); f.list.splice(f.i + 1, 0, c); });
   select(c.id, true);
 }
+var shownBefore = {}; /* block id -> its "visible" setting before it was hidden, for this editor session */
 function toggleHidden(id){
-  commit(function(){ var b = find(id).block; b.style.visible = b.style.visible === "none" ? "all" : "none"; });
+  commit(function(){
+    var b = find(id).block;
+    if (b.style.visible === "none") b.style.visible = shownBefore[id] || "all";
+    else { shownBefore[id] = b.style.visible; b.style.visible = "none"; }
+  });
   paintPanel();
 }
 function deleteBlock(id){

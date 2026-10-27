@@ -129,9 +129,22 @@ export function createStore(db, { now = Date.now } = {}) {
   /* Row ids are never reused: saved pages keep pointing at photos and galleries by id after they are deleted, so a
      new row must not inherit a dead one's id. The high-water marks live beside the other meta values. */
   const SEQ = { photo: ['_photoSeq', q.phoMaxId], gallery: ['_gallerySeq', q.galMaxId] };
+  function snapshotMax(kind) {
+    let m = 0;
+    const take = n => { if (Number.isInteger(n) && n > m) m = n; };
+    for (const { snapshot } of q.pubSnaps.all()) {
+      let s; try { s = JSON.parse(snapshot); } catch { continue; }
+      if (!s || typeof s !== 'object') continue;
+      for (const r of Array.isArray(s[kind === 'photo' ? 'photos' : 'galleries']) ? s[kind === 'photo' ? 'photos' : 'galleries'] : []) take(r?.id);
+      if (kind === 'gallery' && Array.isArray(s.pages)) for (const p of s.pages) take(p?.galleryId);
+    }
+    return m;
+  }
   function raiseSeq(kind) {
     const [key, max] = SEQ[kind];
-    const v = Math.max(Number(meta(key) || 0), max.get().m);
+    let v = Number(meta(key) || 0);
+    if (meta(key) == null) v = Math.max(v, snapshotMax(kind)); /* first time: published versions may still point at deleted rows */
+    v = Math.max(v, max.get().m);
     if (v !== Number(meta(key) || 0)) setMeta(key, v);
     return v;
   }

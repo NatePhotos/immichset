@@ -248,26 +248,26 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       return respond(res, () => renderDraft(b.pages, String(b.slug ?? '')));
     }
     if (path === '/api/admin/site/settings' && m === 'PUT') {
-      const b = await readJson(req, 256 * 1024);
+      const b = await readBody(req, res, 256 * 1024); if (!b) return;
       return respond(res, () => { store.patchSettings(revOf(req), b); });
     }
     if (path === '/api/admin/site/galleries' && m === 'POST') {
-      const b = await readJson(req);
+      const b = await readBody(req, res); if (!b) return;
       return respond(res, () => ({ gallery: store.addGallery(revOf(req), b.title) }), 201);
     }
     if (path === '/api/admin/site/galleries/order' && m === 'PUT') {
-      const b = await readJson(req);
+      const b = await readBody(req, res); if (!b) return;
       return respond(res, () => { store.reorderGalleries(revOf(req), (b.ids || []).map(Number)); });
     }
     const gm = path.match(/^\/api\/admin\/site\/galleries\/(\d+)$/);
     if (gm && m === 'PATCH') {
-      const b = await readJson(req);
+      const b = await readBody(req, res); if (!b) return;
       return respond(res, () => ({ gallery: store.updateGallery(revOf(req), Number(gm[1]), b) }));
     }
     if (gm && m === 'DELETE') return respond(res, () => { store.deleteGallery(revOf(req), Number(gm[1])); });
     const om = path.match(/^\/api\/admin\/site\/galleries\/(\d+)\/photos\/order$/);
     if (om && m === 'PUT') {
-      const b = await readJson(req);
+      const b = await readBody(req, res); if (!b) return;
       return respond(res, () => { store.reorderPhotos(revOf(req), Number(om[1]), (b.ids || []).map(Number)); });
     }
 
@@ -348,7 +348,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
 
     if (path === '/api/admin/site/publish' && m === 'POST') return respond(res, () => publish());
     if (path === '/api/admin/site/restore' && m === 'POST') {
-      const b = await readJson(req);
+      const b = await readBody(req, res); if (!b) return;
       return respond(res, () => restore(b.id));
     }
     return json(res, 404, { error: 'not_found' });

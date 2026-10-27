@@ -113,3 +113,15 @@ test('photos are chosen from the website’s photos or uploaded through the same
   assert.match(builder, /window\.WebsiteKit\.upload\(f, "pages"\)/);
   assert.match(builder, /Choose a photo/);
 });
+
+test('small editor fixes: hide remembers visibility, drops are cancelled, home is found by id, failures are caught', () => {
+  assert.match(builder, /shownBefore\[id\] \|\| "all"/, 'un-hiding restores the earlier visibility');
+  assert.match(builder, /shownBefore\[id\] = b\.style\.visible/);
+  assert.match(builder, /el\.ondrop = function\(e\)\{ e\.preventDefault\(\); \}/);
+  assert.match(builder, /home = p\.id === "home" && !gal/);
+  assert.doesNotMatch(builder, /p\.slug === ""/, 'an emptied address is not the home page');
+  assert.doesNotMatch(builder, /throw e; \}\);\n\}/, 'reloadSite does not rethrow');
+  assert.match(builder, /reloadSite\(\)\.then\(function\(body\)\{ if \(!body\) return;/);
+  assert.match(builder, /\}\)\.catch\(function\(\)\{ toast\("Couldn’t discard/);
+  assert.match(builder, /function typeOf\(t\)\{[^\n]*\|\| \{ type: t, label: String\(t\), icon: "square"/, 'an unknown block type still gets a stub with an icon');
+});
