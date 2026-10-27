@@ -212,7 +212,8 @@ function menuControl(f, v, set){
       X.commit(function(){
         var m = findEl(id); if (m && Array.isArray(m.el.props.items)) m.el.props.items = m.el.props.items.filter(function(x){ return x.id !== it.id; });
         B.pages.forEach(function(pg){ if (pg.id === it.pageId) pg.inMenu = false; });
-      }, "site:menu-rm");
+      }, null);
+      X.paintPanel();
     };
     row.appendChild(rm);
     list.appendChild(row);

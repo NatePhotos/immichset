@@ -39,7 +39,8 @@ test('removing a page from a custom menu also turns off its "Show in the menu", 
   assert.equal((h.match(/X\.commit\(/g) || []).length, 1);
   assert.match(h, /props\.items = m\.el\.props\.items\.filter/);
   assert.match(h, /pg\.inMenu = false/);
-  assert.match(h, /"site:menu-rm"/);
+  assert.match(h, /\}, null\);\s*X\.paintPanel\(\);/, 'one undo step per removal, then the panel repaints');
+  assert.doesNotMatch(h, /site:menu-rm/);
   assert.match(sw, /also turns off 'Show in the menu' for this page/);
 });
 
