@@ -100,3 +100,10 @@ test("fuzz: output never contains anything that loads or escapes", () => {
   }
   assert.ok(accepted > 100 && rejected > 100, `fuzzer is not exercising both paths (accepted ${accepted}, rejected ${rejected})`);
 });
+
+test("a different scope can be given, for website blocks", () => {
+  assert.equal(compileCustomCss("p{color:red}", { scope: "#b-x1" }).css, "#b-x1 p{color:red}");
+  assert.equal(compileCustomCss(":root{--a:1}", { scope: "#b-x1" }).css, "#b-x1{--a:1}");
+  assert.equal(compileCustomCss("a:is(.x,.y){color:red}", { scope: "#b-x1" }).css, "#b-x1 a:is(.x,.y){color:red}");
+  assert.equal(compileCustomCss("p{color:red}").css, `${SCOPE} p{color:red}`, "the gallery scope is still the default");
+});

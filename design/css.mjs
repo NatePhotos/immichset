@@ -127,7 +127,7 @@ function splitCommas(toks) {
   return parts;
 }
 
-function complexSelector(toks, nested) {
+function complexSelector(toks, nested, scope = SCOPE) {
   if (!toks.length) throw new CssError('There is an empty selector', null);
   const out = [];
   let k = 0, rooted = false, afterComb = false;
@@ -136,7 +136,7 @@ function complexSelector(toks, nested) {
     : a.t === 'delim' && a.v === ':' && b && b.t === 'ident' && ['root', 'scope'].includes(b.v.toLowerCase()) ? 2 : 0;
   if (!nested) {
     const n = isRoot(toks[0], toks[1]);
-    if (n) { out.push(SCOPE); rooted = true; k = n; }
+    if (n) { out.push(scope); rooted = true; k = n; }
   }
   while (k < toks.length) {
     const t = toks[k], nx = toks[k + 1];
@@ -185,18 +185,18 @@ function complexSelector(toks, nested) {
             throw new CssError(`:${name.v}() takes a number pattern such as 2n+1`, name);
           out.push(`:${lc}(${ser(inner)})`);
         } else if (SELECTOR_ARGS.has(lc)) {
-          out.push(`:${lc}(${selectorList(inner, true)})`);
+          out.push(`:${lc}(${selectorList(inner, true, scope)})`);
         } else throw new CssError(`:${name.v}() is not allowed`, name);
         k = end + 1;
       }
     } else throw new CssError(`"${text(t)}" is not allowed in a selector`, t);
   }
   if (afterComb) throw new CssError('A selector cannot end with this', toks[toks.length - 1]);
-  return (rooted || nested ? '' : SCOPE + ' ') + out.join('');
+  return (rooted || nested ? '' : scope + ' ') + out.join('');
 }
 
-function selectorList(toks, nested = false) {
-  return splitCommas(toks).map((p) => complexSelector(p, nested)).join(',');
+function selectorList(toks, nested = false, scope = SCOPE) {
+  return splitCommas(toks).map((p) => complexSelector(p, nested, scope)).join(',');
 }
 
 /* ---------- declarations ---------- */
@@ -272,7 +272,7 @@ function blockEnd(toks, from) {   /* index of the "}" that closes the block open
   throw new CssError('A { is never closed', toks[from - 1]);
 }
 
-function rules(toks, inAt, count) {
+function rules(toks, inAt, count, scope = SCOPE) {
   const out = [];
   let k = 0;
   while (k < toks.length) {
@@ -290,13 +290,13 @@ function rules(toks, inAt, count) {
         else if (toks[end].t === 'delim' && toks[end].v === '}' && --d === 0) break;
       }
       if (d !== 0) throw new CssError('A { is never closed', toks[open]);
-      const body = rules(toks.slice(open + 1, end), true, count);
+      const body = rules(toks.slice(open + 1, end), true, count, scope);
       if (body) out.push(`@${name} ${ser(prelude)}{${body}}`);
       k = end + 1; continue;
     }
     const open = toks.findIndex((x, j) => j >= k && x.t === 'delim' && (x.v === '{' || x.v === '}'));
     if (open < 0 || toks[open].v === '}') throw new CssError('Expected a { after this selector', toks[open] || t);
-    const sel = selectorList(toks.slice(k, open));
+    const sel = selectorList(toks.slice(k, open), false, scope);
     const end = blockEnd(toks, open + 1);
     if (++count.rules > MAX_RULES) throw new CssError('Too many rules', t);
     const decls = declarations(toks.slice(open + 1, end), count);
@@ -306,8 +306,9 @@ function rules(toks, inAt, count) {
   return out.join('');
 }
 
-/* Returns {css, error}. error is null or {message, line, col}; css is '' when there is an error. */
-export function compileCustomCss(src) {
+/* Returns {css, error}. error is null or {message, line, col}; css is '' when there is an error.
+   scope is the selector every rule is put under: the gallery by default, one website block for the site builder. */
+export function compileCustomCss(src, { scope = SCOPE } = {}) {
   try {
     if (typeof src !== 'string') throw new CssError('Custom CSS must be text', null);
     if (src.length > CSS_LIMIT) throw new CssError(`Custom CSS is limited to ${CSS_LIMIT.toLocaleString('en-US')} characters`, null);
@@ -320,7 +321,7 @@ export function compileCustomCss(src) {
       if ((code < 32 && ch !== '\n' && ch !== '\t') || code === 127) throw new CssError('Control characters are not allowed', { line, col });
       if (ch === '\n') { line++; col = 1; } else col++;
     }
-    const css = rules(tokenize(text0), false, { rules: 0, n: 0 });
+    const css = rules(tokenize(text0), false, { rules: 0, n: 0 }, scope);
     return { css: css.replaceAll('<', '\\3c '), error: null };
   } catch (e) {
     if (!(e instanceof CssError)) throw e;
