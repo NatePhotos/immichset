@@ -2,13 +2,18 @@
    references so the caller decides whether to stream them (preview) or upload them.
    Each page is a list of blocks (site/blocks). A site that never saved pages gets pages made from its old settings
    (site/pages.mjs) and exactly the old stylesheet and script, so it builds byte for byte as before (golden test).
-   editor: true makes self-contained pages for the page editor's preview, with every block marked and selectable. */
+   The header, footer, theme and wording come from state.site (site/sitewide.mjs); a site that never saved them gets
+   them made from its old settings, written exactly as before (second golden test).
+   editor: true makes self-contained pages for the page editor's preview, with every block, element and band marked
+   and selectable. */
 import { readFileSync } from 'node:fs';
 import { esc } from './blocks/common.mjs';
 import { renderBlocks } from './blocks/registry.mjs';
 import { migratePages, resolvePages, isShownPage, pageHref } from './pages.mjs';
 import { rootVars } from './theme.mjs';
-import { IG, UP } from './bands.mjs';
+import { migrateSite } from './sitewide.mjs';
+import { renderHeader, renderFooter } from './bands.mjs';
+import { viewerScript } from './wording.mjs';
 
 const asset = n => readFileSync(new URL(`./assets/${n}`, import.meta.url), 'utf8');
 const CSS = asset('site.css');
@@ -16,7 +21,9 @@ const JS = asset('site.js');
 const BLOCKS_CSS = asset('blocks.css');
 const MOTION_JS = asset('motion.js');
 const BRIDGE_JS = asset('edit-bridge.js');
-const EDIT_CSS = '[data-b]{cursor:pointer}[data-b]:hover{outline:2px dashed rgba(47,111,237,.55);outline-offset:-2px}'
+const BANDS_CSS = asset('bands.css');
+const BANDS_JS = asset('bands.js');
+const EDIT_CSS = ':is([data-b],[data-e],[data-band]){cursor:pointer}:is([data-b],[data-e],[data-band]):hover{outline:2px dashed rgba(47,111,237,.55);outline-offset:-2px}'
   + '.wb-sel{outline:2px solid #2f6fed!important;outline-offset:-2px}.blk-off{display:revert;opacity:.35}'
   + '.blk-empty{margin:1rem;padding:1.2rem;text-align:center;border:1px dashed #8a94a6;color:#5b6577;font:14px system-ui,sans-serif}';
 const GRID_W = 800;
@@ -31,12 +38,16 @@ const inline = t => t.replace(/<\/(script|style)/gi, '<\\/$1');
 
 export function build(state, { base = '/', siteUrl = '', editor = false } = {}) {
   const files = new Map(), images = new Map();
-  const s = state.settings, st = s.style;
+  const s = state.settings;
+  /* own: the header, footer, theme and wording were saved from the editor; until then they are made from the settings */
+  const own = state.site != null;
+  const sw = state.site ?? migrateSite(s);
+  const st = own ? { ...sw.theme, logo: s.style.logo } : s.style;
   const byId = new Map([...state.pagePhotos, ...state.galleries.flatMap(g => g.photos)].map(p => [p.id, p]));
   const galById = new Map(state.galleries.map(g => [g.id, g]));
   const shown = state.galleries.filter(g => !g.hidden && g.photos.length);
   const cover = g => byId.get(g.coverPhotoId) || g.photos[0];
-  const name = s.siteName || 'Portfolio';
+  const name = sw.name || 'Portfolio';
   const site = siteUrl.replace(/\/+$/, '');
   const pic = (p, v) => { const rel = `img/${p.fileKey}-${v}.jpg`; images.set(rel, rel); return base + rel; };
   if (st.logo) images.set(st.logo, st.logo);
@@ -46,12 +57,17 @@ export function build(state, { base = '/', siteUrl = '', editor = false } = {}) 
     .map(f => `family=${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;500`).join('&');
   const desc = String(s.about.text || '').replace(/\s+/g, ' ').trim().slice(0, 155);
 
-  const legacy = state.pages == null && !editor;
+  const legacy = state.pages == null && !own && !editor;
+  const bands = own || editor;
   const pages = resolvePages(state.pages ?? migratePages(s, state.galleries), state.galleries);
   const live = pages.filter(p => isShownPage(p, galById));
-  const nav = live.filter(p => p.inMenu).map(p => `<a href="${pageHref(p, base)}">${esc(p.title)}</a>`).join('');
-  const styleCss = rootVars(st) + CSS + (legacy ? '' : BLOCKS_CSS);
-  const siteJs = JS + (legacy ? '' : MOTION_JS);
+  const linkTo = id => { const t = live.find(x => x.id === id); return t ? pageHref(t, base) : null; };
+  const bctx = { base, editor, siteName: name, logoHtml: logo, wording: sw.wording, pageHref: linkTo,
+    menuPages: live.filter(p => p.inMenu).map(p => ({ id: p.id, title: p.title, href: pageHref(p, base) })),
+    siteHref: u => (u.startsWith('/') ? base + u.slice(1) : u) };
+  const header = renderHeader(sw.header, bctx), footer = renderFooter(sw.footer, bctx);
+  const styleCss = rootVars(st, { accent: own }) + CSS + (legacy ? '' : BLOCKS_CSS) + (bands ? BANDS_CSS : '');
+  const siteJs = JS + (legacy ? '' : MOTION_JS) + (bands ? BANDS_JS + viewerScript(sw.wording) : '');
   const cssTag = editor ? `<style>${inline(styleCss + EDIT_CSS)}</style>` : `<link rel="stylesheet" href="${base}style.css">`;
   const jsTag = editor ? `<script>${inline(siteJs)}</script>\n<script>${inline(BRIDGE_JS)}</script>`
                        : `<script src="${base}site.js" defer></script>`;
@@ -76,18 +92,11 @@ ${cssTag}
 ${head}
 </head>
 <body>
-<header class="top">
-  <a class="logo" href="${base}">${logo}</a>
-  <nav>${nav}</nav>
-</header>
+${header}
 <main>
 ${body}
 </main>
-<footer class="foot">
-  <span>${esc(s.footer.copyright)}</span>
-  ${s.footer.instagram ? `<a class="ig" href="${esc(s.footer.instagram)}" aria-label="Instagram" target="_blank" rel="noopener">${IG}</a>` : '<span></span>'}
-  <a class="totop" href="#" aria-label="Back to top">${UP}</a>
-</footer>
+${footer}
 ${jsTag}
 </body>
 </html>
@@ -103,7 +112,7 @@ ${jsTag}
       base, editor, siteName: name, style: st, shownGalleries: shown, cover, pic, gridSize,
       photo: id => (id == null ? null : byId.get(id) || null),
       gallery: id => galById.get(id) || null,
-      pageHref: id => { const t = live.find(x => x.id === id); return t ? pageHref(t, base) : null; },
+      pageHref: linkTo,
       setOg(ph) { if (ph && !og) og = ph; },
       addHead(h) { head += h; },
       renderBlocks,
@@ -114,7 +123,8 @@ ${jsTag}
       page(title, body, p.slug ? `/${p.slug}/` : '/', { og: ogOf(og), head, description: p.seoDescription || desc }));
   }
 
-  files.set('404.html', page('Not found', `<section class="contact"><h2>Page not found</h2><a href="${base}">Back to home</a></section>`, '/404'));
+  const w = sw.wording;
+  files.set('404.html', page(w.notFoundTitle, `<section class="contact"><h2>${esc(w.notFoundHeading)}</h2><a href="${base}">${esc(w.backHome)}</a></section>`, '/404'));
   files.set('style.css', styleCss);
   files.set('site.js', siteJs);
   files.set('_headers', HEADERS);
