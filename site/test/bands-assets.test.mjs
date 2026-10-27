@@ -70,3 +70,26 @@ test('elements enter once as they come into view; nothing hides without Intersec
   assert.ok(!run({ io: false, els: [e] }).html.has('anim'));
   assert.ok(!run({ els: [] }).html.has('anim'));
 });
+
+test('band heights are minimums and a large logo fits the phone band', () => {
+  for (const line of CSS.split('\n').filter(l => /^\s*\.(top|foot)(\.bp-\w+)?(, \.(top|foot)(\.bp-\w+)?)* \{/.test(l) && /\bheight:/.test(l.replace(/min-height|height: auto/g, '')))) assert.fail(`fixed band height: ${line}`);
+  assert.match(CSS, /\.top\.bp-compact, \.foot\.bp-compact \{ min-height: 4\.6rem; \}/);
+  const m = media('max-width: 760px').body;
+  assert.match(m, /\.lg-large img \{ width: 4\.2rem; height: 4\.2rem; \}/);
+  assert.match(m, /\.top, \.foot \{ min-height: 5\.4rem; \}/);
+});
+
+test('hover effects never put a transform or opacity on an element holding the folding menu', () => {
+  const rules = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => [m[1].trim(), m[2]]);
+  const onWrapper = rules.filter(([sel, body]) => /\.eh-(fade|lift|grow)\b[^{]*:hover/.test(sel) && /transform|opacity/.test(body));
+  assert.ok(onWrapper.length >= 6);
+  for (const [sel] of onWrapper) assert.ok(/:not\(:has\(\.nav-c\)\):hover/.test(sel) || /:hover \.nav-b$/.test(sel), sel);
+  assert.match(CSS, /\.eh-lift:hover \.nav-b \{ transform: translateY\(-3px\); \}/);
+  // the entrance state is only ever applied before .in, so a revealed wrapper ends with no transform
+  assert.doesNotMatch(CSS, /\.el\.m\.in[^{]*\{[^}]*transform/);
+});
+
+test('the menu checkbox is out of the tab order except at phone width', () => {
+  assert.match(CSS.slice(0, CSS.indexOf('@media')), /\.nav-t \{ display: none;/);
+  assert.match(media('max-width: 760px').body, /\.nav-t \{ display: block; \}/);
+});

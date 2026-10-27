@@ -4,10 +4,12 @@
 
 /* ---- bands ---- */
 .top { position: relative; z-index: 4; }
+/* heights are minimums, so a large logo or wrapped links grow the band instead of spilling over the page */
+.top, .foot { height: auto; min-height: 6.6rem; padding-top: .4rem; padding-bottom: .4rem; }
 .top.sticky { position: sticky; top: 0; }
 .top.bg-own, .foot.bg-own { background: var(--band-bg); }
-.top.bp-compact, .foot.bp-compact { height: 4.6rem; }
-.top.bp-roomy, .foot.bp-roomy { height: 8.6rem; }
+.top.bp-compact, .foot.bp-compact { min-height: 4.6rem; }
+.top.bp-roomy, .foot.bp-roomy { min-height: 8.6rem; }
 .top.ba-left, .top.ba-center, .top.ba-right { gap: 2rem; }
 .top.ba-left { justify-content: flex-start; }
 .top.ba-center { justify-content: center; }
@@ -39,18 +41,27 @@
 .esp-fill { flex: 1; }
 
 /* ---- the phone menu: a checkbox and its label, so it opens without JavaScript ---- */
-.nav-t { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.nav-t { display: none; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .nav-b { display: none; }
 
 /* ---- hover effects ---- */
 .eh-fade, .eh-lift, .eh-grow { transition: opacity .25s ease, transform .25s ease; }
-.eh-fade:hover { opacity: .6; }
-.eh-lift:hover { transform: translateY(-3px); }
-.eh-grow:hover { transform: scale(1.06); }
+/* an element holding the folding menu is the dropdown's positioning parent, so it must never carry a transform or an
+   opacity below 1: the effect goes to the menu button instead */
+.eh-fade:not(:has(.nav-c)):hover { opacity: .6; }
+.eh-lift:not(:has(.nav-c)):hover { transform: translateY(-3px); }
+.eh-grow:not(:has(.nav-c)):hover { transform: scale(1.06); }
+.nav-b { transition: opacity .25s ease, transform .25s ease; }
+.eh-fade:hover .nav-b { opacity: .6; }
+.eh-lift:hover .nav-b { transform: translateY(-3px); }
+.eh-grow:hover .nav-b { transform: scale(1.06); }
 
 @media (max-width: 760px) {
-  .top.bp-compact, .foot.bp-compact { height: 4rem; }
-  .top.bp-roomy, .foot.bp-roomy { height: 6.6rem; }
+  .top, .foot { min-height: 5.4rem; }
+  .top.bp-compact, .foot.bp-compact { min-height: 4rem; }
+  .top.bp-roomy, .foot.bp-roomy { min-height: 6.6rem; }
+  .lg-large img { width: 4.2rem; height: 4.2rem; }
+  .nav-t { display: block; }
   .nav-b { display: block; position: relative; width: 2.2rem; height: 2.2rem; cursor: pointer; color: var(--ink); }
   .nav-b span, .nav-b span::before, .nav-b span::after { content: ""; position: absolute; height: 2px; background: currentColor; }
   .nav-b span { top: 50%; left: .3rem; right: .3rem; margin-top: -1px; }
@@ -70,5 +81,6 @@
 /* ---- less motion: hover effects stand still too ---- */
 @media (prefers-reduced-motion: reduce) {
   .eh-fade, .eh-lift, .eh-grow { transition: none !important; }
-  .eh-lift:hover, .eh-grow:hover { transform: none; }
+  .eh-lift:hover, .eh-grow:hover, .eh-lift:hover .nav-b, .eh-grow:hover .nav-b { transform: none; }
+  .nav-b { transition: none !important; }
 }
