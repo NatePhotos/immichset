@@ -18,6 +18,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createSite } from './site/routes.mjs';
+import { DEFAULT_DESIGN, RANGES, ENUMS, FONTS, THEMES, COVER_LAYOUTS, COLOR_PRESETS, TYPE_PRESETS, normaliseDesign, effectiveDesign, isDefaultDesign, designCss, fontLink, fontHref, designWarnings, serializeDesignFile, parseDesignFile } from './design/design.mjs';
 import { overview } from './admin/overview.mjs';
 import { createZipWriter } from './zip/writer.mjs';
 import { DownloadQueue } from './zip/queue.mjs';
@@ -256,6 +257,8 @@ for (const [table, col, decl] of [['email_templates', 'kind', "TEXT NOT NULL DEF
                                   ['galleries', 'cover_file', 'TEXT'],
                                   ['galleries', 'cover_focus', 'TEXT'],
                                   ['galleries', 'sort_order', 'TEXT'],
+                                  ['galleries', 'design', 'TEXT'],
+                                  ['galleries', 'design_draft', 'TEXT'],
                                   ['events', 'detail', 'TEXT']]) {
   const has = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
   if (!has) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); console.log(`migrated: ${table}.${col}`); }
@@ -360,6 +363,8 @@ const q = {
   coverFile:  db.prepare('UPDATE galleries SET cover_file = ? WHERE id = ?'),
   coverFocus: db.prepare('UPDATE galleries SET cover_focus = ? WHERE id = ?'),
   sortOrder:  db.prepare('UPDATE galleries SET sort_order = ? WHERE id = ?'),
+  gallDesign: db.prepare('UPDATE galleries SET design = ? WHERE id = ?'),
+  gallDraft:  db.prepare('UPDATE galleries SET design_draft = ? WHERE id = ?'),
   regCount:   db.prepare('SELECT COUNT(*) n FROM registrations WHERE gallery_id = ?'),
   evCount1:   db.prepare('SELECT COUNT(*) n FROM events WHERE gallery_id = ? AND type = ?'),
   invList:    db.prepare('SELECT * FROM invites WHERE gallery_id = ? ORDER BY created_at'),
@@ -1173,12 +1178,44 @@ async function serveStatic(res, file) {
   }
 }
 
+/* The gallery page with its design applied. A design that is all defaults changes nothing, so existing
+   galleries are served exactly as before. The CSS comes from validated numbers, colours and choices plus the
+   sanitised custom CSS, and the font link from a fixed catalogue; nothing here is raw user text. */
+function withDesign(html, eff) {
+  if (isDefaultDesign(eff)) return html;
+  const r = renderDesign(eff);
+  html = html.replace(/<!--ims:font-->[\s\S]*?<!--\/ims:font-->/, () => r.link);
+  return html.replace('</head>', () => `<style id="ims-design">${r.css}</style>\n</head>`);
+}
+/* the bare page, for the home route, drafts and expired galleries: design only, no preview card */
+async function serveShell(res, gallery) {
+  let html;
+  try { html = await readFile(join(CFG.webDir, 'index.html'), 'utf8'); }
+  catch { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(withDesign(html, gallery ? effectiveFor(gallery) : siteDesign()));
+}
+/* the admin's device preview: the same page, flagged so it reads its data from the admin preview routes */
+async function serveDesignPreview(req, res, which) {
+  if (!adminOk(req)) { res.writeHead(302, { location: '/admin' }); return res.end(); }
+  const g = which === 'site' ? null : q.gallById.get(Number(which));
+  if (which !== 'site' && !g) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+  let html;
+  try { html = await readFile(join(CFG.webDir, 'index.html'), 'utf8'); }
+  catch { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+  html = withDesign(html, g ? effectiveDraftFor(g) : siteDesign())
+    .replace('<title>Gallery</title>', () => `<title>Preview</title>\n<meta name="ims-preview" content="${g ? g.id : 'site'}">\n<meta name="robots" content="noindex">`);
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' });
+  res.end(html);
+}
+
 /* Pasted into a message, a bare link says nothing. These tags give it the cover,
    the title and the date — the same things the gallery shows before its gate. */
 async function serveGalleryPage(res, gallery) {
   let html;
   try { html = await readFile(join(CFG.webDir, 'index.html'), 'utf8'); }
   catch { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+  html = withDesign(html, effectiveFor(gallery));
   const base = CFG.publicUrl || '';
   const date = prettyDate(gallery.subtitle);
   const desc = date || (CFG.brandName ? `Photographs by ${CFG.brandName}` : 'A private gallery');
@@ -1278,6 +1315,7 @@ const server = createServer(async (req, res) => {
       return await adminRoutes(req, res, path, url);
     }
     if (path.startsWith('/admin/site-preview/')) return await site.preview(req, res, path);
+    { const dp = path.match(/^\/admin\/design-preview\/(site|\d{1,9})\/?$/); if (dp) return await serveDesignPreview(req, res, dp[1]); }
     if (path === '/admin' || path.startsWith('/admin/')) return await serveStatic(res, 'admin.html');
 
     /* ---- public gallery api: /api/g/<slug>/... ---- */
@@ -1324,7 +1362,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(301, { location: '/' + encodeURIComponent(decodeURIComponent(old[1])) });
       return res.end();
     }
-    if (path === '/g' || path === '/g/' || path === '/') return await serveStatic(res, 'index.html');
+    if (path === '/g' || path === '/g/' || path === '/') return await serveShell(res, null);
 
     const bare = path.match(/^\/([^/]+)\/?$/);
     if (bare) {
@@ -1334,7 +1372,7 @@ const server = createServer(async (req, res) => {
       /* only a live gallery gets a preview card; a draft or an expired one stays plain */
       if (g) return (g.published_at && !isExpired(g))
         ? await serveGalleryPage(res, g)
-        : await serveStatic(res, 'index.html');
+        : await serveShell(res, g);
     }
 
     return await serveStatic(res, path.replace(/^\/+/, '') || 'index.html');
@@ -1345,6 +1383,33 @@ const server = createServer(async (req, res) => {
   }
 });
 
+/* what the page needs to draw the cover and pick the right gate; base is where its other routes live */
+function galleryDescriptor(gallery, base, gate) {
+  return {
+    slug: gallery.slug,
+    title: gallery.title,
+    subtitle: prettyDate(gallery.subtitle),   /* the client prints it as sent */
+    cover: `${base}/cover?v=${coverVersion(gallery)}`,
+    coverFocus: gallery.cover_focus || '50 50',
+    /* only when the cover comes from Immich: an uploaded one has no cheaper variant,
+       and asking for it twice would be slower, not faster */
+    coverSmall: coverPath(gallery) && existsSync(coverPath(gallery))
+      ? null : `${base}/cover?size=thumbnail&v=${coverVersion(gallery)}`,
+    allowDownload: !!gallery.allow_download,
+    expiresAt: gallery.expires_at,
+    /* the client shows these as tabs only when there is more than one */
+    sets: setsOf(gallery).map(x => ({ id: x.id, name: x.name })),
+    gate,
+    unlocked: !gate,
+    brand: {
+      name: CFG.brandName || null,
+      url: CFG.brandUrl || null,
+      social: CFG.brandSocial || null,
+      socialLabel: CFG.brandSocialLabel || null,
+    },
+  };
+}
+
 async function galleryRoutes(req, res, gallery, rest, url) {
   const sess = sessionFor(req, gallery);
 
@@ -1353,29 +1418,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     const gate = gateFor(gallery, sess);
     if (!gate && !sess) setSession(res, gallery, null, req);   /* nothing to ask for */
     if (!sess) log(gallery, null, 'landing', null, req);
-    return json(res, 200, {
-      slug: gallery.slug,
-      title: gallery.title,
-      subtitle: prettyDate(gallery.subtitle),   /* the client prints it as sent */
-      cover: `/api/g/${gallery.slug}/cover?v=${coverVersion(gallery)}`,
-      coverFocus: gallery.cover_focus || '50 50',
-      /* only when the cover comes from Immich: an uploaded one has no cheaper variant,
-         and asking for it twice would be slower, not faster */
-      coverSmall: coverPath(gallery) && existsSync(coverPath(gallery))
-        ? null : `/api/g/${gallery.slug}/cover?size=thumbnail&v=${coverVersion(gallery)}`,
-      allowDownload: !!gallery.allow_download,
-      expiresAt: gallery.expires_at,
-      /* the client shows these as tabs only when there is more than one */
-      sets: setsOf(gallery).map(x => ({ id: x.id, name: x.name })),
-      gate,
-      unlocked: !gate,
-      brand: {
-        name: CFG.brandName || null,
-        url: CFG.brandUrl || null,
-        social: CFG.brandSocial || null,
-        socialLabel: CFG.brandSocialLabel || null,
-      },
-    });
+    return json(res, 200, galleryDescriptor(gallery, `/api/g/${gallery.slug}`, gate));
   }
 
   /* the cover is visible before the gate, like Pixieset */
@@ -2062,8 +2105,48 @@ async function setsDto(g) {
   return out;
 }
 
+/* ---- gallery designs ----
+   The site-wide design lives in settings ('gallery_design', a full design); a gallery keeps only the settings it
+   overrides (galleries.design, sparse JSON). Anything unreadable falls back to the defaults, never to an error. */
+function siteDesign() {
+  try { const r = q.setGet.get('gallery_design'); if (r) { const n = normaliseDesign(JSON.parse(r.value)); if (n.design) return n.design; } } catch {}
+  return { ...DEFAULT_DESIGN };
+}
+function ownDesign(g) {
+  try { if (g && g.design) { const n = normaliseDesign(JSON.parse(g.design), { partial: true }); if (n.design && Object.keys(n.design).length) return n.design; } } catch {}
+  return null;
+}
+const effectiveFor = (g) => effectiveDesign(siteDesign(), ownDesign(g));
+/* The editor works on a draft; clients keep seeing galleries.design (the published look) until it is published.
+   design_draft is NULL when there is nothing waiting, and otherwise the sparse overrides being worked on (possibly none). */
+function ownDraft(g) {
+  try { if (g && g.design_draft) { const n = normaliseDesign(JSON.parse(g.design_draft), { partial: true }); if (n.design) return n.design; } } catch {}
+  return null;
+}
+const sameOverrides = (a, b) => JSON.stringify(Object.entries(a || {}).sort()) === JSON.stringify(Object.entries(b || {}).sort());
+/* what the editor shows: the draft if there is one, otherwise the published look */
+const draftFor = (g) => ownDraft(g) ?? ownDesign(g) ?? {};
+const effectiveDraftFor = (g) => effectiveDesign(siteDesign(), draftFor(g));
+/* store a draft; one that matches the published look is no draft at all */
+function storeDraft(g, obj, live) {
+  q.gallDraft.run(obj && !sameOverrides(obj, live) ? JSON.stringify(obj) : null, g.id);
+}
+const designCache = new Map();
+/* The CSS and font link for a design, compiled once per distinct design. */
+function renderDesign(eff) {
+  const key = JSON.stringify(eff);
+  let r = designCache.get(key);
+  if (!r) {
+    r = { css: designCss(eff), link: fontLink(eff), href: fontHref(eff) };
+    if (designCache.size >= 200) designCache.delete(designCache.keys().next().value);
+    designCache.set(key, r);
+  }
+  return r;
+}
+
 function gallDto(g) {
   return {
+    design: ownDesign(g), designDraft: ownDraft(g), designPending: !!ownDraft(g),
     id: g.id, slug: g.slug, title: g.title, subtitle: g.subtitle, subtitleText: prettyDate(g.subtitle),
     albumId: g.album_id, coverAssetId: g.cover_asset_id, coverFile: g.cover_file || null,
     coverFocus: g.cover_focus || '50 50', sortOrder: g.sort_order === 'oldest' ? 'oldest' : 'newest',
@@ -2440,6 +2523,24 @@ async function adminRoutes(req, res, path, url) {
       const slug = (b.slug ?? g.slug).toLowerCase();
       if (!slugShape(slug)) return json(res, 400, { error: 'slug must be letters, numbers and dashes' });
       if (!slugFree(slug))  return json(res, 400, { error: `“${slug}” is reserved — pick another web address` });
+      let newDraft;    /* undefined: leave alone; null: no draft; object: the settings being worked on */
+      if (b.designDraft !== undefined) {
+        if (b.designDraft === null) newDraft = null;
+        else {
+          const n = normaliseDesign(b.designDraft, { partial: true });
+          if (!n.design) return json(res, 400, { error: Object.values(n.errors)[0], errors: n.errors });
+          newDraft = n.design;
+        }
+      }
+      let newDesign;   /* undefined: leave alone; null: follow the site design; string: this gallery's overrides */
+      if (b.design !== undefined) {
+        if (b.design === null || (typeof b.design === 'object' && !Array.isArray(b.design) && !Object.keys(b.design).length)) newDesign = null;
+        else {
+          const n = normaliseDesign(b.design, { partial: true });
+          if (!n.design) return json(res, 400, { error: Object.values(n.errors)[0], errors: n.errors });
+          newDesign = JSON.stringify(n.design);
+        }
+      }
       try {
         q.gallUpd.run(
           slug,
@@ -2468,6 +2569,8 @@ async function adminRoutes(req, res, path, url) {
         const ok = m && Number(m[1]) <= 100 && Number(m[2]) <= 100;
         q.coverFocus.run(ok ? `${Math.round(Number(m[1]))} ${Math.round(Number(m[2]))}` : null, g.id);
       }
+      if (newDesign !== undefined) { q.gallDesign.run(newDesign, g.id); q.gallDraft.run(null, g.id); }   /* written straight to the published look */
+      if (newDraft !== undefined) storeDraft(g, newDraft, ownDesign(q.gallById.get(g.id)));
       if (b.sortOrder !== undefined) {
         const want = b.sortOrder === 'oldest' ? 'oldest' : 'newest';
         q.sortOrder.run(want, g.id);
@@ -2475,6 +2578,97 @@ async function adminRoutes(req, res, path, url) {
       }
       return json(res, 200, gallDto(q.gallById.get(g.id)));
     }
+  }
+
+  /* ---- device preview data: the public gallery API's shape, for the admin only ----
+     No gate, no activity log, and never the original files. "site" previews the newest gallery. */
+  {
+    const pv = path.match(/^\/api\/admin\/design-preview\/(site|\d{1,9})(\/.*)?$/);
+    if (pv) {
+      const g = pv[1] === 'site' ? (q.gallAll.all()[0] || null) : q.gallById.get(Number(pv[1]));
+      const rest = pv[2] || '';
+      const base = `/api/admin/design-preview/${pv[1]}`;
+      if (!g) {
+        if (rest === '' || rest === '/') return json(res, 200, { slug: 'preview', title: 'Sample Gallery', subtitle: '', cover: null, coverFocus: '50 50',
+          coverSmall: null, allowDownload: false, sets: [], gate: null, unlocked: true, brand: { name: CFG.brandName || null, url: null, social: null, socialLabel: null } });
+        if (rest === '/assets') return json(res, 200, { setId: null, assets: [] });
+        if (rest === '/favourites') return json(res, 200, { ids: [], named: false });
+        return json(res, 404, { error: 'not_found' });
+      }
+      if (rest === '' || rest === '/') return json(res, 200, { ...galleryDescriptor(g, base, null), allowDownload: false });
+      if (rest === '/cover') return await galleryRoutes(req, res, g, '/cover', url);
+      if (rest === '/assets') {
+        const sets = setsOf(g);
+        if (!sets.length) return json(res, 200, { setId: null, assets: [] });
+        const asked = Number(url.searchParams.get('set') || 0);
+        const set = sets.find(x => x.id === asked) || sets[0];
+        const list = await albumAssets(set.album_id);
+        if (g.sort_order === 'oldest') list.reverse();
+        return json(res, 200, { setId: set.id, assets: list });
+      }
+      if (rest === '/favourites') return req.method === 'POST' ? json(res, 200, { on: true, count: 0 }) : json(res, 200, { ids: [], named: true });
+      const im = rest.match(/^\/img\/([0-9a-f-]{36})$/i);
+      if (im) {
+        const size = url.searchParams.get('size') || 'thumbnail';
+        if (!['thumbnail', 'preview'].includes(size)) return json(res, 403, { error: 'preview_only' });
+        if (!(await galleryHas(g, im[1]))) return json(res, 404, { error: 'not_found' });
+        return proxyImage(req, res, im[1], size);
+      }
+      return json(res, 404, { error: 'not_found' });
+    }
+  }
+
+  /* ---- gallery design: site default, live preview rendering, files ---- */
+  if (path === '/api/admin/design' && req.method === 'GET') {
+    return json(res, 200, { site: siteDesign(), defaults: DEFAULT_DESIGN, ranges: RANGES, enums: ENUMS, themes: THEMES,
+      coverLayouts: COVER_LAYOUTS, colorPresets: COLOR_PRESETS, typePresets: TYPE_PRESETS,
+      fonts: FONTS.map(f => ({ id: f.id, name: f.name, google: !!f.google, gfam: f.google || null, stack: f.stack })) });
+  }
+  if (path === '/api/admin/design' && req.method === 'PUT') {
+    const b = await readJson(req, 96 * 1024);
+    const n = normaliseDesign(b.design);
+    if (!n.design) return json(res, 400, { error: Object.values(n.errors)[0], errors: n.errors });
+    /* A new default look is for galleries made from now on. Every gallery that already exists keeps exactly the look
+       it has: each one is written down as its own settings (only where they differ from the new default), all or nothing. */
+    const old = siteDesign();
+    db.exec('BEGIN');
+    try {
+      for (const g of q.gallAll.all()) {
+        const pin = (own) => { const eff = effectiveDesign(old, own), keep = {}; for (const k of Object.keys(n.design)) if (eff[k] !== n.design[k]) keep[k] = eff[k]; return keep; };
+        const live = pin(ownDesign(g));
+        q.gallDesign.run(Object.keys(live).length ? JSON.stringify(live) : null, g.id);
+        const draft = ownDraft(g);
+        if (draft) storeDraft(g, pin(draft), live);       /* work in progress keeps its look too */
+      }
+      q.setPut.run('gallery_design', JSON.stringify(n.design));
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+    return json(res, 200, { site: n.design, warnings: designWarnings(n.design) });
+  }
+  if (path === '/api/admin/design/render' && req.method === 'POST') {
+    /* Preview only, nothing is saved. A gallery's settings are overrides on the saved site design. */
+    const b = await readJson(req, 96 * 1024);
+    const partial = b.scope === 'gallery';
+    let n = normaliseDesign(b.design || {}, { partial });
+    const errors = n.errors;
+    if (!n.design && Object.keys(errors).every(k => k === 'customCss')) n = normaliseDesign({ ...b.design, customCss: '' }, { partial });   /* keep previewing the rest */
+    if (!n.design) return json(res, 200, { errors, css: '', fontHref: '' });
+    const eff = partial ? effectiveDesign(siteDesign(), n.design) : effectiveDesign(null, n.design);
+    const r = renderDesign(eff);
+    return json(res, 200, { errors, css: r.css, fontHref: r.href, effective: eff, warnings: designWarnings(eff) });
+  }
+  if (path === '/api/admin/design/import' && req.method === 'POST') {
+    const b = await readJson(req, 96 * 1024);
+    try { return json(res, 200, { design: parseDesignFile(String(b.text ?? '')) }); }
+    catch (e) { return json(res, 400, { error: e.message }); }
+  }
+  if (path === '/api/admin/design/export' && req.method === 'GET') {
+    const gid = Number(url.searchParams.get('gallery'));
+    const g = gid ? q.gallById.get(gid) : null;
+    if (gid && !g) return json(res, 404, { error: 'not_found' });
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
+      'content-disposition': 'attachment; filename="immichset-design.json"' });
+    return res.end(serializeDesignFile(g ? effectiveDraftFor(g) : siteDesign()));
   }
 
   if (path === '/api/admin/zips' && req.method === 'GET') {
@@ -2519,7 +2713,7 @@ async function adminRoutes(req, res, path, url) {
 
 
   /* ---- Connections: the keys and settings, readable and testable from the panel ----
-     Anything set in the compose file is shown as such and cannot be changed here. Changes need the browser
+     A value saved here overrides the compose file's. Changes need the browser
      sign-in, not the API token, so a leaked token cannot redirect where mail goes or which Immich is used. */
   if (path === '/api/admin/connections' && req.method === 'GET') {
     const meta = SETTINGS.filter(x => !x.hidden && !x.envOnly && !['secret', 'adminToken'].includes(x.key))
@@ -2544,7 +2738,7 @@ async function adminRoutes(req, res, path, url) {
     for (const [k, v] of Object.entries(b)) {
       const x = BY_ENV.get(k);
       if (!x || x.hidden || x.envOnly || ['APP_SECRET', 'ADMIN_TOKEN'].includes(k)) { errors[k] = 'That setting cannot be changed here'; continue; }
-      if (conf.sources[k] === 'env') { errors[k] = 'This one is set in your compose file; change it there'; continue; }
+      if (conf.sources[k] === 'env' && String(v ?? '').trim() === String(conf.raw[k] ?? '')) continue;   /* unchanged: do not copy the compose value into the file */
       if (x.secret && (v === '' || v === null || v === undefined)) continue;           /* blank keeps the saved key */
       const r = validateSetting(k, v); if (!r.ok) { errors[k] = r.error; continue; }
       patch[k] = r.value;
@@ -2743,6 +2937,17 @@ async function adminRoutes(req, res, path, url) {
   }
 
   /* who downloaded what: one entry per client, singles and zips kept apart */
+  /* The design being edited is a draft; this puts it live, or throws it away. Clients see only the published look. */
+  const dpM = path.match(/^\/api\/admin\/galleries\/(\d+)\/design\/(publish|discard)$/);
+  if (dpM && req.method === 'POST') {
+    const g = q.gallById.get(Number(dpM[1]));
+    if (!g) return json(res, 404, { error: 'not_found' });
+    const draft = ownDraft(g);
+    if (dpM[2] === 'publish' && draft) q.gallDesign.run(Object.keys(draft).length ? JSON.stringify(draft) : null, g.id);
+    q.gallDraft.run(null, g.id);
+    return json(res, 200, gallDto(q.gallById.get(g.id)));
+  }
+
   const dlM = path.match(/^\/api\/admin\/galleries\/(\d+)\/downloads$/);
   if (dlM) {
     const g = q.gallById.get(Number(dlM[1]));
@@ -2760,7 +2965,20 @@ async function adminRoutes(req, res, path, url) {
         p.zips.push({ at: e.created_at, ids });
       }
     }
-    return json(res, 200, { people: [...by.values()] });
+    /* Everyone who took every photo is one line, not hundreds of thumbnails. "Every photo" is the whole gallery as it is
+       now (all its sets), counting single downloads and zips together. If Immich cannot be asked, nobody is marked. */
+    let total = null;
+    try {
+      const all = new Set();
+      for (const st of setsOf(g)) for (const x of await albumAssets(st.album_id)) all.add(x.id);
+      if (all.size) total = all;
+    } catch {}
+    const covers = (ids) => !!total && ids.length >= total.size && [...total].every(id => ids.includes(id));
+    for (const p of by.values()) {
+      for (const z of p.zips) z.all = !!z.ids && covers(z.ids);
+      p.all = covers([...new Set([...p.ids, ...p.zips.flatMap(z => z.ids || [])])]);
+    }
+    return json(res, 200, { people: [...by.values()], total: total ? total.size : null });
   }
 
   /* everyone who left an email: registered, downloaded, or either, across one gallery or all of

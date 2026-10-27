@@ -35,10 +35,10 @@ say() { echo "  $*"; }
 [ -n "$BASE" ] || die "BASE is not set"
 [ -d "$DEST" ] || die "DEST does not exist or is not mounted: $DEST"
 
-FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/home.js web/admin-theme.css admin/overview.mjs admin/cover.mjs admin/logo.mjs
+FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/design-admin.js web/home.js web/admin-theme.css admin/overview.mjs admin/cover.mjs admin/logo.mjs
        site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs
        site/assets/site.css site/assets/site.js zip/writer.mjs zip/queue.mjs health/watchdog.mjs mail/blast.mjs
-       config/settings.mjs config/store.mjs config/request.mjs setup/claim.mjs setup/checks.mjs setup/provision.mjs setup/server.mjs web/setup.html)
+       design/design.mjs design/css.mjs config/settings.mjs config/store.mjs config/request.mjs setup/claim.mjs setup/checks.mjs setup/provision.mjs setup/server.mjs web/setup.html)
 PREV="$DEST/.previous"
 
 # ---- rollback -------------------------------------------------------------

@@ -29,7 +29,8 @@ nothing without a session.
 | File | What it is |
 |---|---|
 | `server.mjs` | The whole server. Node built-ins only: `http`, `sqlite`, `crypto`, `fs`, `zlib`. |
-| `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`; everything: `node --test admin/test health/test zip/test mail/test config/test setup/test site/test`). |
+| `design/design.mjs`, `design/css.mjs` | Gallery designs: the settings and their limits, the themes, the CSS they produce, the design-file format, and the sanitiser every piece of custom CSS goes through. Pure, with tests in `design/test`. |
+| `zip/writer.mjs`, `zip/queue.mjs` | The zip file writer and the download queue. Small, pure, with tests in `zip/test` (`node --test zip/test/`; everything: `node --test admin/test health/test zip/test mail/test config/test design/test setup/test site/test`). |
 | `config/settings.mjs`, `config/store.mjs` | Every setting in one list, and where it comes from (environment, then the settings file, then the default). `config/test` includes a golden test that the same environment always builds the same config as before. |
 | `setup/*.mjs`, `web/setup.html` | The first-run setup page and its server, the setup-code protection, and the tests behind every Test button (also used by Connections). `setup/test/fresh-install.test.mjs` walks a whole new install. |
 | `mail/blast.mjs` | Fills a mailing template for one person, signs unsubscribe links, picks recipients, and decides how to react to the mail service. Pure, tested in `mail/test`. |

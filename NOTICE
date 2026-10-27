@@ -1,0 +1,11 @@
+immichset
+Client photo galleries on top of Immich. AGPL-3.0-only.
+
+The gallery design system (design/css.mjs, design/design.mjs) adapts ideas from ImmichPager,
+copyright 2026 ImmichPager contributors, AGPL-3.0, used with permission:
+  https://gitlab.com/wispd/ImmichPager
+Adapted: the scoped, allow-listed custom CSS compiler approach, the theme and layout variables,
+and the portable versioned design file. Source files credit it in their headers.
+
+The admin panel's icons are from Lucide (https://lucide.dev), ISC licence, copyright Lucide Contributors,
+the same icon set OpenCull uses. Their shapes are embedded in web/admin.html.

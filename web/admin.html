@@ -63,6 +63,25 @@ html{scrollbar-width:none}
 html::-webkit-scrollbar,body::-webkit-scrollbar{display:none}
 .wrap{max-width:1400px;margin:0 auto;padding:0 18px 90px}
 .detail{display:grid;grid-template-columns:230px minmax(0,1fr);gap:0;max-width:1400px;margin:0 auto}
+/* ---------- the gallery rail (all of a gallery's tabs, and the Design editor) ---------- */
+#app.dzwide #sidebar,#app.dzwide #tabbar{display:none!important}
+#app.dzwide #appmain{padding-bottom:0}
+#app.dzfull #appmain{display:flex;flex-direction:column;height:100vh;height:100dvh}
+#app.dzfull #root{flex:1 1 auto;min-height:0;overflow:hidden}
+.dz{display:grid;height:100%;background:var(--bg)}
+.dz.dzgen{grid-template-columns:232px minmax(0,1fr);height:auto;min-height:calc(100vh - var(--hdr,60px));min-height:calc(100dvh - var(--hdr,60px))}
+.dzrail{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.dz.dzgen .dzrail{position:sticky;top:var(--hdr,60px);height:calc(100vh - var(--hdr,60px));height:calc(100dvh - var(--hdr,60px));overflow-y:auto}
+.dzrcov{display:block;width:100%;aspect-ratio:3/2;border:0;border-bottom:1px solid var(--line);background:var(--raised) center/cover no-repeat;cursor:pointer;padding:0;color:var(--muted);font:inherit;font-size:13px;flex:0 0 auto}
+.dzicons{display:flex;justify-content:space-around;border-bottom:1px solid var(--line);flex:0 0 auto}
+.dzicons button{flex:1;height:50px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);cursor:pointer;display:grid;place-items:center}
+.dzicons button:hover{color:var(--fg)}.dzicons button.on{color:var(--fg);border-bottom-color:var(--primary)}
+.dz.dzgen .main{min-width:0}
+@media(max-width:899px){
+  .dz.dzgen{display:block;min-height:0}
+  .dz.dzgen .dzrail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .dz.dzgen .dzrcov{display:none}
+}
 .side{border-right:1px solid var(--line);min-height:calc(100vh - 60px);padding-bottom:40px}
 .side .cov{aspect-ratio:3/2;background:var(--soft) center/cover no-repeat;border-bottom:1px solid var(--line)}
 .tabs{display:flex;border-bottom:1px solid var(--line)}
@@ -185,12 +204,22 @@ h3.sec:first-child{margin-top:0}
 @media(max-width:700px){.qrow{grid-template-columns:minmax(0,1fr) 96px}.qbar{display:none}}
 
 /* ---------- compose ---------- */
-.compose{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start}
+.compose{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:26px;align-items:start}
 @media(max-width:1100px){.compose{grid-template-columns:1fr}}
 .pane{border:1px solid var(--line);background:var(--soft);padding:14px;position:sticky;top:76px}
 @media(max-width:1100px){.pane{position:static}}
 .pane h4{margin:0 0 10px;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-.pane iframe{width:100%;height:600px;border:1px solid var(--line);background:#fff;display:block}
+.pvfit{width:100%;height:600px;overflow:hidden;border:1px solid var(--line);background:#fff}
+/* a gallery screen with an email preview: exactly the window tall, the form scrolls by itself, and so does the preview */
+.main.fitview{height:calc(100vh - var(--hdr,89px));height:calc(100dvh - var(--hdr,89px));overflow:hidden;padding-bottom:20px;display:flex;flex-direction:column}
+.main.fitview>h2,.main.fitview>.lede{flex:0 0 auto}
+.main.fitview>#cp{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.main.fitview .compose{flex:1 1 auto;min-height:0;align-items:stretch}
+.main.fitview .compose>div:first-child{overflow-y:auto;min-height:0;padding-bottom:20px}
+.main.fitview .pane{position:static;height:100%;min-height:0;display:flex;flex-direction:column;box-sizing:border-box}
+.main.fitview .pvfit{flex:1 1 auto;min-height:0;height:auto}
+@media(max-width:1100px){.main.fitview{height:auto;overflow:visible;display:block}.main.fitview .compose>div:first-child{overflow:visible}.main.fitview .pane{height:auto}.main.fitview .pvfit{height:520px}}
+.pvfit iframe{display:block;border:0;background:#fff;transform-origin:0 0;width:640px;height:600px}
 .subjline{font-size:13px;font-weight:600;padding:10px 12px;background:#fff;border:1px solid var(--line);border-bottom:none;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vars code{background:var(--soft);padding:1px 5px;font-size:11px}
@@ -254,7 +283,8 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
 .pickhead .pmail{color:var(--muted);font-size:11.5px}
 .pickhead .pn{color:var(--muted);font-size:11px;letter-spacing:.11em;text-transform:uppercase;margin-left:auto}
 .picksrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px;max-width:760px}
-.picksrow .p{aspect-ratio:1;background:var(--soft) center/cover no-repeat}
+.picksrow .p{aspect-ratio:1;background:var(--soft) center/cover no-repeat;cursor:zoom-in}
+.picksrow .p:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 .menu{position:fixed;z-index:90;background:var(--bg);border:1px solid var(--line);min-width:196px;padding:5px 0;
   box-shadow:0 12px 34px rgba(0,0,0,.16)}
@@ -329,8 +359,8 @@ td{padding:11px 10px;border-bottom:1px solid var(--line)}
   <div id="appmain">
     <div class="top" id="tBar"><div class="topin">
       <button class="back" id="backBtn" hidden aria-label="Back">
-        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8"
-          stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </button>
       <div class="ttl">
         <div class="crumb" id="tCrumb" hidden></div>
@@ -361,25 +391,47 @@ var S = { galleries: [], albums: [], publicUrl: null, g: null, tab: "settings", 
           canUpload: false, uploadMaxMb: 250, uploadMaxVideoMb: 4096, caps: {}, defaultSort: "newest" };
 
 /* ---------- icons ---------- */
-var I = {
-  gear: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
-  mail: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
-  chart:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>',
-  image:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.6" cy="10" r="1.6"/><path d="M3.5 17l5-4.6 4 3.4 3.2-2.6 4.8 4"/></svg>',
-  up:   '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>'
+/* Every icon in the panel is a Lucide icon (https://lucide.dev, ISC licence), the same set OpenCull uses. Trusted constants, never user text. */
+var LUCIDE = {
+ "image": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/>",
+ "images": "<path d=\"m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16\"/><path d=\"M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2\"/><circle cx=\"13\" cy=\"7\" r=\"1\" fill=\"currentColor\"/><rect x=\"8\" y=\"2\" width=\"14\" height=\"14\" rx=\"2\"/>",
+ "house": "<path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\"/><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>",
+ "globe": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/>",
+ "users": "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><path d=\"M16 3.128a4 4 0 0 1 0 7.744\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/>",
+ "mail": "<path d=\"m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7\"/><rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\"/>",
+ "settings": "<path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
+ "ellipsis": "<circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/><circle cx=\"5\" cy=\"12\" r=\"1\"/>",
+ "log-out": "<path d=\"m16 17 5-5-5-5\"/><path d=\"M21 12H9\"/><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/>",
+ "paintbrush": "<path d=\"m14.622 17.897-10.68-2.913\"/><path d=\"M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z\"/><path d=\"M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15\"/>",
+ "palette": "<path d=\"M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z\"/><circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\"/><circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>",
+ "chart-column": "<path d=\"M3 3v16a2 2 0 0 0 2 2h16\"/><path d=\"M18 17V9\"/><path d=\"M13 17V5\"/><path d=\"M8 17v-3\"/>",
+ "type": "<path d=\"M12 4v16\"/><path d=\"M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2\"/><path d=\"M9 20h6\"/>",
+ "layout-grid": "<rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\"/>",
+ "sliders-horizontal": "<path d=\"M10 5H3\"/><path d=\"M12 19H3\"/><path d=\"M14 3v4\"/><path d=\"M16 17v4\"/><path d=\"M21 12h-9\"/><path d=\"M21 19h-5\"/><path d=\"M21 5h-7\"/><path d=\"M8 10v4\"/><path d=\"M8 12H3\"/>",
+ "clock": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 6v6l4 2\"/>",
+ "heart": "<path d=\"M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5\"/>",
+ "triangle-alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>",
+ "circle-check": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m16 9-5.5 5.5L8 12\"/>",
+ "circle-x": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m15 9-6 6\"/><path d=\"m9 9 6 6\"/>",
+ "plus": "<path d=\"M5 12h14\"/><path d=\"M12 5v14\"/>",
+ "chevron-right": "<path d=\"m9 18 6-6-6-6\"/>",
+ "chevron-left": "<path d=\"m15 18-6-6 6-6\"/>",
+ "upload": "<path d=\"M12 3v12\"/><path d=\"m17 8-5-5-5 5\"/><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/>"
 };
-/* the shell's icons (sidebar, bottom bar, More sheet, header actions); trusted constants, never user text */
-function svg20(d){ return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" '
-  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; }
+function lucide(name, size, sw){
+  var n = size || 20;
+  return '<svg viewBox="0 0 24 24" width="' + n + '" height="' + n + '" fill="none" stroke="currentColor" stroke-width="' + (sw || 2) + '" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (LUCIDE[name] || "") + '</svg>';
+}
 var IC = {
-  photo:    svg20('<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8.5"/>'),
-  globe:    svg20('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/>'),
-  home:     svg20('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/>'),
-  users:    svg20('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/>'),
-  mail:     svg20('<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'),
-  settings: svg20('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>'),
-  dots:     svg20('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>'),
-  logout:   svg20('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/>')
+  photo:    lucide("images"),
+  globe:    lucide("globe"),
+  home:     lucide("house"),
+  users:    lucide("users"),
+  mail:     lucide("mail"),
+  settings: lucide("settings"),
+  dots:     lucide("ellipsis"),
+  logout:   lucide("log-out")
 };
 
 function toast(t, action){
@@ -436,12 +488,32 @@ function coverOf(g){
   return "";
 }
 /* empty-state and placeholder icon: 40px by default, muted by the theme */
+/* An email is built about 560px wide. Show it at that width and scale the whole thing to fill the preview, so a wide
+   screen gets a big preview, not a small email in a big box. It follows the box, and the window's height. */
+function scaleEmail(frame){
+  var wrap = frame && frame.parentNode; if (!wrap) return;
+  /* inside a gallery the whole screen is fitted to the window, so only the preview ever scrolls */
+  var main = wrap.closest ? wrap.closest(".main") : null;
+  if (main) main.classList.add("fitview");
+  function fit(){
+    if (!frame.isConnected){ window.removeEventListener("resize", fit); return; }
+    var bar = document.getElementById("tBar");
+    document.documentElement.style.setProperty("--hdr", (bar ? bar.offsetHeight : 89) + "px");
+    if (!main) wrap.style.height = Math.max(480, Math.round(window.innerHeight - 190)) + "px";
+    var W = 640, k = Math.min(1.1, Math.max(0.5, wrap.clientWidth / W));
+    frame.style.width = W + "px"; frame.style.height = Math.round(wrap.clientHeight / k) + "px"; frame.style.transform = "scale(" + k + ")";
+    frame.style.marginLeft = Math.max(0, Math.round((wrap.clientWidth - W * k) / 2)) + "px";   /* centred when the box is wider than the email */
+  }
+  fit();
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
+  window.addEventListener("resize", fit);
+}
 function emptyIcon(inner, px){
   return '<svg viewBox="0 0 24 24" width="'+(px||40)+'" height="'+(px||40)+'" fill="none" stroke="currentColor" stroke-width="1.4" '
        + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+inner+'</svg>';
 }
-var EI_PHOTO = '<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-4.5L7 19.5"/>';
-var EI_STACK = '<rect x="3" y="7" width="14" height="12" rx="2"/><path d="M7 4h12a2 2 0 0 1 2 2v10"/><circle cx="8" cy="11.5" r="1.2"/><path d="M3 17l4.5-4 3.5 3"/>';
+var EI_PHOTO = LUCIDE.image;
+var EI_STACK = LUCIDE.images;
 function emptyState(icon, text, btnId, btnLabel){
   return '<div class="emptyst">'+emptyIcon(icon)+'<p>'+esc(text)+'</p>'
        + (btnLabel ? '<button type="button" class="btn pri" id="'+btnId+'">'+esc(btnLabel)+'</button>' : '')+'</div>';
@@ -552,7 +624,8 @@ function boot(){
    sheet (phones). Other files add theirs with addSection; leave() runs when you switch away from
    a section, and sections are listed by order (lowest first; boot opens the first one). */
 var SECTIONS = [{ key:"galleries", label:"Galleries", icon:IC.photo, order:20, n:0, open:function(){ listView(); },
-                  top:function(){ if (S.g || S.editing) listView(); } }];
+                  top:function(){ if (S.g || S.editing) listView(); },
+                  leave:function(){ if (window.DesignEditor) DesignEditor.close(); } }];
 var curSection = "galleries";
 function addSection(key, label, icon, open, leave, order){
   SECTIONS.push({ key:key, label:label, icon:icon || "", open:open, leave:leave,
@@ -638,6 +711,8 @@ function closeHdrMenu(refocus){
 }
 function chrome(opts){
   closeHdrMenu();
+  $("app").classList.toggle("dzfull", !!opts.full);     /* the Design editor takes the whole window... */
+  $("app").classList.toggle("dzwide", !!(opts.full || opts.wide));   /* ...a gallery's other tabs only lose the side menu */
   if (opts.section) setSection(opts.section);
   var back = opts.back || null, crumb = $("tCrumb");
   crumb.hidden = !opts.crumb;
@@ -659,13 +734,16 @@ function chrome(opts){
     var txt = g.expired ? "Expired" : (g.publishedAt ? "Live" : "Draft");
     $("tPill").className = "pill " + cls; $("tPill").textContent = txt;
   }
+  $("tPill").onclick = g && opts.onPill ? function(){ opts.onPill($("tPill")); } : null;
+  if (g && opts.onPill){ $("tPill").setAttribute("role","button"); $("tPill").tabIndex = 0; $("tPill").textContent += " \u25be"; $("tPill").style.cursor = "pointer"; }
+  else { $("tPill").removeAttribute("role"); $("tPill").removeAttribute("tabindex"); $("tPill").style.cursor = ""; }
   var cov = g ? coverOf(g) : "";
   $("tCov").hidden = !g;
   $("tCov").style.cssText = cov ? coverCss(g) : "";
   $("tCov").className = "tcov" + (g && !cov ? " none" : "");
   $("tCov").innerHTML = g && !cov ? emptyIcon(EI_PHOTO, 16) : "";
   $("tCov").title = g && !cov ? "Choose a cover" : "";
-  var goCov = function(){ openGallery(g.id, "settings", "cover"); };
+  var goCov = function(){ openGallery(g.id, "design", "cover-photo"); };
   $("tCov").onclick = g && !cov ? goCov : null;
   $("tCov").onkeydown = g && !cov ? function(ev){ if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); goCov(); } } : null;
   if (g && !cov){ $("tCov").setAttribute("role","button"); $("tCov").tabIndex = 0; }
@@ -687,30 +765,53 @@ function chrome(opts){
     if (hdrMenu) document.addEventListener("keydown", hdrMenuKey);
   };
   renderNav();
+  headerHeight();
 }
+/* The header's real height (it wraps on a narrow screen); screens that fit the window use it for their own sizes. */
+function headerHeight(){
+  var bar = $("tBar"); if (bar) document.documentElement.style.setProperty("--hdr", bar.offsetHeight + "px");
+}
+window.addEventListener("resize", headerHeight);
 /* only while that gallery is the open screen: a late save or refresh must not repaint another section */
+/* The header every gallery screen shares, the Design editor included: back to the list, the title and date, the
+   Live/Draft menu, then More, Preview and Share. extra.more adds menu items; extra.full is the editor's full-height mode. */
+function copyMessage(g){
+  /* a ready-to-send note: the link, the password if there is one (the panel only knows whether there is one) and when it ends */
+  var lines = ["Your photos are ready: " + galleryUrl(g)];
+  if (g.hasPassword) lines.push("It is protected by a password. I will send it separately.");
+  if (g.expiresAt) lines.push("The gallery is available until " + fmtDate(g.expiresAt) + ", so please download anything you want to keep.");
+  navigator.clipboard.writeText(lines.join("\n\n")).then(function(){ toast("Message copied"); }, function(){ toast("Couldn’t copy"); });
+}
+function publishMenu(anchor){
+  var g = S.g; if (!g) return;
+  popMenu(anchor, [{ label: g.publishedAt ? "Unpublish (back to draft)" : "Publish", run:function(){
+    save({ published: !g.publishedAt }, g.publishedAt ? "Unpublished" : "Published");
+  } }]);
+}
+function galleryChromeOpts(g, extra){
+  extra = extra || {};
+  var url = galleryUrl(g);
+  return { title:g.title, summary:g.subtitleText || url.replace(/^https?:\/\//,""), back:listView, gallery:g, section:"galleries",
+    wide:true, full:!!extra.full, onPill:publishMenu, actions:[
+    { label:"More", id:"gMore", onClick:function(){
+      popMenu($("gMore"), (extra.more || []).concat([{ label:"Copy message", run:function(){ copyMessage(g); } }]));
+    } },
+    { label:"Preview", onClick:function(){ window.open(g.publishedAt ? url : "/admin/design-preview/" + g.id, "_blank", "noopener"); } },
+    { label:"Share", primary:true, onClick:function(){
+      if (!g.publishedAt) toast("This gallery is a draft, so clients can’t open the link yet");
+      navigator.clipboard.writeText(url).then(function(){ toast("Link copied"); }, function(){ toast(url); });
+    } }
+  ]};
+}
 function galleryChrome(g){
   if (curSection !== "galleries" || !g || g !== S.g) return;
-  chrome({title:g.title, crumb:"Galleries", summary:g.subtitleText || galleryUrl(g).replace(/^https?:\/\//,""),
-          back:listView, gallery:g, section:"galleries", actions:[
-    { label:"Preview", onClick:function(){ window.open(galleryUrl(g), "_blank", "noopener"); } },
-    { label:"Copy link", primary:true, onClick:function(){
-      navigator.clipboard.writeText(galleryUrl(g)).then(function(){ toast("Link copied"); },
-        function(){ toast(galleryUrl(g)); });
-    } },
-    /* a ready-to-send note: the link, the password if there is one (the panel only knows whether there is one) and when it ends */
-    { label:"Copy message", onClick:function(){
-      var lines = ["Your photos are ready: " + galleryUrl(g)];
-      if (g.hasPassword) lines.push("It is protected by a password. I will send it separately.");
-      if (g.expiresAt) lines.push("The gallery is available until " + fmtDate(g.expiresAt) + ", so please download anything you want to keep.");
-      var text = lines.join("\n\n");
-      navigator.clipboard.writeText(text).then(function(){ toast("Message copied"); }, function(){ toast("Couldn’t copy"); });
-    } }
-  ]});
+  if (S.tab === "design" && window.DesignEditor && DesignEditor.isOpen()) return DesignEditor.chrome();
+  chrome(galleryChromeOpts(g));
 }
 
 /* ---------- gallery list ---------- */
 function listView(){
+  if (window.DesignEditor) DesignEditor.close();
   S.g = null; S.editing = false;   /* no gallery is open: late refreshes for one paint nothing */
   var n = S.galleries.length;
   chrome({title:"Galleries", section:"galleries", summary: n ? n + (n === 1 ? " gallery" : " galleries") : "",
@@ -745,13 +846,13 @@ function listView(){
   Array.prototype.forEach.call(document.querySelectorAll(".card"), function(c){
     c.onclick = function(ev){
       var id = Number(c.dataset.id);
-      if (ev.target.closest("[data-cover]")) return openGallery(id, "settings", "cover");
+      if (ev.target.closest("[data-cover]")) return openGallery(id, "design", "cover-photo");
       openGallery(id);   /* photos first, like Pixieset */
     };
   });
   Array.prototype.forEach.call(document.querySelectorAll(".nocov"), function(e){
     e.onkeydown = function(ev){
-      if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); ev.stopPropagation(); openGallery(Number(e.closest(".card").dataset.id), "settings", "cover"); }
+      if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); ev.stopPropagation(); openGallery(Number(e.closest(".card").dataset.id), "design", "cover-photo"); }
     };
   });
   if ($("emptyNew")) $("emptyNew").onclick = function(){ editorView(null); };
@@ -774,7 +875,8 @@ function showStorage(){
 var NAV = {
   photos:   { icon:"image", label:"Photos", sets:true },
   settings: { icon:"gear",  label:"Settings",
-    panes:[["general","General"],["access","Access"],["cover","Cover photo"],["danger","Delete"]] },
+    panes:[["general","General"],["access","Access"],["danger","Delete"]] },
+  design:   { icon:"palette", label:"Design", editor:true },     /* opens the full-screen Design editor (design-admin.js) */
   email:    { icon:"mail",  label:"Email",
     panes:[["clients","Clients"],["compose","Compose"],["templates","Templates"],["reminders","Expiry reminders"]] },
   activity: { icon:"chart", label:"Activity",
@@ -784,6 +886,7 @@ var NAV = {
 
 /* the sets stand in for fixed panes on the photos tab */
 function panesOf(tab){
+  if (NAV[tab].editor) return [];
   if (!NAV[tab].sets) return NAV[tab].panes;
   return ((S.g && S.g.sets) || []).map(function(x){ return ["set:" + x.id, x.name]; });
 }
@@ -799,13 +902,30 @@ function openGallery(id, tab, pane){
   galleryChrome(g);
   renderShell();
 }
+/* The rail every gallery screen shares: the cover, then one icon per tab. railTop is the markup; wireRail hooks
+   the clicks (the cover opens its photo in Design; a tab icon calls go(tab)). */
+var RAIL_TABS = [["photos","Photos"],["design","Design"],["settings","Settings"],["email","Email"],["activity","Activity"]];
+var RAIL_IC = { photos:"image", design:"paintbrush", settings:"settings", email:"mail", activity:"chart-column" };
+function railTop(g, active){
+  var cov = coverOf(g);
+  return '<button type="button" class="dzrcov" id="dzRcov" aria-label="Change the cover photo"'
+       + (cov ? ' style="background-image:url(\'' + esc(cov) + '\')"' : '') + '>' + (cov ? "" : "Choose a cover") + '</button>'
+       + '<div class="dzicons" role="tablist">' + RAIL_TABS.map(function(t){
+           return '<button type="button" role="tab" data-tab="' + t[0] + '" class="' + (t[0] === active ? "on" : "") + '" aria-selected="' + (t[0] === active)
+                + '" aria-label="' + t[1] + '" title="' + t[1] + '">' + lucide(RAIL_IC[t[0]]) + '</button>';
+         }).join("") + '</div>';
+}
+function wireRail(go){
+  Array.prototype.forEach.call(document.querySelectorAll(".dzicons button[data-tab]"), function(b){ b.onclick = function(){ go(b.dataset.tab); }; });
+  var c = document.getElementById("dzRcov");
+  if (c) c.onclick = function(){ S.prevTab = S.tab === "design" ? S.prevTab : S.tab; openGallery(S.g.id, "design", "cover-photo"); };
+}
 function renderShell(){
   if (curSection !== "galleries" || !S.g) return;   /* a late refresh must not paint over another section */
   var g = S.g;
-  var tabs = Object.keys(NAV).map(function(k){
-    return '<button type="button" role="tab" data-tab="'+k+'" class="'+(k===S.tab?"on":"")+'" aria-selected="'+(k===S.tab)+'">'
-         + esc(NAV[k].label)+'</button>';
-  }).join("");
+  /* Design is a full-screen editor of its own; every other tab leaves it */
+  if (S.tab === "design" && window.DesignEditor) return DesignEditor.open(g, S.pane);
+  if (window.DesignEditor) DesignEditor.close();
   var sets = NAV[S.tab].sets;
   var items = panesOf(S.tab).map(function(p){
     if (!sets) return '<button class="navitem '+(p[0]===S.pane?"on":"")+'" data-pane="'+p[0]+'">'+esc(p[1])+'</button>';
@@ -815,17 +935,18 @@ function renderShell(){
          + '<button class="sdots" data-set="'+st.id+'" title="Set options">\u22ee</button></div>';
   }).join("");
   if (sets) items += '<button class="addset" id="addSet">+ Add set</button>';
+  /* the same rail as the Design editor: cover, the five tabs, then this tab's own list */
   $("root").innerHTML =
-      '<div class="detail">'
-    +   '<div class="gtabs" role="tablist">'+tabs+'</div>'
-    +   '<div class="side">'
+      '<div class="dz dzgen">'
+    +   '<nav class="dzrail" aria-label="Gallery">' + railTop(g, S.tab)
     +     '<div class="navhead">'+esc(NAV[S.tab].label)+'</div>'
     +     '<div class="navrow">'+items+'</div>'
-    +   '</div>'
+    +   '</nav>'
     +   '<div class="main" id="pane"><div class="spin"></div></div>'
     + '</div>';
-  Array.prototype.forEach.call(document.querySelectorAll(".gtabs button"), function(b){
-    b.onclick = function(){ S.tab = b.dataset.tab; S.pane = firstPane(S.tab); renderShell(); };
+  wireRail(function(tab){
+    if (tab === "design" && S.tab !== "design") S.prevTab = S.tab;   /* the editor's Back returns here */
+    S.tab = tab; S.pane = firstPane(S.tab); renderShell();
   });
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"), function(b){
     b.onclick = function(){ S.pane = b.dataset.pane; renderShell(); };
@@ -845,10 +966,11 @@ function renderPane(){
   if (OVERLAY) OVERLAY.close();
   var m = document.getElementById("pmenu"); if (m) m.remove();
   if (!$("pane")) return;
+  $("pane").classList.remove("fitview");     /* only the screens that ask for it (an email preview) are fitted to the window */
   if (S.pane && S.pane.indexOf("set:") === 0) return paneSet(S.g, Number(S.pane.slice(4)));
   if (S.tab === "photos") return paneNoSets(S.g);
   var f = ({
-    general: paneGeneral, access: paneAccess, cover: paneCover, danger: paneDanger,
+    general: paneGeneral, access: paneAccess, danger: paneDanger,
     clients: paneClients, compose: paneCompose, templates: paneTemplates, reminders: paneReminders,
     overview: paneActivity, people: paneActivity, log: paneActivity, mail: paneActivity,
     downloads: paneDownloads, picks: panePicks
@@ -941,11 +1063,13 @@ function paneAccess(g){
     save(patch).then(function(ok){ if (ok) renderShell(); });
   };
 }
-function paneCover(g){
+/* The cover photo: the one in use, an upload, and a pick from the album. It draws into any element, so the
+   Design editor can host it. opts.onPhoto(id) is told as a photo is chosen (to preview it); opts.done() runs once
+   something has been saved. */
+function coverPhotoPane(host, g, opts){
+  opts = opts || {};
   var own = !!g.coverFile;
-  var focus = (g.coverFocus || "50 50").split(" ").map(Number);
-  $("pane").innerHTML = head("Cover photo", "Shown on the gallery cover and at the top of every email.")
-    + '<div class="covnow"><div class="shot" style="' + coverCss(g) + '"></div>'
+  host.innerHTML = '<div class="covnow"><div class="shot" style="' + coverCss(g) + '"></div>'
     +   '<div class="covside"><div class="covwhat">' + (own ? "Your own image" : g.coverAssetId ? "A photo from the album" : "No cover yet — the first photo stands in") + '</div>'
     +     '<button class="btn sm" id="pickCov">' + (own ? "Choose a different one" : "Upload an image") + '</button>'
     +     (own ? '<button class="btn sm ghost" id="dropCov">Remove it</button>' : '')
@@ -955,94 +1079,39 @@ function paneCover(g){
     +       'resized here before it uploads.</div>'
     +   '</div></div>'
     + '<input type="file" id="covFile" accept=".jpg,.jpeg,.png,.webp,.avif,.gif" style="display:none">'
-    + '<h3 class="sec" style="margin-top:32px">Focal point</h3>'
-    + '<p class="hint" style="margin:0 0 14px">A cover fills whatever shape the screen is, so part of a tall '
-    +   'photo is always cut off. Drag the dot onto what must stay.</p>'
-    + '<div class="focwrap">'
-    +   '<div class="focpick" id="focPick"><img src="' + coverOf(g) + '" alt="">'
-    +     '<span class="focdot" id="focDot"></span></div>'
-    +   '<div class="focouts">'
-    +     '<div><div class="focout wide" id="focWide"></div><span>On a laptop</span></div>'
-    +     '<div><div class="focout tall" id="focTall"></div><span>On a phone</span></div>'
-    +   '</div>'
-    + '</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
-    +   '<button class="btn sm" id="saveFoc">Save focal point</button>'
-    +   '<button class="btn sm ghost" id="resetFoc" type="button">Reset to centre</button></div>'
-    + '<h3 class="sec" style="margin-top:34px">Or pick one from the album</h3>'
+    + '<h3 class="sec" style="margin-top:28px">Or pick one from the album</h3>'
     + (own ? '<p class="hint" style="margin:0 0 12px">Your uploaded image is being used. Remove it to go back to a photo from the album.</p>' : '')
-    + '<div class="picker" id="picker"><div class="spin"></div></div>'
-    + '<div style="height:18px"></div><button class="btn" id="saveCov">Use this photo</button>';
-
-  var cover = g.coverAssetId;
+    + '<div class="picker" id="picker"><div class="spin"></div></div>';
+  var done = function(){ if (opts.done) opts.done(); };
+  var picker = host.querySelector("#picker");
   api("/albums/"+g.albumId+"/assets?sort=" + (g.sortOrder || "newest")).then(function(r){
+    if (!picker.isConnected) return;
     var list = (r.body && r.body.assets) || [];
-    $("picker").innerHTML = list.map(function(a){
-      return '<div class="p'+(a.id===cover?" on":"")+'" data-id="'+a.id+'"></div>';
+    picker.innerHTML = list.map(function(a){
+      return '<div class="p'+(a.id===g.coverAssetId?" on":"")+'" data-id="'+a.id+'"></div>';
     }).join("") || '<p class="empty" style="padding:8px">This album has no photos.</p>';
-    paintThumbs($("picker"));
-    Array.prototype.forEach.call($("picker").querySelectorAll(".p"), function(el){
-      el.onclick = function(){ cover = el.dataset.id;
-        Array.prototype.forEach.call($("picker").querySelectorAll(".p"), function(x){ x.classList.toggle("on", x===el); }); };
+    paintThumbs(picker);
+    Array.prototype.forEach.call(picker.querySelectorAll(".p"), function(el){
+      el.onclick = function(){
+        var id = el.dataset.id;
+        if (opts.onPhoto) opts.onPhoto(id);
+        Array.prototype.forEach.call(picker.querySelectorAll(".p"), function(x){ x.classList.toggle("on", x === el); });
+        save({coverAssetId:id}, "Cover updated").then(function(ok){ if (ok) done(); });
+      };
     });
   });
-  $("saveCov").onclick = function(){ save({coverAssetId:cover}, "Cover updated").then(function(ok){ if(ok) renderShell(); }); };
-
-  /* The two frames show the same crop the client will get, live while dragging —
-     including the slight zoom the gallery holds, or a photo the same shape as the
-     screen would sit there refusing to move. */
-  var COVER_ZOOM = 1.12;
-  function paintFocus(){
-    var url = coverOf(g);
-    var src = $("focPick") ? $("focPick").querySelector("img") : null;
-    var nw = src && src.naturalWidth, nh = src && src.naturalHeight;
-    ["focWide","focTall"].forEach(function(id){
-      var el = $(id); if (!el) return;
-      el.style.backgroundImage = 'url("' + url + '")';
-      el.style.backgroundPosition = focus[0] + "% " + focus[1] + "%";
-      if (nw && nh){
-        var k = Math.max(el.clientWidth / nw, el.clientHeight / nh) * COVER_ZOOM;
-        el.style.backgroundSize = Math.ceil(nw * k) + "px " + Math.ceil(nh * k) + "px";
-      }
-    });
-    if ($("focDot")){ $("focDot").style.left = focus[0] + "%"; $("focDot").style.top = focus[1] + "%"; }
-  }
-  (function(){
-    var pick = $("focPick"); if (!pick) return;
-    function at(ev){
-      var r = pick.getBoundingClientRect();
-      var p = ev.touches ? ev.touches[0] : ev;
-      focus = [Math.max(0, Math.min(100, Math.round((p.clientX - r.left) / r.width * 100))),
-               Math.max(0, Math.min(100, Math.round((p.clientY - r.top) / r.height * 100)))];
-      paintFocus();
-    }
-    var dragging = false;
-    pick.addEventListener("mousedown", function(ev){ dragging = true; at(ev); ev.preventDefault(); });
-    window.addEventListener("mousemove", function(ev){ if (dragging) at(ev); });
-    window.addEventListener("mouseup", function(){ dragging = false; });
-    pick.addEventListener("touchstart", function(ev){ at(ev); ev.preventDefault(); }, {passive:false});
-    pick.addEventListener("touchmove", function(ev){ at(ev); ev.preventDefault(); }, {passive:false});
-    var im = pick.querySelector("img");
-    if (im){ if (im.complete) paintFocus(); im.addEventListener("load", paintFocus); }
-    paintFocus();
-  })();
-  $("resetFoc").onclick = function(){ focus = [50, 50]; paintFocus(); };   /* centred again; Save keeps it */
-  $("saveFoc").onclick = function(){
-    save({coverFocus: focus[0] + " " + focus[1]}, "Focal point saved")
-      .then(function(ok){ if (ok) renderShell(); });   /* the strip and the card follow it */
-  };
-
-  $("pickCov").onclick = function(){ $("covFile").click(); };
-  if ($("dropCov")) $("dropCov").onclick = function(){
+  host.querySelector("#pickCov").onclick = function(){ host.querySelector("#covFile").click(); };
+  var drop = host.querySelector("#dropCov");
+  if (drop) drop.onclick = function(){
     if (!confirm("Remove your uploaded cover?\n\nThe gallery goes back to using a photo from the album.")) return;
     api("/galleries/"+g.id+"/cover-upload", {method:"DELETE"}).then(function(r){
       if (!r.ok) return toast((r.body&&r.body.error)||"Couldn't remove it");
       toast("Cover removed");
-      refreshGalleries(function(){ renderShell(); });
+      refreshGalleries(function(){ galleryChrome(S.g); done(); });
     });
   };
-  $("covFile").onchange = function(){
-    var f = $("covFile").files[0]; $("covFile").value = "";
+  host.querySelector("#covFile").onchange = function(){
+    var input = host.querySelector("#covFile"), f = input.files[0]; input.value = "";
     if (!f) return;
     toast("Preparing the image…");
     fitCover(f).then(function(fit){
@@ -1058,13 +1127,73 @@ function paneCover(g){
         var b=null; try { b = JSON.parse(x.responseText); } catch(e){}
         if (x.status >= 200 && x.status < 300){
           toast(fit ? ("Cover updated — " + fit.w + "×" + fit.h + ", " + mb(fit.blob.size)) : "Cover updated");
-          refreshGalleries(function(){ renderShell(); });
+          refreshGalleries(function(){ galleryChrome(S.g); done(); });
         } else toast((b && b.error) || ("Couldn't upload that (HTTP " + x.status + ")"));
       };
       x.onerror = function(){ toast("Network error"); };
       x.send(body);
     });
   };
+}
+
+/* The focal point: which part of the photo must stay in frame when the screen is a different shape. Dragging
+   previews at once (opts.onFocus) and is saved a moment after the finger or mouse lifts. */
+function focalPane(host, g, opts){
+  opts = opts || {};
+  var focus = (g.coverFocus || "50 50").split(" ").map(Number), saveT = null;
+  host.innerHTML = '<p class="hint" style="margin:0 0 14px">A cover fills whatever shape the screen is, so part of a tall '
+    +   'photo is always cut off. Drag the dot onto what must stay.</p>'
+    + '<div class="focwrap">'
+    +   '<div class="focpick" id="focPick"><img src="' + coverOf(g) + '" alt="">'
+    +     '<span class="focdot" id="focDot"></span></div>'
+    +   '<div class="focouts">'
+    +     '<div><div class="focout wide" id="focWide"></div><span>On a laptop</span></div>'
+    +     '<div><div class="focout tall" id="focTall"></div><span>On a phone</span></div>'
+    +   '</div>'
+    + '</div>'
+    + '<div style="margin-top:14px"><button class="btn sm ghost" id="resetFoc" type="button">Reset to centre</button></div>';
+  var pick = host.querySelector("#focPick");
+  /* the two frames show the same crop the client will get, including the slight zoom the gallery holds */
+  var COVER_ZOOM = 1.12;
+  function paint(){
+    var url = coverOf(g), src = pick.querySelector("img");
+    var nw = src && src.naturalWidth, nh = src && src.naturalHeight;
+    ["focWide","focTall"].forEach(function(id){
+      var el = host.querySelector("#" + id); if (!el) return;
+      el.style.backgroundImage = 'url("' + url + '")';
+      el.style.backgroundPosition = focus[0] + "% " + focus[1] + "%";
+      if (nw && nh){
+        var k = Math.max(el.clientWidth / nw, el.clientHeight / nh) * COVER_ZOOM;
+        el.style.backgroundSize = Math.ceil(nw * k) + "px " + Math.ceil(nh * k) + "px";
+      }
+    });
+    var dot = host.querySelector("#focDot");
+    dot.style.left = focus[0] + "%"; dot.style.top = focus[1] + "%";
+    if (opts.onFocus) opts.onFocus(focus);
+  }
+  function at(ev){
+    var r = pick.getBoundingClientRect();
+    focus = [Math.max(0, Math.min(100, Math.round((ev.clientX - r.left) / r.width * 100))),
+             Math.max(0, Math.min(100, Math.round((ev.clientY - r.top) / r.height * 100)))];
+    paint();
+  }
+  function saveSoon(ms){
+    clearTimeout(saveT);
+    saveT = setTimeout(function(){
+      save({coverFocus: focus[0] + " " + focus[1]}, "Focal point saved").then(function(ok){ if (ok && opts.done) opts.done(); });
+    }, ms);
+  }
+  var dragging = false;
+  /* pointer capture keeps the drag on this element, so there is nothing on window to clean up later */
+  pick.addEventListener("pointerdown", function(ev){ dragging = true; pick.setPointerCapture(ev.pointerId); at(ev); ev.preventDefault(); });
+  pick.addEventListener("pointermove", function(ev){ if (dragging) at(ev); });
+  pick.addEventListener("pointerup", function(){ if (!dragging) return; dragging = false; saveSoon(600); });
+  pick.addEventListener("pointercancel", function(){ dragging = false; });
+  pick.style.touchAction = "none";
+  var im = pick.querySelector("img");
+  if (im && !im.complete) im.addEventListener("load", paint);
+  host.querySelector("#resetFoc").onclick = function(){ focus = [50, 50]; paint(); saveSoon(0); };
+  paint();
 }
 
 /* A cover is served exactly as stored, so shrink it before it ever goes up. The browser
@@ -1588,6 +1717,8 @@ function paneClients(g){
 }
 
 function paneCompose(g){
+  var fresh = !!S.newTpl, want = S.selectTpl;     /* "New template" on the Templates page lands here with a blank one */
+  S.newTpl = false; S.selectTpl = null;
   $("pane").innerHTML = head("Compose", "") + '<div id="cp"><div class="spin"></div></div>';
   Promise.all([api("/templates"), api("/mail-status"), api("/galleries/"+g.id+"/invites")]).then(function(rs){
     var tpls = (rs[0].body && rs[0].body.templates) || [];
@@ -1601,9 +1732,11 @@ function paneCompose(g){
     }
     $("cp").innerHTML =
         '<div class="compose"><div>'
+      +   (fresh ? '<p class="hint" style="margin:0 0 12px"><b>New template.</b> Write a subject and message, then press <b>Save as new template</b>. It appears on the Templates page and in this list.</p>' : '')
       +   '<div class="tplrow"><select id="cTpl">'
-      +     tpls.map(function(t){ return '<option value="'+t.id+'"'+(t.id===last?" selected":"")+'>'+esc(t.name)+'</option>'; }).join("")
-      +   '</select><button class="btn sm ghost" id="cSaveTpl">Save as template</button></div>'
+      +     (fresh ? '<option value="" selected>New template</option>' : '')
+      +     tpls.map(function(t){ return '<option value="'+t.id+'"'+((want ? t.id===want : (!fresh && t.id===last))?" selected":"")+'>'+esc(t.name)+'</option>'; }).join("")
+      +   '</select><button class="btn sm ghost" id="cSaveTpl">'+(fresh ? "Save as new template" : "Save as template")+'</button></div>'
       +   '<div class="field"><label>To</label><textarea id="cTo" rows="2" placeholder="anna@example.com">'+esc(invites.join(", "))+'</textarea>'
       +     '<div class="hint">Separate with commas. Defaults to the clients on this gallery.</div></div>'
       +   '<div class="field"><label>Subject</label><input type="text" id="cSubj"></div>'
@@ -1617,7 +1750,8 @@ function paneCompose(g){
       +     '<button class="btn ghost" id="cTest">Send a test to me</button></div>'
       + '</div>'
       + '<div class="pane"><h4>Preview</h4><div class="subjline" id="cPrevSubj">&nbsp;</div>'
-      +   '<iframe id="cPrev" title="Email preview"></iframe></div></div>';
+      +   '<div class="pvfit"><iframe id="cPrev" title="Email preview"></iframe></div></div></div>';
+    scaleEmail($("cPrev"));
 
     function apply(){
       var t = tpls.filter(function(x){ return String(x.id)===$("cTpl").value; })[0];
@@ -1637,13 +1771,18 @@ function paneCompose(g){
     $("cTpl").onchange = apply;
     ["cSubj","cBody"].forEach(function(id){ $(id).addEventListener("input", refresh); });
     $("cExpiry").addEventListener("change", refresh);
-    apply();
+    if (fresh){ $("cSubj").value = ""; $("cBody").value = "Hi,\n\n"; refresh(); $("cSubj").focus(); }
+    else apply();
 
     $("cSaveTpl").onclick = function(){
       var name = prompt("Name this template:"); if (!name) return;
       post("/templates", {name:name, subject:$("cSubj").value, body:$("cBody").value}).then(function(r){
         toast(r.ok ? "Template saved" : ((r.body&&r.body.error)||"Couldn't save"));
-        if (r.ok) paneCompose(g);
+        if (r.ok){
+          var made = ((r.body && r.body.templates) || []).filter(function(x){ return x.name === name.trim(); })[0];
+          S.selectTpl = made ? made.id : null;      /* the one just made is the one showing afterwards */
+          paneCompose(g);
+        }
       });
     };
     function payload(extra){
@@ -1675,7 +1814,10 @@ function paneCompose(g){
 
 function paneTemplates(g){
   $("pane").innerHTML = head("Templates", "Reused across every gallery. The one you send with is remembered for next time.")
+    + '<div style="margin:0 0 18px"><button class="btn" id="tplNew" type="button">New template</button>'
+    + '<span class="hint" style="margin-left:12px">Opens Compose, where you write it with a live preview.</span></div>'
     + '<div id="tl"><div class="spin"></div></div>';
+  $("tplNew").onclick = function(){ S.newTpl = true; S.pane = "compose"; renderShell(); };
   api("/templates").then(function(r){
     var tpls = (r.body && r.body.templates) || [];
     $("tl").innerHTML = tpls.map(function(t){
@@ -1742,6 +1884,52 @@ function paneReminders(g){
 }
 
 /* ---------- activity ---------- */
+/* A viewer for a list of photos in the Activity section (a client's picks, what they downloaded): the big preview, arrows,
+   the arrow keys, swipe, Escape. It uses the same look as the Photos tab's lightbox. */
+function viewPhotos(ids, start, label){
+  if (!ids.length) return;
+  if (OVERLAY) OVERLAY.close();
+  var i = Math.max(0, Math.min(ids.length - 1, start || 0)), many = ids.length > 1;
+  var el = document.createElement("div");
+  el.className = "lbx"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Photo viewer");
+  el.innerHTML = '<button class="x" data-lb="close" title="Close" aria-label="Close">×</button>'
+    + (many ? '<button class="nav prev" data-lb="prev" title="Previous" aria-label="Previous">‹</button><button class="nav next" data-lb="next" title="Next" aria-label="Next">›</button>' : '')
+    + '<div class="stage"></div><div class="lbxbar"><span class="n"></span></div>';
+  document.body.appendChild(el);
+  var stage = el.querySelector(".stage"), n = el.querySelector(".n");
+  function show(){
+    stage.innerHTML = "";
+    var im = document.createElement("img"); im.alt = ""; im.src = imgSrc(ids[i], "preview"); stage.appendChild(im);
+    n.textContent = (i + 1) + " / " + ids.length + (label ? "  ·  " + label : "");
+    [1, -1].forEach(function(d){ var j = (i + d + ids.length) % ids.length; if (j !== i) new Image().src = imgSrc(ids[j], "preview"); });   /* the next one is ready */
+  }
+  function step(d){ if (many){ i = (i + d + ids.length) % ids.length; show(); } }
+  function keys(e){ if (e.key === "Escape") close(); else if (e.key === "ArrowLeft") step(-1); else if (e.key === "ArrowRight") step(1); }
+  function close(){ document.removeEventListener("keydown", keys); el.remove(); if (OVERLAY && OVERLAY.viewer === el) OVERLAY = null; }
+  el.onclick = function(ev){
+    var k = ev.target.dataset.lb;
+    if (k === "close" || ev.target === el || ev.target === stage) close(); else if (k === "prev") step(-1); else if (k === "next") step(1);
+  };
+  var x0 = null;
+  el.addEventListener("touchstart", function(ev){ x0 = ev.touches[0].clientX; }, { passive: true });
+  el.addEventListener("touchend", function(ev){ if (x0 === null) return; var dx = ev.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1); });
+  document.addEventListener("keydown", keys);
+  OVERLAY = { close: close, viewer: el };
+  show();
+}
+/* make every photo tile under root open the viewer, with that client's name on it */
+function wirePhotoTiles(root){
+  Array.prototype.forEach.call(root.querySelectorAll(".picksrow"), function(row){
+    var tiles = row.querySelectorAll(".p[data-id]"), pick = row.closest(".pick"), who = pick && pick.querySelector(".pickhead b");
+    var ids = Array.prototype.map.call(tiles, function(t){ return t.dataset.id; });
+    Array.prototype.forEach.call(tiles, function(t, k){
+      var open = function(){ viewPhotos(ids, k, who ? who.textContent : ""); };
+      t.setAttribute("role", "button"); t.tabIndex = 0; t.setAttribute("aria-label", "View photo " + (k + 1) + " of " + ids.length);
+      t.onclick = open;
+      t.onkeydown = function(ev){ if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); open(); } };
+    });
+  });
+}
 function panePicks(g){
   $("pane").innerHTML = head("Favourites", "What each client picked out. Their list, in the order they chose.")
     + '<div id="picks"><div class="spin"></div></div>';
@@ -1761,9 +1949,10 @@ function panePicks(g){
             + '<span class="pn">' + p.count + ' photo' + (p.count===1?"":"s") + '</span>'
             + '<button class="btn sm ghost" data-ids="' + p.ids.join(",") + '">Copy filenames</button></div>'
             + '<div class="picksrow">' + p.ids.map(function(id){
-                return '<div class="p" style="background-image:url(\'' + imgSrc(id) + '\')"></div>';
+                return '<div class="p" data-id="' + esc(id) + '" style="background-image:url(\'' + imgSrc(id) + '\')"></div>';
               }).join("") + '</div></div>';
         }).join("");
+    wirePhotoTiles($("picks"));
     Array.prototype.forEach.call($("picks").querySelectorAll("button[data-ids]"), function(b){
       b.onclick = function(){
         navigator.clipboard.writeText(b.dataset.ids.split(",").join("\n"))
@@ -1830,22 +2019,29 @@ function paneDownloads(g){
     if (!people.length) return ($("dls").innerHTML = '<p class="empty">Nothing has been downloaded yet.</p>');
     function thumbs(ids){
       return '<div class="picksrow">' + ids.map(function(id){
-        return '<div class="p" style="background-image:url(\'' + imgSrc(id) + '\')"></div>'; }).join("") + '</div>';
+        return '<div class="p" data-id="' + esc(id) + '" style="background-image:url(\'' + imgSrc(id) + '\')"></div>'; }).join("") + '</div>';
     }
+    var total = r.body.total, everything = !total ? "" : total === 1 ? "the only photo" : "all " + total + " photos";
     $("dls").innerHTML = people.map(function(p){
-      var zipN = p.zips.length, h = '<div class="pick"><div class="pickhead"><b>'
+      var zipN = p.zips.length;
+      /* someone who took every photo is one line, not a wall of thumbnails */
+      var summary = p.all ? 'Downloaded ' + everything
+        : p.ids.length + ' photo' + (p.ids.length===1?"":"s");
+      var h = '<div class="pick"><div class="pickhead"><b>'
         + esc(p.name || p.email || "Anonymous") + '</b>'
         + (p.name && p.email ? '<span class="pmail">' + esc(p.email) + '</span>' : '')
-        + '<span class="pn">' + p.ids.length + ' photo' + (p.ids.length===1?"":"s")
+        + '<span class="pn">' + summary
         + (zipN ? ' · ' + zipN + ' zip' + (zipN===1?"":"s") : "") + ' · ' + fmtWhen(p.last) + '</span></div>';
-      if (p.ids.length) h += thumbs(p.ids);
+      if (p.ids.length && !p.all) h += thumbs(p.ids);
       p.zips.forEach(function(z){
         h += '<p class="hint" style="margin:12px 0 8px">Zip, ' + fmtWhen(z.at)
-          + (z.ids ? ' — ' + z.ids.length + ' photo' + (z.ids.length===1?"":"s") : ' — contents not recorded') + '</p>'
-          + (z.ids ? thumbs(z.ids) : "");
+          + (z.all ? ' — ' + everything
+             : z.ids ? ' — ' + z.ids.length + ' photo' + (z.ids.length===1?"":"s") : ' — contents not recorded') + '</p>'
+          + (z.ids && !z.all && !p.all ? thumbs(z.ids) : "");
       });
       return h + '</div>';
     }).join("");
+    wirePhotoTiles($("dls"));
   });
 }
 
@@ -2158,7 +2354,8 @@ function ctComposeView(aud, label){
       +     '<button class="btn" id="mReview" type="button">Review and send</button></div>'
       +   '<div id="mReviewBox"></div>'
       + '</div><div class="pane"><h4>Preview</h4><div class="subjline" id="mPrevSubj">&nbsp;</div>'
-      +   '<iframe id="mPrev" title="Email preview"></iframe><div class="hint" id="mPrevNote"></div></div></div>';
+      +   '<div class="pvfit"><iframe id="mPrev" title="Email preview"></iframe></div><div class="hint" id="mPrevNote"></div></div></div>';
+    scaleEmail($("mPrev"));
 
     function design(){
       var mode = $("mImg").value;
@@ -2465,7 +2662,7 @@ function paintConnections(){
   var byGroup = {}; d.meta.forEach(function(m){ (byGroup[m.group] = byGroup[m.group] || []).push(m); });
   var hl = d.health || {}, hk = Object.keys(hl);
   var html = '<p class="lede" style="color:var(--muted);font-size:13px;line-height:1.6;max-width:640px;margin:0 0 20px">Everything this server connects to. '
-    + 'A setting marked <b>compose file</b> was set outside the panel and is changed there. '
+    + 'A setting marked <b>compose file</b> started from your compose file; saving a different value here overrides it. '
     + (d.signedIn ? "" : '<b style="color:var(--bad)">Sign in with your password in the browser to change anything here.</b> ')
     + 'Keys are never shown again once saved.</p>';
   if (hk.length) html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px">' + hk.map(function(k){
@@ -2473,9 +2670,9 @@ function paintConnections(){
   CN_GROUPS.forEach(function(g, gi){
     var rows = byGroup[g[0]]; if (!rows || !rows.length) return;
     var inner = rows.map(function(m){
-      var s = d.settings[m.env] || {}, locked = !!s.locked;
+      var s = d.settings[m.env] || {}, locked = false, fromEnv = !!s.fromEnv;
       var ph = locked ? "Set in your compose file" : (m.secret && s.set ? "Saved. Leave blank to keep it." : (m.def !== "" && m.def !== undefined ? "Default: " + m.def : ""));
-      return '<div class="field"><label for="cn_'+m.env+'">'+esc(m.label)+(locked ? ' <span class="muted" style="font-weight:400">· compose file</span>' : '')+'</label>'
+      return '<div class="field"><label for="cn_'+m.env+'">'+esc(m.label)+(fromEnv ? ' <span class="muted" style="font-weight:400">· from compose file; saving overrides it</span>' : '')+'</label>'
         + '<input type="'+(m.secret ? "password" : "text")+'" id="cn_'+m.env+'" data-env="'+m.env+'" autocomplete="off" spellcheck="false"'
         + (locked || !d.signedIn ? " disabled" : "")+' value="'+esc(m.secret ? "" : (s.value || ""))+'" placeholder="'+esc(ph)+'">'
         + (m.help ? '<div class="hint">'+esc(m.help)+'</div>' : "")+'</div>';
@@ -2578,11 +2775,15 @@ function put(p, d){ return api(p, { method:"PUT", headers:{ "Content-Type":"appl
 addSection("connections", "Connections", IC.settings, connectionsView, function(){ CN.seq++; }, 40);
 
 window.AdminKit = { $:$, api:api, esc:esc, toast:toast, chrome:chrome, listView:listView, tog:tog, addSection:addSection, icons:IC,
-  goSection:goSection, openGallery:kitOpenGallery, openNewGallery:kitNewGallery, coverCss:coverCss,
+  goSection:goSection, openGallery:kitOpenGallery, openNewGallery:kitNewGallery, coverCss:coverCss, coverOf:coverOf, lucide:lucide, viewPhotos:viewPhotos, galleryChromeOpts:galleryChromeOpts,
+  coverPhotoPane:coverPhotoPane, focalPane:focalPane, popMenu:popMenu, galleryUrl:galleryUrl, save:function(patch, msg){ return save(patch, msg); },
+  galleries:function(){ return S.galleries; }, refreshGalleries:refreshGalleries, prevTab:function(){ return S.prevTab || "photos"; },
+  backToGallery:function(tab){ if (S.g) openGallery(S.g.id, tab || "photos"); }, railTop:railTop, wireRail:wireRail,
   galleryById:function(id){ return S.galleries.filter(function(x){ return x.id === id; })[0] || null; } };
 })();
 </script>
 <script src="/site-admin.js"></script>
+<script src="/design-admin.js"></script>
 <script src="/home.js"></script>
 </body>
 </html>

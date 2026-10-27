@@ -29,9 +29,10 @@ Once it is running, the rest of the journey is the same for everyone:
 1. [Get photos in and make your first gallery](PHOTOS.md)
 2. [Put it online so clients can open it from anywhere](ONLINE.md)
 3. [Add your name, address and logo](BRANDING.md) (optional; skip it in setup and add it any time)
-4. [Set up email](EMAIL.md) (optional, but gallery links and reminders need it)
-5. [Back it up](BACKUPS.md) (please do this before a real client uses it)
-6. [Keep it up to date](UPDATING.md)
+4. [Change how galleries look](DESIGN.md) (optional; colours, layout, a phone and tablet preview)
+5. [Set up email](EMAIL.md) (optional, but gallery links and reminders need it)
+6. [Back it up](BACKUPS.md) (please do this before a real client uses it)
+7. [Keep it up to date](UPDATING.md)
 
 Something went wrong? [Troubleshooting](TROUBLESHOOTING.md). A word you don't know? [Glossary](GLOSSARY.md).
 The wizard that sets everything up, step by step with screenshots: [SETUP.md](SETUP.md).

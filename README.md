@@ -302,3 +302,5 @@ Run it after any change, and before sending a gallery to a client.
 ## Licence
 
 AGPL-3.0. If you run a modified version as a network service, publish your changes.
+
+The gallery design system adapts ideas from [ImmichPager](https://gitlab.com/wispd/ImmichPager) (AGPL-3.0, used with permission); see `NOTICE`.

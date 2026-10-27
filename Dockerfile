@@ -12,6 +12,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY LICENSE server.mjs ./
 COPY config ./config
+COPY design ./design
 COPY setup ./setup
 COPY admin ./admin
 COPY health ./health

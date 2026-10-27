@@ -205,9 +205,9 @@ test('an install driven by env vars never sees setup and writes no settings file
   assert.match(logs, /config: .*env/);
 });
 
-test('env wins over the file, key by key', async () => {
+test('a saved value wins over the compose file, key by key', async () => {
   await stop();
   boot({ IMMICH_URL: 'http://wrong.invalid:1', IMMICH_API_KEY: 'x', APP_SECRET: 'a'.repeat(32), ADMIN_TOKEN: 'tok-tok-tok' }, data);
   await up();
-  assert.match(logs, /immich: env/);
+  assert.match(logs, /immich: file/);
 });

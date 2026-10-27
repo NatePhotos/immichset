@@ -7,9 +7,9 @@
 <link rel="icon" type="image/png" media="(prefers-color-scheme: dark)" href="/brand/logo?theme=dark">
 <link rel="apple-touch-icon" href="/brand/logo">
 <title>Gallery</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<!--ims:font--><link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet"><!--/ims:font-->
 <style>
 :root{
   --brand-fg:#ffffff;
@@ -20,6 +20,17 @@
   --cover-scrim:0.28;
   --gap:10px;
   --maxw:1680px;
+  /* Set by a gallery design (see design/design.mjs); these defaults are the original look. */
+  --accent:#1a1a1a;
+  --accent-fg:#ffffff;
+  --tile-bg:#f2f2f2;
+  --header-bg:rgba(255,255,255,.93);
+  --surface:#ffffff;
+  --radius:0px;
+  --row-h:330;
+  --row-h-tablet:260;
+  --tile-min:240px;
+  --tile-aspect:1;
   --font:'Montserrat',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box}
@@ -50,7 +61,7 @@ button{font-family:inherit;cursor:pointer}
 .gate-box p{color:var(--muted);font-size:13px;margin:0 0 26px}
 .gate-box input{width:100%;padding:14px 16px;border:1px solid var(--line);background:transparent;font-family:inherit;font-size:15px;outline:none;text-align:center;letter-spacing:.04em}
 .gate-box input:focus{border-color:var(--page-fg)}
-.gate-box button{width:100%;margin-top:12px;padding:14px;border:none;background:var(--page-fg);color:#fff;font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase}
+.gate-box button{width:100%;margin-top:12px;padding:14px;border:none;background:var(--accent);color:var(--accent-fg);font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase}
 .gate-x{position:absolute;top:calc(14px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));width:44px;height:44px;display:none;place-items:center;
   border:0;background:none;color:var(--page-fg);opacity:.7;border-radius:50%;cursor:pointer;padding:0}
 .gate-x:hover{opacity:1;background:rgba(0,0,0,.06)}
@@ -84,13 +95,13 @@ button{font-family:inherit;cursor:pointer}
 .hbtn.on{opacity:1}
 .hbtn.on svg{fill:currentColor}
 
-.dlpop{position:absolute;z-index:4;background:#fff;color:#1a1a1a;min-width:218px;box-shadow:0 14px 40px rgba(0,0,0,.34);
+.dlpop{position:absolute;z-index:4;background:var(--surface);color:var(--page-fg);min-width:218px;box-shadow:0 14px 40px rgba(0,0,0,.34);
   border-radius:2px;overflow:hidden}
 .dlpop button{display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;padding:12px 16px;
   font:inherit;font-size:12.5px;color:inherit}
-.dlpop button+button{border-top:1px solid #eee}
-.dlpop button:hover{background:#f6f6f6}
-.dlpop small{display:block;color:#8a8a8a;font-size:10.5px;letter-spacing:.04em;margin-top:3px;text-transform:none}
+.dlpop button+button{border-top:1px solid var(--line)}
+.dlpop button:hover{background:var(--tile-bg)}
+.dlpop small{display:block;color:var(--muted);font-size:10.5px;letter-spacing:.04em;margin-top:3px;text-transform:none}
 
 .cover-date[hidden]{display:none}
 .cover-date{margin-top:20px;font-size:clamp(10px,1.2vw,12px);letter-spacing:.3em;text-transform:uppercase;opacity:.95}
@@ -111,7 +122,7 @@ body.lb-open header{visibility:hidden}
 .sets button.on{opacity:1;border-bottom-color:currentColor}
 @media(max-width:700px){.sets{gap:20px;padding:0 16px 10px}}
 
-header{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.93);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
+header{position:sticky;top:0;z-index:30;background:var(--header-bg);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
 .hwrap{max-width:var(--maxw);margin:0 auto;padding:0 20px;height:62px;display:flex;align-items:center;gap:16px}
 .htitle{flex:1 1 auto;min-width:0;font-size:12px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hcount{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;flex:0 0 auto;margin-right:4px}
@@ -127,11 +138,27 @@ header{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.93);backdro
   .hbtn{width:40px;height:40px;padding:0;gap:0;flex:0 0 auto;opacity:.85}
   .htitle{font-size:11px;letter-spacing:.14em;min-width:0}
 }
+/* tablets: a little more room than a phone, less than a desktop */
+@media(min-width:701px) and (max-width:1100px){
+  .hwrap{padding:0 24px;height:60px;gap:12px}
+  .sets{padding:0 24px 10px}
+  .cover-inner h1{font-size:clamp(34px,6vw,54px)}
+}
+/* touch screens: bigger targets, and clear of a notch in landscape */
+@media(pointer:coarse){
+  .heart{width:36px;height:36px}
+  .ibtn{width:44px;height:44px}
+  .nav{width:56px;height:56px}
+  #toTop{width:48px;height:48px}
+}
+@media(pointer:coarse) and (min-width:701px){
+  .hwrap{padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right))}
+}
 
 /* ---------- grid ---------- */
 #grid{max-width:var(--maxw);margin:0 auto;padding:var(--gap)}
 .row{display:flex;gap:var(--gap);margin-bottom:var(--gap)}
-.cell{position:relative;overflow:hidden;background:#f2f2f2;cursor:zoom-in}
+.cell{position:relative;overflow:hidden;background:var(--tile-bg);border-radius:var(--radius);cursor:zoom-in}
 .cell img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .55s ease,transform .7s ease}
 .cell img.in{opacity:1}
 .cell:hover img{transform:scale(1.035)}
@@ -203,13 +230,13 @@ footer a:hover{color:var(--page-fg)}
 .pbox h3{margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.2em;text-transform:uppercase}
 .pbox p{margin:0 0 22px;color:var(--muted);font-size:13px;line-height:1.6}
 .pbar{height:3px;background:var(--line);overflow:hidden}
-.pbar i{display:block;height:100%;width:0;background:var(--page-fg);transition:width .25s ease}
+.pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
 .pbar.indet i{width:35%;animation:slide 1.3s ease-in-out infinite}
 @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
 .pstat{margin-top:14px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);min-height:16px}
 .pcancel{margin-top:24px;padding:11px 26px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;transition:color .2s,border-color .2s}
 .pcancel:hover{color:var(--page-fg);border-color:var(--page-fg)}
-.pgo{display:none;margin:24px 8px 0 0;padding:11px 26px;border:1px solid var(--page-fg);background:var(--page-fg);color:var(--page-bg);font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase}
+.pgo{display:none;margin:24px 8px 0 0;padding:11px 26px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-fg);font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase}
 #prog.ready .pgo{display:inline-block}
 #prog.ready .pbar{display:none}
 .pgo+.pcancel{margin-top:24px}
@@ -220,7 +247,7 @@ footer a:hover{color:var(--page-fg)}
 
 /* ---------- back to top ---------- */
 #toTop{position:fixed;right:calc(18px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);padding:0;
-  background:rgba(255,255,255,.94);color:var(--page-fg);box-shadow:0 4px 16px rgba(0,0,0,.16);cursor:pointer;z-index:40;
+  background:var(--surface);color:var(--page-fg);box-shadow:0 4px 16px rgba(0,0,0,.16);cursor:pointer;z-index:40;
   display:grid;place-items:center;opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity .25s,transform .25s,visibility .25s}
 #toTop.on{opacity:1;visibility:visible;transform:none}
 #toTop:hover{border-color:var(--page-fg)}
@@ -405,7 +432,40 @@ var slug = null;
   if (i >= 0 && m[i+1]) slug = decodeURIComponent(m[i+1]);
   else if (m.length === 1) slug = decodeURIComponent(m[0]);
 })();
-var BASE = slug ? (API + "/g/" + encodeURIComponent(slug)) : null;
+/* The admin's device preview loads this same page with a marker, and reads its photos from the admin's own
+   preview routes (no gate, no activity log, never the originals). The marker only changes where data comes from. */
+var PREVIEW = (document.querySelector('meta[name="ims-preview"]') || {}).content || null;
+if (PREVIEW) slug = "preview";
+var BASE = PREVIEW ? (API + "/admin/design-preview/" + PREVIEW) : (slug ? (API + "/g/" + encodeURIComponent(slug)) : null);
+if (PREVIEW) window.addEventListener("message", function(ev){
+  /* only the admin page that framed this one, and only these two messages; the CSS is the server's own output */
+  if (ev.origin !== location.origin || ev.source !== window.parent) return;
+  var m = ev.data || {};
+  if (m.type === "ims-design"){
+    var st = document.getElementById("ims-design");
+    if (!st){ st = document.createElement("style"); st.id = "ims-design"; document.head.appendChild(st); }
+    st.textContent = String(m.css || "");
+    if (typeof m.fontHref === "string" && (m.fontHref === "" || m.fontHref.indexOf("https://fonts.googleapis.com/css2?") === 0)){
+      var fl = document.querySelector('link[rel="stylesheet"][href^="https://fonts.googleapis.com/"]');
+      if (!m.fontHref){ if (fl) fl.remove(); }
+      else if (fl){ if (fl.getAttribute("href") !== m.fontHref) fl.setAttribute("href", m.fontHref); }
+      else { fl = document.createElement("link"); fl.rel = "stylesheet"; fl.href = m.fontHref; document.head.appendChild(fl); }
+    }
+    fitCover();
+    if (!$("app").hidden) layout();
+  } else if (m.type === "ims-scroll"){
+    /* show the part of the page being edited; nothing else is accepted */
+    var to = m.to === "grid" ? $("hdr") : (m.to === "cover" ? $("cover") : null);
+    if (to) to.scrollIntoView({block:"start", behavior: (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) ? "auto" : "smooth"});
+  } else if (m.type === "ims-cover"){
+    if (typeof m.focus === "string" && /^\d{1,3}(\.\d+)? \d{1,3}(\.\d+)?$/.test(m.focus)) $("coverBg").style.backgroundPosition = m.focus.replace(" ", "% ") + "%";
+    if (typeof m.src === "string" && m.src.indexOf("/api/admin/") === 0){
+      var im = new Image();
+      im.onload = function(){ coverNat = { w: im.naturalWidth, h: im.naturalHeight }; $("coverBg").style.backgroundImage = 'url("' + m.src + '")'; fitCover(); $("cover").classList.add("ready"); };
+      im.src = m.src;
+    }
+  }
+});
 
 function imgUrl(id, size){ return BASE + "/img/" + id + "?size=" + size; }
 function getJSON(path, opts){
@@ -650,7 +710,8 @@ var COVER_ZOOM = 1.12, coverNat = null;
 function fitCover(){
   var bg = document.getElementById("coverBg"), host = document.getElementById("cover");
   if (!bg || !host || !coverNat || !coverNat.w || !coverNat.h) return;
-  var cw = host.clientWidth, ch = host.clientHeight;
+  /* the photo's own box: the whole cover normally, a smaller area in the layouts that inset it */
+  var cw = bg.clientWidth, ch = bg.clientHeight;
   if (!cw || !ch) return;
   var k = Math.max(cw / coverNat.w, ch / coverNat.h) * COVER_ZOOM;
   bg.style.backgroundSize = Math.ceil(coverNat.w * k) + "px " + Math.ceil(coverNat.h * k) + "px";
@@ -776,6 +837,35 @@ var io = new IntersectionObserver(function(entries){
 }, {rootMargin: "700px 0px", threshold: 0});
 
 /* justified rows, Pixieset-style */
+/* one photo tile; w and h are set for justified rows, and left to the stylesheet for the tile grid */
+function makeCell(a, w, h){
+  var c = document.createElement("div");
+  c.className = "cell";
+  if (w){ c.style.width = w + "px"; c.style.height = h + "px"; c.style.flex = "0 0 auto"; }
+  c.dataset.idx = a._i;
+  var bg = hashColor(a.hash);
+  if (bg) c.style.background = bg;
+  var im = document.createElement("img");
+  im.decoding = "async"; im.alt = "";
+  im.dataset.src = imgUrl(a.id, "thumbnail");
+  im.addEventListener("load", function(){ im.classList.add("in"); });
+  c.appendChild(im);
+  io.observe(im);
+  if (!a.isImage){
+    var v = document.createElement("div"); v.className="vid";
+    v.innerHTML = '<span>&#9654;</span>'; c.appendChild(v);
+  }
+  var hb = document.createElement("button");
+  hb.dataset.id = a.id;
+  hb.className = "heart" + (favs[a.id] ? " on" : "");
+  hb.setAttribute("aria-label", "Favourite");
+  hb.innerHTML = HEART;
+  hb.addEventListener("click", function(ev){ ev.stopPropagation(); toggleFav(a.id, hb); });
+  c.appendChild(hb);
+  c.addEventListener("click", function(){ open(Number(c.dataset.idx)); });
+  return c;
+}
+
 function layout(){
   var host = $("grid");
   pending = [];
@@ -786,10 +876,16 @@ function layout(){
       : '<div class="msg" style="margin:90px auto"><h2>No photos yet</h2><p>This gallery is empty right now.</p></div>';
     return;
   }
-  var gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--gap")) || 10;
+  var rootStyle = getComputedStyle(document.documentElement);
+  var cssNum = function(name, fallback){ var n = parseFloat(rootStyle.getPropertyValue(name)); return n >= 0 ? n : fallback; };
+  var gap = cssNum("--gap", 10);
   var W = host.clientWidth - gap*2;
   lastW = host.clientWidth;
-  var target = W < 620 ? Math.max(200, W*0.62) : (W < 1100 ? 260 : 330);
+  /* a gallery design can swap the justified rows for an even grid of tiles; the grid itself is laid out by CSS */
+  var mode = rootStyle.getPropertyValue("--ims-grid").trim();
+  var tiles = mode === "tiles" || mode === "columns";
+  host.className = tiles ? mode : "";
+  var target = W < 620 ? Math.max(200, W*0.62) : (W < 1100 ? cssNum("--row-h-tablet", 260) : cssNum("--row-h", 330));
   var row = [], sum = 0;
 
   function flush(last){
@@ -798,38 +894,20 @@ function layout(){
     var h = avail / sum;
     if (last) h = Math.min(h, target*1.35);
     var el = document.createElement("div"); el.className = "row";
-    row.forEach(function(a){
-      var w = a.ratio * h;
-      var c = document.createElement("div");
-      c.className = "cell";
-      c.style.width = w + "px"; c.style.height = h + "px"; c.style.flex = "0 0 auto";
-      c.dataset.idx = a._i;
-      var bg = hashColor(a.hash);
-      if (bg) c.style.background = bg;
-      var im = document.createElement("img");
-      im.decoding = "async"; im.alt = "";
-      im.dataset.src = imgUrl(a.id, "thumbnail");
-      im.addEventListener("load", function(){ im.classList.add("in"); });
-      c.appendChild(im);
-      io.observe(im);
-      if (!a.isImage){
-        var v = document.createElement("div"); v.className="vid";
-        v.innerHTML = '<span>&#9654;</span>'; c.appendChild(v);
-      }
-      var hb = document.createElement("button");
-      hb.dataset.id = a.id;
-      hb.className = "heart" + (favs[a.id] ? " on" : "");
-      hb.setAttribute("aria-label", "Favourite");
-      hb.innerHTML = HEART;
-      hb.addEventListener("click", function(ev){ ev.stopPropagation(); toggleFav(a.id, hb); });
-      c.appendChild(hb);
-      c.addEventListener("click", function(){ open(Number(c.dataset.idx)); });
-      el.appendChild(c);
-    });
+    row.forEach(function(a){ el.appendChild(makeCell(a, a.ratio * h, h)); });
     host.appendChild(el);
     row = []; sum = 0;
   }
 
+  if (tiles){
+    view.forEach(function(a,i){
+      a._i = i;
+      var c = makeCell(a);
+      if (mode === "columns") c.style.aspectRatio = String(a.ratio || 1);   /* a column keeps each photo's own shape */
+      host.appendChild(c);
+    });
+    return;
+  }
   view.forEach(function(a,i){
     a._i = i;
     row.push(a); sum += a.ratio;

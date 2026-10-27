@@ -5,20 +5,17 @@ var K = window.AdminKit, $ = K.$, api = K.api, esc = K.esc, toast = K.toast, chr
 /* active: Home is the open section; seq: only the newest request may paint */
 var H = { active:false, seq:0, data:null, allAttention:false, healthOpen:false };
 
-function svg(d, size){
-  var n = size || 20;
-  return '<svg viewBox="0 0 24 24" width="'+n+'" height="'+n+'" fill="none" stroke="currentColor" stroke-width="1.8" '
-       + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
-}
+/* Lucide icons, the same set as the rest of the panel (see AdminKit.lucide) */
+function svg(name, size){ return K.lucide(name, size); }
 var IC = {
-  clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
-  heart: svg('<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'),
-  globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'),
-  alert: svg('<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/>'),
-  check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16 10"/>'),
-  cross: svg('<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>'),
-  plus:  svg('<path d="M12 5v14M5 12h14"/>'),
-  chev:  svg('<path d="M9 6l6 6-6 6"/>', 16)
+  clock: svg("clock"),
+  heart: svg("heart"),
+  globe: svg("globe"),
+  alert: svg("triangle-alert"),
+  check: svg("circle-check"),
+  cross: svg("circle-x"),
+  plus:  svg("plus"),
+  chev:  svg("chevron-right", 16)
 };
 
 /* ---------- small formatting ---------- */

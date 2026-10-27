@@ -216,16 +216,16 @@ Only gallery pages are reachable by clients, each behind the gate you choose (an
 neither). Immich and its keys are never exposed to a browser; every photo is fetched through this app, so a
 forwarded link can't reach anything it shouldn't. The admin needs your password and the emailed code.
 
-Gallery pages load their typeface (Montserrat) from Google Fonts, so a client's browser contacts Google when it
-opens a gallery. If that matters to you, host the font yourself and change the link at the top of
-`web/index.html`.
+Gallery pages load their typeface (Montserrat by default) from Google Fonts, so a client's browser contacts Google
+when it opens a gallery. If that matters to you, choose one of the **no download** fonts under Design; those use the
+fonts already on the visitor's device and nothing is fetched from Google. See [Design](DESIGN.md).
 
 ## Where your settings are kept, and backups
 
 - Keys you enter in the setup page are saved in **`/data/immichset.json`**, readable only by the app. It is
   **not encrypted**: the key to decrypt it would have to sit beside it, which would protect nothing. Anyone who
   can read your data folder can read your keys, as with any compose file.
-- Settings you put in the compose file as environment variables always win over the file.
+- A setting saved in the admin panel wins over the same setting in the compose file; clear it in the panel to go back to the compose file's value.
 - The nightly backups in `/backups` copy your **database and covers** (and pictures used in mailings). They do
   **not** include `immichset.json`, because a backup folder is often a shared drive. After setup, open
   **Connections › Download settings file** (needs your browser sign-in) and keep that file somewhere private.
@@ -251,7 +251,7 @@ apply at once.
 
 ![Connections: every key, with a Test button](images/admin-08-connections.jpg)
 
-Anything you set in the compose file is shown as such and is changed there. Changing settings
+A setting that started in the compose file is marked as such; saving a different value in the panel overrides it. Changing settings
 needs you to be signed in in the browser; the API token can't do it.
 
 ---

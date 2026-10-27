@@ -1,5 +1,5 @@
-/* Where settings come from. Environment variables win; then the settings file the setup page writes
-   into the data folder; then the defaults. Nothing here touches the network or the database.
+/* Where settings come from. The settings file (written by the setup page and the admin panel) wins;
+   then environment variables; then the defaults. Nothing here touches the network or the database.
 
    The file is not encrypted, on purpose: the key to decrypt it would have to sit beside it, which
    protects nothing against anyone who can read the data folder. It is kept mode 0600 and is never
@@ -36,7 +36,7 @@ export function saveFile(dir, patch = {}, meta = {}) {
   return { path: fileOf(dir), mode, private: mode === 0o600 };
 }
 
-/* env > file > default, one setting at a time.
+/* file > env > default, one setting at a time.
    `generate: false` is for tests and dry runs: it never writes the file. */
 export function loadConfig(env, dataDir, { generate = true } = {}) {
   const file = readFileSafe(dataDir);
@@ -44,8 +44,9 @@ export function loadConfig(env, dataDir, { generate = true } = {}) {
   for (const s of SETTINGS) {
     const fromEnv = env[s.env];
     const fromFile = s.envOnly ? undefined : file.settings[s.env];
-    if (fromEnv !== undefined && fromEnv !== '') { raw[s.env] = fromEnv; sources[s.env] = 'env'; }
-    else if (fromFile !== undefined && fromFile !== '') { raw[s.env] = fromFile; sources[s.env] = 'file'; }
+    /* a value saved from the panel beats the compose file's; clearing it there goes back to the compose file's */
+    if (fromFile !== undefined && fromFile !== '') { raw[s.env] = fromFile; sources[s.env] = 'file'; }
+    else if (fromEnv !== undefined && fromEnv !== '') { raw[s.env] = fromEnv; sources[s.env] = 'env'; }
     else sources[s.env] = 'default';
   }
   /* the two secrets the app can make for itself, once, and only when nobody supplied them */
@@ -81,7 +82,7 @@ export function redact(conf) {
   for (const s of SETTINGS) {
     if (s.hidden) continue;
     const set = conf.raw[s.env] !== undefined && conf.raw[s.env] !== '';
-    out[s.env] = { set, source: conf.sources[s.env], secret: s.secret, locked: conf.sources[s.env] === 'env',
+    out[s.env] = { set, source: conf.sources[s.env], secret: s.secret, locked: false, fromEnv: conf.sources[s.env] === 'env',
                    ...(s.secret ? {} : { value: set ? conf.raw[s.env] : '' }) };
   }
   return out;

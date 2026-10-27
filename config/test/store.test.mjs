@@ -59,13 +59,14 @@ test('the live install\'s shape: the four essentials from env and nothing else',
   assert.deepEqual(readdirSync(dir), [], 'no settings file is written when the environment is complete');
 });
 
-test('env beats the file, which beats the default, key by key', () => {
+test('the file beats env, which beats the default, key by key', () => {
   const dir = tmp();
   saveFile(dir, { IMMICH_URL: 'http://file:1', BRAND_NAME: 'From File', MAIL_FROM: 'A <a@b.co>' });
   const conf = loadConfig({ IMMICH_URL: 'http://env:2', MAIL_FROM: 'B <b@b.co>' }, dir);
-  assert.equal(conf.raw.IMMICH_URL, 'http://env:2'); assert.equal(conf.sources.IMMICH_URL, 'env');
+  assert.equal(conf.raw.IMMICH_URL, 'http://file:1'); assert.equal(conf.sources.IMMICH_URL, 'file');
   assert.equal(conf.raw.BRAND_NAME, 'From File'); assert.equal(conf.sources.BRAND_NAME, 'file');
-  assert.equal(conf.raw.MAIL_FROM, 'B <b@b.co>');
+  assert.equal(conf.raw.MAIL_FROM, 'A <a@b.co>');
+  assert.equal(loadConfig({ BRAND_URL: 'http://env' }, dir, { generate: false }).sources.BRAND_URL, 'env');
   assert.equal(conf.sources.PUBLIC_URL, 'default');
   assert.equal(toCfg(conf).mailSend, true);
 });
@@ -106,7 +107,7 @@ test('what a browser may see never includes a secret value', () => {
   const conf = loadConfig({ IMMICH_URL: 'http://i:1', IMMICH_API_KEY: 'SECRET-KEY-123', RESEND_API_KEY: 're_SECRET', BRAND_NAME: 'Studio' }, dir);
   const out = JSON.stringify(redact(conf));
   assert.ok(!out.includes('SECRET-KEY-123') && !out.includes('re_SECRET') && !out.includes(conf.raw.APP_SECRET) && !out.includes(conf.raw.ADMIN_TOKEN));
-  assert.equal(redact(conf).IMMICH_API_KEY.set, true); assert.equal(redact(conf).IMMICH_API_KEY.locked, true);
+  assert.equal(redact(conf).IMMICH_API_KEY.set, true); assert.equal(redact(conf).IMMICH_API_KEY.fromEnv, true);
   assert.equal(redact(conf).BRAND_NAME.value, 'Studio');
 });
 
@@ -157,7 +158,7 @@ test('the visitor-address header can only be one the app knows how to use', () =
   assert.equal(validate('CLIENT_IP_HEADER', '').ok, true, 'empty means the default');
 });
 
-test('the time zone: real names pass, nonsense is refused, env beats the saved value, and nothing is set by default', () => {
+test('the time zone: real names pass, nonsense is refused, the saved value beats env, and nothing is set by default', () => {
   assert.equal(validate('TZ', 'America/Chicago').ok, true);
   assert.equal(validate('TZ', 'UTC').ok, true);
   assert.equal(validate('TZ', 'Mars/Olympus').ok, false);
@@ -165,6 +166,7 @@ test('the time zone: real names pass, nonsense is refused, env beats the saved v
   const dir = tmp();
   saveFile(dir, { TZ: 'America/Denver' });
   assert.equal(toCfg(loadConfig({ PORT: '3000' }, dir, { generate: false })).timeZone, 'America/Denver');
-  assert.equal(toCfg(loadConfig({ TZ: 'Europe/Paris' }, dir, { generate: false })).timeZone, 'Europe/Paris');
+  assert.equal(toCfg(loadConfig({ TZ: 'Europe/Paris' }, dir, { generate: false })).timeZone, 'America/Denver');
+  assert.equal(toCfg(loadConfig({ TZ: 'Europe/Paris' }, tmp(), { generate: false })).timeZone, 'Europe/Paris');
   assert.equal(toCfg(loadConfig({}, tmp(), { generate: false })).timeZone, '');
 });
