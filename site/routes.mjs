@@ -8,6 +8,11 @@ import { createStore, StaleError, InputError, FONTS, DEFAULT_STYLE } from './sto
 import { build } from './build.mjs';
 import { migratePages, resolvePages, cleanPages } from './pages.mjs';
 import { listBlockTypes, STYLE_SCHEMA, MOTION_SCHEMA, STYLE_DEFAULTS, MOTION_DEFAULTS } from './blocks/registry.mjs';
+import { migrateSite, cleanSite } from './sitewide.mjs';
+import { listElementTypes, ELEMENT_MOTION_SCHEMA, ELEMENT_MOTION_DEFAULTS, ELEMENT_VISIBLE,
+  HEADER_STYLE_SCHEMA, HEADER_STYLE_DEFAULTS, FOOTER_STYLE_SCHEMA, FOOTER_STYLE_DEFAULTS } from './bands.mjs';
+import { THEME_SCHEMA } from './theme.mjs';
+import { WORDING_SCHEMA } from './wording.mjs';
 import { createPublisher } from './publish.mjs';
 import { createWatcher } from './watch.mjs';
 import { pagesHash } from './blake3.mjs';
@@ -25,7 +30,7 @@ const isSafeSvg = b => { const t = b.toString('utf8');
   return /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(t) && !SVG_BAD.some(re => re.test(t)); };
 const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 const FRESH_MS = 10 * 60_000;
-const PAGES_MAX = 2 * 1024 * 1024;     /* a whole site's pages in one save; larger is refused before parsing finishes */
+const PAGES_MAX = 2 * 1024 * 1024;     /* a whole site's pages, header, footer, theme and wording in one save; larger is refused */
 
 export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload, tellAdmin, fetch: f = globalThis.fetch }) {
   const dir = join(cfg.dataDir, 'site');
@@ -163,13 +168,21 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
 
   /* ---- pages ---- */
   const pagesOf = st => resolvePages(st.pages ?? migratePages(st.settings, st.galleries), st.galleries);
+  const siteOf = st => st.site ?? migrateSite(st.settings);
   const photoIdsOf = st => new Set([...st.pagePhotos, ...st.galleries.flatMap(g => g.photos)].map(p => p.id));
-  /* the editor's live preview: the real build of pages that are not saved yet, as one self-contained page */
-  function renderDraft(raw, slug) {
+  /* the editor's live preview: the real build of pages, header, footer, theme and wording that are not saved yet, as
+     one self-contained page. rawSite undefined previews the saved (or made-from-settings) ones. */
+  function renderDraft(raw, slug, rawSite) {
     const st = store.getState();
     const { pages, errors } = cleanPages(raw, { galleries: st.galleries, photoIds: photoIdsOf(st) });
     if (!pages) { const e = new InputError(errors[0]); e.errors = errors; throw e; }
-    const { files } = build({ ...st, pages }, { base: '/admin/site-preview/', siteUrl: cfg.siteUrl, editor: true });
+    let site = st.site;
+    if (rawSite !== undefined) {
+      const r = cleanSite(rawSite);
+      if (!r.site) { const e = new InputError(r.errors[0]); e.errors = r.errors; throw e; }
+      site = r.site;
+    }
+    const { files } = build({ ...st, pages, site }, { base: '/admin/site-preview/', siteUrl: cfg.siteUrl, editor: true });
     return { html: files.get(slug ? `${slug}/index.html` : 'index.html') ?? files.get('404.html') };
   }
   /* back to the pages the live site shows (or, never published, the pages made from the settings) */
@@ -177,7 +190,8 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     const ok = store.listPublishes().filter(p => p.status === 'ok');
     const live = ok.find(p => p.deploymentId === store.meta('liveDeploymentId')) || ok[0];
     store.discardPages(live ? store.getPublish(live.id).snapshot : null);
-    return { pages: pagesOf(store.getState()), pagesRev: store.pagesRev() };
+    const st = store.getState();
+    return { pages: pagesOf(st), site: siteOf(st), siteSaved: st.site != null, pagesRev: store.pagesRev() };
   }
 
   /* ---- helpers ---- */
@@ -229,15 +243,19 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
         liveDeploymentId: store.meta('liveDeploymentId'),
         fonts: FONTS, defaults: DEFAULT_STYLE, liveUrl: cfg.siteUrl || null, publishing: busy === 'publish',
         pages: pagesOf(st), pagesRev: store.pagesRev(), pagesSaved: st.pages != null,
+        site: siteOf(st), siteSaved: st.site != null,
       });
     }
     if (path === '/api/admin/site/blocks' && m === 'GET') {
       return json(res, 200, { types: listBlockTypes(), style: STYLE_SCHEMA, motion: MOTION_SCHEMA,
-                              styleDefaults: STYLE_DEFAULTS, motionDefaults: MOTION_DEFAULTS });
+                              styleDefaults: STYLE_DEFAULTS, motionDefaults: MOTION_DEFAULTS,
+                              elements: listElementTypes(), elementMotion: ELEMENT_MOTION_SCHEMA, elementMotionDefaults: ELEMENT_MOTION_DEFAULTS,
+                              elementVisible: ELEMENT_VISIBLE, headerStyle: HEADER_STYLE_SCHEMA, headerStyleDefaults: HEADER_STYLE_DEFAULTS,
+                              footerStyle: FOOTER_STYLE_SCHEMA, footerStyleDefaults: FOOTER_STYLE_DEFAULTS, theme: THEME_SCHEMA, wording: WORDING_SCHEMA });
     }
     if (path === '/api/admin/site/pages' && m === 'PUT') {
       const b = await readBody(req, res, PAGES_MAX); if (!b) return;
-      return respond(res, () => store.putPages(pagesRevOf(req), b.pages));
+      return respond(res, () => store.putPages(pagesRevOf(req), b.pages, b.site));
     }
     if (path === '/api/admin/site/pages/discard' && m === 'POST') {
       const b = await readBody(req, res, 1024); if (!b) return;
@@ -245,7 +263,7 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     }
     if (path === '/api/admin/site/render' && m === 'POST') {
       const b = await readBody(req, res, PAGES_MAX); if (!b) return;
-      return respond(res, () => renderDraft(b.pages, String(b.slug ?? '')));
+      return respond(res, () => renderDraft(b.pages, String(b.slug ?? ''), b.site));
     }
     if (path === '/api/admin/site/settings' && m === 'PUT') {
       const b = await readBody(req, res, 256 * 1024); if (!b) return;
@@ -334,9 +352,9 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
       const file = svg ? 'logo.svg' : 'logo.png';
       for (const n of ['logo.png', 'logo.svg']) if (existsSync(join(dir, n))) unlinkSync(join(dir, n));
       await writeFile(join(dir, file), buf);
-      return respond(res, () => { store.patchSettings(null, { style: { logo: file } }); });
+      return respond(res, () => { store.patchSettings(null, { style: { logo: file } }); return { logo: file }; });
     }
-    if (path === '/api/admin/site/logo' && m === 'DELETE') return respond(res, () => { store.patchSettings(null, { style: { logo: null } }); });
+    if (path === '/api/admin/site/logo' && m === 'DELETE') return respond(res, () => { store.patchSettings(null, { style: { logo: null } }); return { logo: null }; });
 
     const im = path.match(/^\/api\/admin\/site\/img\/([^/]+)$/);
     if (im && m === 'GET') {
@@ -364,7 +382,8 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     if (im && IMG_NAME.test(im[1])) return serveFile(res, rel, 'private, max-age=300');
     if (rel === '' || rel.endsWith('/')) rel += 'index.html';
     const { files, images } = build(store.getState(), { base, siteUrl: cfg.siteUrl });
-    if (images.has(rel)) return serveFile(res, images.get(rel), 'private, max-age=300');
+    /* a new logo keeps the same name, so the preview must not keep showing the old one */
+    if (images.has(rel)) return serveFile(res, images.get(rel), LOGO_NAME.test(rel) ? 'no-store' : 'private, max-age=300');
     const found = files.has(rel) && rel !== '_headers';
     const body = found ? files.get(rel) : files.get('404.html');
     res.writeHead(found ? 200 : 404, { 'content-type': TYPES[extname(found ? rel : '404.html')] || 'text/plain', 'cache-control': 'no-store' });
