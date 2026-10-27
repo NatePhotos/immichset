@@ -36,7 +36,7 @@ say() { echo "  $*"; }
 [ -d "$DEST" ] || die "DEST does not exist or is not mounted: $DEST"
 
 FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/design-admin.js web/builder-admin.js web/home.js web/admin-theme.css admin/overview.mjs admin/cover.mjs admin/logo.mjs
-       site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs site/theme.mjs site/wording.mjs
+       site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs site/theme.mjs site/wording.mjs site/bands.mjs
        site/pages.mjs site/sanitize.mjs site/blocks/button.mjs site/blocks/columns.mjs site/blocks/common.mjs site/blocks/contact.mjs site/blocks/custom-html.mjs
        site/blocks/embed.mjs site/blocks/gallery-cards.mjs site/blocks/heading.mjs site/blocks/hero.mjs site/blocks/image-text.mjs site/blocks/image.mjs site/blocks/photo-grid.mjs
        site/blocks/registry.mjs site/blocks/rich-text.mjs site/blocks/spacer.mjs
