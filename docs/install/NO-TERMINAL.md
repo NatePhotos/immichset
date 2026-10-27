@@ -4,6 +4,10 @@ This is the path for a NAS with nothing installed but its Docker app (Synology C
 Container Station and similar). You paste one file. It installs **Immich** (where your photos live) and **immichset**
 (your client galleries) together. It takes about 15 minutes plus the download.
 
+<!-- VIDEO-GUIDE:start (delete everything from this line to VIDEO-GUIDE:end to remove the video) -->
+> **Prefer to watch?** This path is shown step by step, without a terminal, in a video. [Watch the install guide on YouTube](https://youtu.be/kf6_3rGQqVs). It covers installing only, not the web setup page afterwards.
+<!-- VIDEO-GUIDE:end -->
+
 **You need:** a NAS with Docker installed, at least 6 GB of memory free, and a computer on the same network. If your NAS
 is older or small, read the hardware notes in [Start here](../START-HERE.md#what-your-computer-needs) first.
 
