@@ -250,10 +250,15 @@ address.
 
 ### Public website
 
-Optional. The admin panel's **Website** section edits a simple portfolio site (galleries,
-About and Contact pages, colours and fonts) and publishes it to Cloudflare Pages, so the
-public site never depends on this machine. Uploaded originals also go to Immich, into a
-`Website – <gallery>` album, using the write key.
+Optional. The admin panel's **Website** section builds a portfolio site and publishes it to Cloudflare Pages, so the
+public site never depends on this machine. Pages are made of blocks (banner, heading, text, photo, image and text,
+gallery cards, photo grid, button, space or line, columns, contact details, video or map, custom HTML) that you add,
+arrange, style and animate in a full-screen page editor with a live preview at phone, tablet and desktop size.
+Edits are an autosaved draft with undo and redo; the public site changes only when you press **Publish**. A site
+made before the page editor existed keeps looking exactly the same until you change it. Entrance and hover effects
+respect visitors who ask their device for less motion, and the content of every page shows without JavaScript
+(photo grids appear as a plain grid instead of the staggered layout, and the photo viewer needs JavaScript).
+Uploaded originals also go to Immich, into a `Website – <gallery>` (or `Website – Pages`) album, using the write key.
 
 Set `CF_ACCOUNT_ID`, `CF_PAGES_TOKEN` (an account token with **Cloudflare Pages → Edit**),
 `CF_PAGES_PROJECT` and `SITE_URL`. Without them the section still edits and previews.
