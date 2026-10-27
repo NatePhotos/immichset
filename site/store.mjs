@@ -1,6 +1,8 @@
 /* The website's editable state - settings, galleries, photos, publish history and open
    alerts - in the gallery app's own database, so the nightly backup covers it. */
 
+import { cleanPages } from './pages.mjs';
+
 export const FONTS = ['Roboto', 'Figtree', 'Montserrat', 'Inter', 'Lato', 'Lora',
                       'Playfair Display', 'Cormorant Garamond', 'EB Garamond', 'Josefin Sans'];
 export const DEFAULT_STYLE = {
@@ -116,6 +118,11 @@ export function createStore(db, { now = Date.now } = {}) {
   const meta = key => q.setGet.get(key)?.value ?? null;
   const setMeta = (key, value) => (value == null ? q.setDel.run(key) : q.setPut.run(key, String(value)));
   const rev = () => Number(meta('_rev') || 0);
+  /* The pages are the editor's draft: the public site only changes when they are published. They have their own
+     revision so an editor's autosave is refused only when the pages changed elsewhere, not on every photo upload. */
+  const pagesRev = () => Number(meta('_pagesRev') || 0);
+  function getPages() { const raw = meta('s:pages'); return raw == null ? null : JSON.parse(raw); }
+  function setPages(pages) { setMeta('s:pages', pages == null ? null : JSON.stringify(pages)); setMeta('_pagesRev', pagesRev() + 1); }
 
   function tx(fn) {
     db.exec('BEGIN');
@@ -149,16 +156,17 @@ export function createStore(db, { now = Date.now } = {}) {
   }
   function slugFor(title) {
     const base = title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'gallery';
+    const pageSlugs = new Set((getPages() || []).filter(p => p.galleryId == null).map(p => p.slug.toLowerCase()));
     for (let n = 1; ; n++) {
       const s = n === 1 ? base : `${base}-${n}`;
-      if (!RESERVED.has(s.toLowerCase()) && !q.galSlug.get(s)) return s;
+      if (!RESERVED.has(s.toLowerCase()) && !pageSlugs.has(s.toLowerCase()) && !q.galSlug.get(s)) return s;
     }
   }
   const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
-  const snapshot = () => JSON.stringify({ settings: getSettings(), galleries: q.galAll.all(), photos: q.phoAll.all() });
+  const snapshot = () => JSON.stringify({ settings: getSettings(), galleries: q.galAll.all(), photos: q.phoAll.all(), pages: getPages() });
 
   return {
-    rev, meta, setMeta, getSettings,
+    rev, meta, setMeta, getSettings, pagesRev, getPages,
     gallery: id => galDto(q.galGet.get(id)),
     photo: id => phoDto(q.phoGet.get(id)),
 
@@ -169,6 +177,7 @@ export function createStore(db, { now = Date.now } = {}) {
         settings: getSettings(),
         galleries: q.galAll.all().map(r => ({ ...galDto(r), photos: photos.filter(p => p.galleryId === r.id) })),
         pagePhotos: photos.filter(p => p.galleryId == null),
+        pages: getPages(),
       };
     },
 
@@ -185,6 +194,22 @@ export function createStore(db, { now = Date.now } = {}) {
         }
         putSettings(s);
       });
+    },
+
+    putPages(expectedPagesRev, raw) {
+      if (expectedPagesRev != null && expectedPagesRev !== pagesRev()) throw new StaleError();
+      const galleries = q.galAll.all().map(galDto);
+      const photoIds = new Set(q.phoAll.all().map(p => p.id));
+      const { pages, errors } = cleanPages(raw, { galleries, photoIds });
+      if (!pages) { const e = new InputError(errors[0]); e.errors = errors; throw e; }
+      mutate(null, () => setPages(pages));
+      return { pagesRev: pagesRev() };
+    },
+    /* back to the pages of a published version; with none, back to the pages made from the settings */
+    discardPages(snapshotJson) {
+      const snap = snapshotJson ? JSON.parse(snapshotJson) : {};
+      mutate(null, () => setPages(snap.pages ?? null));
+      return { pagesRev: pagesRev() };
     },
 
     addGallery(expected, title) {
@@ -264,6 +289,8 @@ export function createStore(db, { now = Date.now } = {}) {
             p.original_name, imm.immich_asset_id, imm.immich_status, imm.immich_tries, p.created_at);
         }
         putSettings(snap.settings);
+        /* versions published before pages existed have no "pages": they go back to pages made from their settings */
+        setPages(Object.hasOwn(snap, 'pages') ? snap.pages : null);
       });
     },
     referencedFileKeys() {
