@@ -56,3 +56,12 @@ test('pages: add, rename, address, menu, SEO, duplicate, delete, reorder; home a
   assert.match(builder, /sortable\(host, "\.wbpg"/);
   assert.match(builder, /home \|\| gal \? "" : '<button class="btn sm ghost" type="button" id="wbPDel">/);
 });
+
+test('unsaved work is guarded after a failed save, and the footer never claims to be saving when it cannot', () => {
+  assert.match(builder, /function unsaved\(\)\{ return dirtyLocal\(\) \|\| B\.stale \|\| B\.bad; \}/);
+  assert.match(builder, /if \(B\.open && unsaved\(\)\)/, 'closing the tab warns');
+  assert.match(builder, /function leave\(\)\{\s*if \(\(B\.stale \|\| B\.bad\) && !confirm\(/, 'Back asks first');
+  assert.match(builder, /if \(B\.stale \|\| B\.bad\) toast\("Some of your latest page changes were not saved"\)/, 'closing any other way says so');
+  assert.match(builder, /if \(!B\.open && !r\.ok\) toast\(/, 'a save that fails after closing is reported');
+  assert.match(builder, /if \(B\.stale\) setStatus\("Not saved: changed somewhere else", true\); else setStatus\("Saving…"\)/);
+});

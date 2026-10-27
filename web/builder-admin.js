@@ -72,6 +72,8 @@ function allPhotos(){ var s = B.site; return s.pagePhotos.concat.apply(s.pagePho
 function photoById(id){ return allPhotos().filter(function(p){ return p.id === id; })[0]; }
 function thumb(p){ return p ? "/api/admin/site/img/" + p.fileKey + "-grid.jpg" : ""; }
 function dirtyLocal(){ return !!(B.saveT || B.saving); }
+/* edits that are not safely in the draft: waiting to save, saving, or a save that failed or was refused */
+function unsaved(){ return dirtyLocal() || B.stale || B.bad; }
 function field(label, inner, hint){ return '<div class="field"><label>' + esc(label) + '</label>' + inner + (hint ? '<div class="hint">' + esc(hint) + '</div>' : "") + '</div>'; }
 function slugify(t){
   var base = String(t).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "page";
@@ -130,6 +132,7 @@ function take(body){
 function close(){
   if (!B.open) return;
   if (B.saveT) saveNow();
+  if (B.stale || B.bad) toast("Some of your latest page changes were not saved");
   B.open = false; B.seq++; clearTimeout(B.renderT); clearTimeout(B.saveT); B.saveT = null;
   if (B.ro){ try { B.ro.disconnect(); } catch (e) {} B.ro = null; }
   if (B.keyFn){ document.removeEventListener("keydown", B.keyFn); B.keyFn = null; }
@@ -137,7 +140,9 @@ function close(){
   B.frame = null;
   var app = document.getElementById("app"); if (app) app.classList.remove("dzfull");
 }
-function leave(){ close(); if (window.websiteView) window.websiteView("pages"); }
+function leave(){
+  if ((B.stale || B.bad) && !confirm("Some of your latest changes are not saved. Leave anyway and lose them?")) return;
+  close(); if (window.websiteView) window.websiteView("pages"); }
 function chrome(){
   K.chrome({ title: "Pages", crumb: "Website", back: leave, section: "website", full: true, actions: [
     { label: "Open preview", onClick: function(){ var p = page(); window.open("/admin/site-preview/" + (p && p.slug ? encodeURIComponent(p.slug) + "/" : ""), "_blank", "noopener"); } },
@@ -224,7 +229,7 @@ function commit(fn, key){
   fn();
   changed();
 }
-function changed(){ B.dirty = true; setStatus("Saving…"); paintHistory(); paintPub(); paintPages(); paintOutline(); render(250); saveSoon(900); }
+function changed(){ B.dirty = true; if (B.stale) setStatus("Not saved: changed somewhere else", true); else setStatus("Saving…"); paintHistory(); paintPub(); paintPages(); paintOutline(); render(250); saveSoon(900); }
 function undo(){ if (!B.undo.length) return; B.redo.push(clone(B.pages)); B.pages = B.undo.pop(); B.lastKey = null; afterHistory(); }
 function redo(){ if (!B.redo.length) return; B.undo.push(clone(B.pages)); B.pages = B.redo.pop(); B.lastKey = null; afterHistory(); }
 function afterHistory(){
@@ -242,12 +247,13 @@ function saveNow(){
   B.saving = true;
   api("/site/pages", { method: "PUT", headers: { "Content-Type": "application/json", "x-pages-rev": String(B.pagesRev), "x-site-rev": String(B.rev) }, body: body }).then(function(r){
     B.saving = false;
+    if (!B.open && !r.ok) toast("Your last page changes were not saved: " + (r.status === 409 ? "the pages changed somewhere else" : ((r.body && r.body.error) || "something went wrong")));
     if (r.status === 409){ B.stale = true; paintStale(); setStatus("Not saved: changed somewhere else", true); return; }
     if (!r.ok){ B.errors = (r.body && r.body.errors) || []; paintErrors(); setStatus("Not saved: " + ((r.body && r.body.error) || "something went wrong"), true, true); paintPub(); return; }
     B.pagesRev = r.body.pagesRev; if (r.body.rev) B.rev = r.body.rev; B.dirty = true;
     if (B.again){ B.again = false; saveSoon(0); } else setStatus("Draft saved");
     paintPub();
-  }, function(){ B.saving = false; setStatus("Couldn’t save — check your connection", true, true); });
+  }, function(){ B.saving = false; if (!B.open) toast("Your last page changes were not saved: no connection"); setStatus("Couldn’t save — check your connection", true, true); });
 }
 function reloadSite(){
   return api("/site").then(function(r){ if (!r.ok) throw new Error((r.body && r.body.error) || "Couldn’t load the website"); return r.body; })
@@ -307,7 +313,7 @@ function onKey(ev){
   if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || (ev.target && ev.target.isContentEditable)) return;
   if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z"){ ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); }
 }
-window.addEventListener("beforeunload", function(ev){ if (B.open && dirtyLocal()){ ev.preventDefault(); ev.returnValue = ""; } });
+window.addEventListener("beforeunload", function(ev){ if (B.open && unsaved()){ ev.preventDefault(); ev.returnValue = ""; } });
 
 /* ---------- pages ---------- */
 function paintPages(){
