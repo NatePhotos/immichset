@@ -160,7 +160,7 @@ test('hostile payloads answer 400, a missing site stays missing, null is refused
     assert.equal(r.status, 400, JSON.stringify(hostile));
     assert.equal((await call('POST', '/api/admin/site/render', { pages: st.pages, slug: '', site: hostile })).status, 400);
   }
-  assert.equal((await call('POST', '/api/admin/site/render', { pages: st.pages, slug: '', site: { name: { toString: 1 } } })).status, 400, 'a value that makes the cleaner throw a TypeError is 400');
+  assert.equal((await call('POST', '/api/admin/site/render', { pages: st.pages, slug: '', site: { theme: { ink: { toString: 1 } } } })).status, 400, 'a value that makes the cleaner throw a TypeError is 400');
   assert.equal((await call('PUT', '/api/admin/site/pages', { pages: st.pages, site: null }, { 'x-pages-rev': String(st.pagesRev) })).status, 400);
   assert.equal((await getSite()).pagesRev, st.pagesRev);
 });
