@@ -79,3 +79,28 @@ test('discarding puts back the pages of a snapshot, or the old fixed pages when 
   s.discardPages(null);
   assert.equal(s.getPages(), null);
 });
+
+test('discarding to a snapshot checks its pages against today: clashes fall back, dead links are dropped', () => {
+  const s = fresh();
+  s.putPages(null, [...migrated(s), news({ slug: 'x' })]);
+  const snap = s.snapshot();
+  s.discardPages(null);
+  assert.equal(s.addGallery(null, 'x').slug, 'x');
+  s.discardPages(snap);
+  assert.equal(s.getPages(), null, 'a page clashing with a gallery address is not stored');
+});
+
+test('discarding drops pages of deleted galleries and photos that no longer exist', () => {
+  const s = fresh();
+  const g = s.addGallery(null, 'Trips');
+  const p = s.addPhoto(null, null, photo('gone'));
+  s.putPages(null, [...migrated(s), news({ blocks: [{ id: 'bimg', type: 'image', props: { photoId: p.id } }] })]);
+  assert.ok(s.getPages().some(x => x.galleryId === g.id), 'the gallery has its page');
+  const snap = s.snapshot();
+  s.deleteGallery(null, g.id);
+  s.removePhoto(null, p.id);
+  s.discardPages(snap);
+  const pages = s.getPages();
+  assert.ok(!pages.some(x => x.galleryId === g.id));
+  assert.equal(pages.find(x => x.id === 'pnews').blocks[0].props.photoId, null);
+});

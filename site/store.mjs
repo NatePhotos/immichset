@@ -208,7 +208,15 @@ export function createStore(db, { now = Date.now } = {}) {
     /* back to the pages of a published version; with none, back to the pages made from the settings */
     discardPages(snapshotJson) {
       const snap = snapshotJson ? JSON.parse(snapshotJson) : {};
-      mutate(null, () => setPages(snap.pages ?? null));
+      /* the snapshot was made against galleries and photos that may have changed since: check it like a save, and
+         when it cannot be made valid, go back to the pages made from the settings rather than store a broken draft */
+      let pages = snap.pages ?? null;
+      if (pages != null) {
+        const galleries = q.galAll.all().map(galDto);
+        const photoIds = new Set(q.phoAll.all().map(p => p.id));
+        pages = cleanPages(pages, { galleries, photoIds }).pages;
+      }
+      mutate(null, () => setPages(pages));
       return { pagesRev: pagesRev() };
     },
 
