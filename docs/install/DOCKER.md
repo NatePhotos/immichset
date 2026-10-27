@@ -74,27 +74,20 @@ terminal from your own computer):
 ssh yourname@192.168.1.20
 ```
 
-   Not sure of the NAS's name or address? From your own computer, any of these will tell you:
+   Not sure of the NAS's name or address? From your own computer, this lists every device on your network:
 
 ```bash
 arp -a
 ```
 
-   lists every device on your network with its name and address (a device with no name shows as `?`).
+   Each line is a device with its name and address, like `mynas (192.168.1.20)`. Pick out your NAS. It is usually the one named
+   after the brand or a name you gave it. Ignore the router (often ending in `.1`), printers, phones, and lines with `?` or
+   addresses starting `224.`, `239.` or `255.`. Then connect with the address, or the name with `.local` after it
+   (`ssh yourname@mynas.local`).
 
-```bash
-dns-sd -B _smb._tcp local.
-```
-
-   (Mac) lists devices that share files, which includes most NASes, by name. Press Ctrl+C to stop it.
-
-```bash
-nslookup 192.168.1.20
-```
-
-   gives the name for an address you already know. Use the address from the list, or the name with `.local` after it
-   (`ssh yourname@mynas.local`). The NAS must be switched on and on the same network as your computer. Your router's list of
-   connected devices and the NAS's own settings show the name too.
+   Still can't tell which one it is? Your router's list of connected devices and the NAS's own settings show its name, and
+   `nslookup 192.168.1.20` (with the address you suspect) gives the name for that address. The NAS must be switched on and on
+   the same network as your computer.
 
 3. You should now see a prompt on the NAS. Run the installer there. When you're done, you can switch SSH off again.
 
