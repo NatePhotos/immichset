@@ -22,6 +22,7 @@ import { DEFAULT_DESIGN, RANGES, ENUMS, FONTS, THEMES, COVER_LAYOUTS, COLOR_PRES
 import { overview } from './admin/overview.mjs';
 import { createZipWriter } from './zip/writer.mjs';
 import { DownloadQueue } from './zip/queue.mjs';
+import { createDropbox, safeName } from './dropbox/dropbox.mjs';
 import { createWatchdog } from './health/watchdog.mjs';
 import { render, cleanDesign, IMAGE_FILE, scanVars, unsubToken, readUnsubToken, maskEmail, selectRecipients, planHash, classify, verifySvix, isReservedAddress } from './mail/blast.mjs';
 
@@ -107,6 +108,18 @@ CREATE TABLE IF NOT EXISTS zips (
   built_at    TEXT,
   last_used_at TEXT,
   served      INTEGER NOT NULL DEFAULT 0
+);
+
+/* a private Dropbox copy of a gallery video, kept for downloads and deleted when the gallery's time is up */
+CREATE TABLE IF NOT EXISTS dropbox_files (
+  gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+  asset_id    TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'uploading',   -- uploading | ready | failed
+  bytes       INTEGER,
+  error       TEXT,
+  updated_at  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (gallery_id, asset_id)
 );
 
 CREATE TABLE IF NOT EXISTS registrations (
@@ -373,6 +386,13 @@ const q = {
   mailIns:    db.prepare('INSERT INTO mail_log (gallery_id,email,kind,status,detail) VALUES (?,?,?,?,?)'),
   mailFor:    db.prepare('SELECT * FROM mail_log WHERE gallery_id = ? ORDER BY created_at DESC LIMIT 60'),
   mailSent:   db.prepare("SELECT COUNT(*) n FROM mail_log WHERE gallery_id=? AND email=? AND kind=? AND status='sent'"),
+  gallAll:    db.prepare('SELECT * FROM galleries'),
+  dbxFor:     db.prepare('SELECT * FROM dropbox_files WHERE gallery_id = ?'),
+  dbxGet:     db.prepare('SELECT * FROM dropbox_files WHERE gallery_id = ? AND asset_id = ?'),
+  dbxPut:     db.prepare(`INSERT INTO dropbox_files (gallery_id,asset_id,path,status,bytes,error,updated_at) VALUES (?,?,?,?,?,?,?)
+                          ON CONFLICT(gallery_id,asset_id) DO UPDATE SET path=excluded.path, status=excluded.status, bytes=excluded.bytes, error=excluded.error, updated_at=excluded.updated_at`),
+  dbxDel:     db.prepare('DELETE FROM dropbox_files WHERE gallery_id = ? AND asset_id = ?'),
+  dbxStale:   db.prepare("UPDATE dropbox_files SET status='failed', error='interrupted by a restart', updated_at=? WHERE status='uploading'"),
   gallDue:    db.prepare("SELECT * FROM galleries WHERE published_at IS NOT NULL AND expires_at IS NOT NULL"),
   remList:    db.prepare('SELECT * FROM reminders WHERE gallery_id = ? ORDER BY days_before DESC'),
   remIns:     db.prepare('INSERT OR IGNORE INTO reminders (gallery_id,days_before,audience,email) VALUES (?,?,?,?)'),
@@ -1530,6 +1550,12 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     if (size === 'original' || size === 'web') {
       if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
       log(gallery, who.r, 'download', img[1], req);
+      /* a video with a Dropbox copy downloads from Dropbox, over a link that dies in four hours; the
+         page asks for it with via=dropbox, so playback and sharing keep coming from here */
+      if (size === 'original' && url.searchParams.get('via') === 'dropbox' && !req.headers.range) {
+        const to = await dropboxLink(gallery.id, img[1]);
+        if (to) { res.writeHead(302, { location: to, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); return res.end(); }
+      }
     }
     /* the full-quality file played in the browser: it is the original's bytes, so it follows
        the download rule; with downloads off the client only gets the lighter `video` stream */
@@ -1592,6 +1618,86 @@ async function galleryRoutes(req, res, gallery, rest, url) {
   if (ztick && req.method === 'GET') return sendZipAdhoc(req, res, gallery, who, ztick[1]);
 
   return json(res, 404, { error: 'not_found' });
+}
+
+/* ------------------------------------------------------------ Dropbox copies of videos
+   A video is also uploaded to the app's own Dropbox folder, so a client's download comes from Dropbox's
+   network instead of the home connection. Nothing is shared publicly: a download asks Dropbox for a link
+   that stops working after four hours. The copy is deleted CFG.dropboxKeepDays days after the gallery
+   expires, or when the gallery or the video is removed. The original on the NAS is never touched. */
+const dbxCache = { sig: '', dbx: null };
+function dropbox() {
+  const sig = `${CFG.dropboxKey}|${CFG.dropboxSecret}|${CFG.dropboxRefresh}`;
+  if (dbxCache.sig !== sig || !dbxCache.dbx) {
+    dbxCache.sig = sig;
+    dbxCache.dbx = createDropbox({ key: CFG.dropboxKey, secret: CFG.dropboxSecret, refresh: CFG.dropboxRefresh });
+  }
+  return dbxCache.dbx;
+}
+
+async function dropboxPut(g, a) {
+  const dbx = dropbox();
+  const info = await immichJson(`/api/assets/${a.id}`);
+  const path = `/${safeName(g.slug, 'gallery')}/${a.id.slice(0, 8)}-${safeName(info.originalFileName)}`;
+  q.dbxPut.run(g.id, a.id, path, 'uploading', null, null, Date.now());
+  try {
+    const up = await immich(`/api/assets/${a.id}/original`);
+    if (!up.ok || !up.body) throw new Error(`Immich answered ${up.status}`);
+    const bytes = await dbx.upload(path, up.body);
+    q.dbxPut.run(g.id, a.id, path, 'ready', bytes, null, Date.now());
+    console.log(`dropbox: ${path} (${Math.round(bytes / 1048576)} MB)`);
+  } catch (e) {
+    q.dbxPut.run(g.id, a.id, path, 'failed', null, String(e.message).slice(0, 300), Date.now());
+    console.error('dropbox upload failed:', path, e.message);
+  }
+}
+
+/* remove one copy; the row stays if Dropbox could not be reached, so the next pass tries again */
+async function dropboxDrop(r) {
+  try { await dropbox().remove(r.path); q.dbxDel.run(r.gallery_id, r.asset_id); }
+  catch (e) { console.error('dropbox delete failed:', r.path, e.message); }
+}
+
+let dbxBusy = false;
+async function dropboxSweep() {
+  if (!dropbox().configured || dbxBusy) return;
+  dbxBusy = true;
+  try {
+    const now = Date.now();
+    for (const g of q.gallAll.all()) {
+      const rows = q.dbxFor.all(g.id);
+      const expires = g.expires_at ? new Date(g.expires_at).getTime() : NaN;
+      const dated = Number.isFinite(expires);
+      /* past the grace period: every copy goes */
+      if (dated && now > expires + CFG.dropboxKeepDays * 86400_000) { for (const r of rows) await dropboxDrop(r); continue; }
+      /* a draft, or a gallery inside its grace period, gets nothing new */
+      if (!g.published_at || (dated && now > expires)) continue;
+
+      const here = new Set(); const videos = []; let complete = true;
+      for (const st of setsOf(g)) {
+        try { for (const a of await albumAssets(st.album_id)) { here.add(a.id); if (!a.isImage) videos.push(a); } }
+        catch { complete = false; }
+      }
+      /* a video taken out of the gallery loses its copy, but only when every set was listed:
+         a failed listing must never look like "everything was removed" */
+      if (complete) for (const r of rows) if (!here.has(r.asset_id)) await dropboxDrop(r);
+      for (const a of videos) {
+        const r = rows.find(x => x.asset_id === a.id);
+        if (r && (r.status !== 'failed' || now - r.updated_at < 3600_000)) continue;   /* a failure is retried after an hour */
+        await dropboxPut(g, a);
+      }
+    }
+  } finally { dbxBusy = false; }
+}
+
+/* the address to send a client to for this video, or null to serve it from here */
+async function dropboxLink(galleryId, assetId) {
+  const dbx = dropbox();
+  if (!dbx.configured) return null;
+  const r = q.dbxGet.get(galleryId, assetId);
+  if (!r || r.status !== 'ready') return null;
+  try { return await dbx.tempLink(r.path); }
+  catch (e) { console.error('dropbox link failed:', r.path, e.message); return null; }
 }
 
 async function proxyImage(req, res, assetId, size, cache) {
@@ -2516,7 +2622,10 @@ async function adminRoutes(req, res, path, url) {
 
     if (req.method === 'GET') return json(res, 200, gallDto(g));
 
-    if (req.method === 'DELETE') { dropZips(g.id); dropCoverFile(g); q.gallDel.run(g.id); return json(res, 200, { ok: true }); }
+    if (req.method === 'DELETE') {
+      dropZips(g.id); dropCoverFile(g);
+      for (const r of q.dbxFor.all(g.id)) dropbox().remove(r.path).catch(e => console.error('dropbox delete failed:', r.path, e.message));
+      q.gallDel.run(g.id); return json(res, 200, { ok: true }); }
 
     if (req.method === 'PATCH') {
       const b = await readJson(req);
@@ -2726,6 +2835,16 @@ async function adminRoutes(req, res, path, url) {
     const kind = path.slice('/api/admin/connections/test/'.length);
     if (kind === 'immich') return json(res, 200, await checkImmich({ url: pick(b.url, c.immichUrl), key: pick(b.key, c.immichKey), writeKey: pick(b.writeKey, c.immichWriteKey) }));
     if (kind === 'email') return json(res, 200, await checkResend({ apiKey: pick(b.apiKey, c.resendKey), from: pick(b.from, c.mailFrom), replyTo: pick(b.replyTo, c.mailReplyTo), to: pick(b.to, c.adminEmail), base: c.resendBase }));
+    if (kind === 'dropbox') {
+      const t = createDropbox({ key: pick(b.key, c.dropboxKey), secret: pick(b.secret, c.dropboxSecret), refresh: pick(b.refresh, c.dropboxRefresh) });
+      if (!t.configured) return json(res, 200, { ok: false, checks: [{ id: 'dropbox', label: 'Dropbox', ok: false, detail: 'Enter the app key, the app secret and the refresh token first.' }] });
+      try {
+        const a = await t.account();
+        return json(res, 200, { ok: true, checks: [{ id: 'dropbox', label: 'Dropbox', ok: true, detail: `Connected as ${a.email || a.name?.display_name || 'your account'}` }] });
+      } catch (e) {
+        return json(res, 200, { ok: false, checks: [{ id: 'dropbox', label: 'Dropbox', ok: false, detail: e.message, fix: 'Check the key, secret and refresh token, and that the app has the files.content.write and files.content.read permissions.' }] });
+      }
+    }
     if (kind === 'public') return json(res, 200, await checkPublic({ url: pick(b.url, c.publicUrl), instance: INSTANCE }));
     if (kind === 'cloudflare') return json(res, 200, await checkCloudflare({ kind: b.kind === 'dns' ? 'dns' : 'pages', token: pick(b.token, b.kind === 'dns' ? c.cfToken : c.cfPagesToken),
       accountId: pick(b.accountId, c.cfAccountId), project: pick(b.project, c.cfPagesProject), domain: pick(b.domain, c.dnsDomain), host: pick(b.host, c.dnsHost) }));
@@ -3730,6 +3849,11 @@ if (DNS_HOSTS.length && CFG.dnsDomain && CFG.dnsHost) {
 } else console.log('dynamic dns: off');
 
 setInterval(() => runBackup(), 3600_000);
+
+/* Dropbox copies of gallery videos: look every ten minutes. A copy being uploaded when the server stopped is retried. */
+try { q.dbxStale.run(Date.now()); } catch {}
+setTimeout(() => dropboxSweep().catch(e => console.error('dropbox sweep:', e.message)), 120_000);
+setInterval(() => dropboxSweep().catch(e => console.error('dropbox sweep:', e.message)), 600_000);
 
 /* expiry reminders: shortly after boot, then hourly */
 setTimeout(() => expirySweep().catch(e => console.error('sweep:', e.message)), 60_000);

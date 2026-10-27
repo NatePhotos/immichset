@@ -16,6 +16,7 @@ COPY design ./design
 COPY setup ./setup
 COPY admin ./admin
 COPY health ./health
+COPY dropbox ./dropbox
 COPY mail ./mail
 COPY site ./site
 COPY zip ./zip

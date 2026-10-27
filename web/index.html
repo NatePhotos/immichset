@@ -1392,7 +1392,7 @@ function dlOne(size){
    downloader - a video can be a gigabyte, too much to hold in the page's memory as a blob. */
 function dlVideo(a){
   var el = document.createElement("a");
-  el.href = imgUrl(a.id, "original"); el.download = "";
+  el.href = imgUrl(a.id, "original") + "&via=dropbox"; el.download = "";
   document.body.appendChild(el); el.click(); el.remove();
   toast("Download started");
 }

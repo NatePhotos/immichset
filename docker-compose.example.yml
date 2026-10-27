@@ -89,6 +89,10 @@ services:
       # --- public website (optional) ---
       # Edit and publish a portfolio site from the admin panel's Website section.
       # Token: Cloudflare > Account API Tokens, permission Account > Cloudflare Pages > Edit.
+      DROPBOX_APP_KEY: ""            # optional: keep a private Dropbox copy of gallery videos for downloads
+      DROPBOX_APP_SECRET: ""
+      DROPBOX_REFRESH_TOKEN: ""
+      DROPBOX_KEEP_DAYS: "14"        # days after a gallery expires before its Dropbox copies are deleted
       CF_ACCOUNT_ID: ""
       CF_PAGES_TOKEN: ""
       CF_PAGES_PROJECT: ""           # the Pages project name, e.g. my-portfolio

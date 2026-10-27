@@ -108,6 +108,13 @@ export const SETTINGS = [
   S('zipSettleMin', 'ZIP_SETTLE_MINUTES', 'downloads', 'int', { def: 10, label: 'Wait after changes, minutes' }),
   S('zipStallSec', 'ZIP_STALL_SECONDS', 'downloads', 'int', { def: 120, label: 'Give up a stalled download after, seconds' }),
 
+  /* Dropbox: a private copy of each gallery video, for downloads */
+  S('dropboxKey', 'DROPBOX_APP_KEY', 'dropbox', 'str', { live: true, label: 'Dropbox app key', help: 'From the Dropbox app you made at dropbox.com/developers/apps (scoped access, app folder).' }),
+  S('dropboxSecret', 'DROPBOX_APP_SECRET', 'dropbox', 'str', { secret: true, live: true, label: 'Dropbox app secret' }),
+  S('dropboxRefresh', 'DROPBOX_REFRESH_TOKEN', 'dropbox', 'str', { secret: true, live: true, label: 'Dropbox refresh token', help: 'Lets this server keep using the app without you signing in again. Run the helper in docs/DROPBOX.md to get it.' }),
+  S('dropboxKeepDays', 'DROPBOX_KEEP_DAYS', 'dropbox', 'int', { def: 14, live: true, label: 'Delete the Dropbox copy this many days after the gallery expires',
+    help: 'The original always stays on your NAS. A gallery with no expiry date keeps its copies until it or the video is removed. 0 deletes them the day the gallery expires.' }),
+
   /* self-checks */
   S('healthMinutes', 'HEALTH_MINUTES', 'health', 'int', { def: 30, label: 'Self-check every, minutes' }),
   S('healthFirstSec', 'HEALTH_FIRST_SECONDS', 'health', 'int', { def: 120, hidden: true }),

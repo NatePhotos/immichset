@@ -2637,8 +2637,8 @@ addSection("contacts", "Contacts", IC.users, contactsView, function(){ CT.seq++;
 /* ---------- connections: the keys and settings, with a Test button for each ---------- */
 var CN = { seq:0, data:null };
 var CN_GROUPS = [["immich","Immich"],["email","Email"],["public","Public address"],["brand","Your business"],["admin","Sign-in"],["mailings","Mailings"],
-                 ["dns","Dynamic DNS"],["website","Website publishing"],["backups","Backups"],["downloads","Downloads"],["health","Self-checks"]];
-var CN_TESTS = { immich:["immich","Test Immich"], email:["email","Send a test email"], "public":["public","Test address"] };
+                 ["dns","Dynamic DNS"],["website","Website publishing"],["dropbox","Dropbox"],["backups","Backups"],["downloads","Downloads"],["health","Self-checks"]];
+var CN_TESTS = { immich:["immich","Test Immich"], email:["email","Send a test email"], "public":["public","Test address"], dropbox:["dropbox","Test Dropbox"] };
 function connectionsView(){
   var seq = ++CN.seq;
   chrome({ title:"Connections", summary:"Your keys and settings", section:"connections",
@@ -2714,6 +2714,7 @@ function paintConnections(){
       if (g === "immich"){ body = { url:vals.IMMICH_URL, key:vals.IMMICH_API_KEY, writeKey:vals.IMMICH_WRITE_KEY }; }
       else if (g === "email"){ body = { apiKey:vals.RESEND_API_KEY, from:vals.MAIL_FROM, replyTo:vals.MAIL_REPLY_TO }; }
       else if (g === "public"){ body = { url:vals.PUBLIC_URL }; }
+      else if (g === "dropbox"){ body = { key:vals.DROPBOX_APP_KEY, secret:vals.DROPBOX_APP_SECRET, refresh:vals.DROPBOX_REFRESH_TOKEN }; }
       var label = b.textContent; b.disabled = true; b.textContent = "Testing…";
       post("/connections/test/" + b.dataset.t, body).then(function(r){
         b.disabled = false; b.textContent = label;
