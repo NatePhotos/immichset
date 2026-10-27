@@ -1,7 +1,6 @@
 # Install everything (you don't have Immich yet)
 
-This installs Immich and immichset together, in one folder, with one command. About 30 minutes, most of it waiting for
-downloads. Read each step through before you do it.
+This installs Immich and immichset together, in one folder, with one command. Read each step through before you do it.
 
 <!-- VIDEO-GUIDE:start (delete everything from this line to VIDEO-GUIDE:end to remove the video) -->
 > **Prefer to watch?** The NAS install, both with and without a terminal, is shown step by step in a video. [Watch the install guide on YouTube](https://youtu.be/kf6_3rGQqVs). It covers installing only, not the web setup page afterwards.

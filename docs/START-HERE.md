@@ -19,9 +19,9 @@ Your photos ──► Immich (keeps them, makes thumbnails) ──► immichset 
 
 | You are... | Follow |
 |---|---|
-| **New to all of this**, or you don't have Immich | [Install everything](install/NEW.md) (about 30 minutes plus download time) |
+| **New to all of this**, or you don't have Immich | [Install everything](install/NEW.md) |
 | **You have a NAS and its Docker app, but no terminal** | [Install everything from your NAS's Docker app](install/NO-TERMINAL.md) (paste one file) |
-| **Already running Immich** | [Add immichset to your Immich](install/HAVE-IMMICH.md) (about 10 minutes) |
+| **Already running Immich** | [Add immichset to your Immich](install/HAVE-IMMICH.md) |
 | **Just curious**, want to try it on a laptop | [Install everything](install/NEW.md), on a Mac or Linux laptop, and skip the "online" part |
 
 Once it is running, the rest of the journey is the same for everyone:
@@ -47,7 +47,7 @@ These are rough estimates; prices change and vary by country.
 | A domain name for clients (needed for the best way to go online) | About $10–15 a year | 10 minutes |
 | Cloudflare (the tunnel that makes it reachable) | Free plan is enough. It may ask for a card to open the account; you are not charged. | 15 minutes |
 | Email sending (Resend) | Free up to 100 emails a day | 20 minutes (waiting for DNS) |
-| Installing everything | | 30–60 minutes (the first download is large) |
+| Installing everything | | |
 
 ## What your computer needs
 

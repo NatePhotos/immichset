@@ -2,7 +2,7 @@
 
 This is the path for a NAS with nothing installed but its Docker app (Synology Container Manager, Ugreen Docker, QNAP
 Container Station and similar). You paste one file. It installs **Immich** (where your photos live) and **immichset**
-(your client galleries) together. It takes about 15 minutes plus the download.
+(your client galleries) together.
 
 <!-- VIDEO-GUIDE:start (delete everything from this line to VIDEO-GUIDE:end to remove the video) -->
 > **Prefer to watch?** This path is shown step by step, without a terminal, in a video. [Watch the install guide on YouTube](https://youtu.be/kf6_3rGQqVs). It covers installing only, not the web setup page afterwards.
