@@ -35,9 +35,12 @@ say() { echo "  $*"; }
 [ -n "$BASE" ] || die "BASE is not set"
 [ -d "$DEST" ] || die "DEST does not exist or is not mounted: $DEST"
 
-FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/design-admin.js web/home.js web/admin-theme.css admin/overview.mjs admin/cover.mjs admin/logo.mjs
+FILES=(server.mjs web/admin.html web/index.html web/site-admin.js web/design-admin.js web/builder-admin.js web/home.js web/admin-theme.css admin/overview.mjs admin/cover.mjs admin/logo.mjs
        site/blake3.mjs site/store.mjs site/build.mjs site/publish.mjs site/watch.mjs site/routes.mjs
-       site/assets/site.css site/assets/site.js zip/writer.mjs zip/queue.mjs health/watchdog.mjs mail/blast.mjs
+       site/pages.mjs site/sanitize.mjs site/blocks/button.mjs site/blocks/columns.mjs site/blocks/common.mjs site/blocks/contact.mjs site/blocks/custom-html.mjs
+       site/blocks/embed.mjs site/blocks/gallery-cards.mjs site/blocks/heading.mjs site/blocks/hero.mjs site/blocks/image-text.mjs site/blocks/image.mjs site/blocks/photo-grid.mjs
+       site/blocks/registry.mjs site/blocks/rich-text.mjs site/blocks/spacer.mjs
+       site/assets/site.css site/assets/site.js site/assets/blocks.css site/assets/motion.js site/assets/edit-bridge.js zip/writer.mjs zip/queue.mjs health/watchdog.mjs mail/blast.mjs
        design/design.mjs design/css.mjs config/settings.mjs config/store.mjs config/request.mjs setup/claim.mjs setup/checks.mjs setup/provision.mjs setup/server.mjs web/setup.html)
 PREV="$DEST/.previous"
 

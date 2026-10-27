@@ -107,6 +107,18 @@ function queue(files, target, after, zone, multiple){
   list.forEach(function(f){ W.queue.push({ file:f, target:target, after:after, zone:zone }); });
   pump();
 }
+/* one photo: the web copies are made here, then sent with the original. The page editor uses this too. */
+function uploadOne(file, target){
+  return makeCopies(file).then(function(c){
+    var f = new FormData();
+    f.append("original", file, file.name);
+    f.append("grid", c.grid, "grid.jpg"); f.append("full", c.full, "full.jpg");
+    f.append("width", String(c.width)); f.append("height", String(c.height));
+    return fetch("/api/admin/site/photos?gallery=" + target, { method:"POST", credentials:"same-origin", body:f })
+      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || "Upload failed"); return j; }); });
+  }).then(function(j){ W.rev = Math.max(W.rev, j.rev); return j.photo; });
+}
+window.WebsiteKit = { upload: uploadOne };
 function pump(){
   if (W.uploading) return;
   var it = W.queue.shift();
@@ -114,17 +126,8 @@ function pump(){
   W.uploading = true;
   var left = W.queue.length;
   var st = $(it.zone + "st"); if (st) st.textContent = "Uploading " + it.file.name + (left ? " (" + left + " more)" : "") + "…";
-  makeCopies(it.file).then(function(c){
-    var f = new FormData();
-    f.append("original", it.file, it.file.name);
-    f.append("grid", c.grid, "grid.jpg"); f.append("full", c.full, "full.jpg");
-    f.append("width", String(c.width)); f.append("height", String(c.height));
-    return fetch("/api/admin/site/photos?gallery=" + it.target, { method:"POST", credentials:"same-origin", body:f })
-      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || "Upload failed"); return j; }); });
-  }).then(function(j){
-    W.rev = Math.max(W.rev, j.rev);
-    if (it.after) return it.after(j.photo);
-  }).catch(function(e){ toast(e.message); })
+  uploadOne(it.file, it.target).then(function(photo){ if (it.after) return it.after(photo); })
+    .catch(function(e){ toast(e.message); })
     .then(function(){ W.uploading = false; pump(); });
 }
 function dropZone(id, target, label, after, multiple){
@@ -166,6 +169,7 @@ function sortable(container, itemSel, onDone){
 
 /* ---------- shell ---------- */
 window.websiteView = function(screen, gid){
+  if (window.SiteBuilder && SiteBuilder.isOpen()) SiteBuilder.close();
   W.active = true;
   W.screen = screen || W.screen || "galleries"; W.gid = gid || null;
   wchrome();
@@ -303,47 +307,22 @@ function galleryScreen(g){
 }
 
 /* ---------- pages ---------- */
-function photoPicker(id, label, current, onSet){
-  var p = photoById(current);
-  var dz = dropZone(id, "pages", p ? "Replace photo" : "Choose a photo", function(ph){ return onSet(ph.id); }, false);
-  return { html: '<div class="field"><label>'+esc(label)+'</label>'
-                 + (p ? '<img class="wthumb" src="'+thumb(p)+'" alt="">' : "") + dz.html + '</div>', wire: dz.wire };
-}
+/* the pages themselves are edited in the full-screen page editor (builder-admin.js); what stays here is site-wide */
 function pagesScreen(){
   var s = W.state.settings;
-  /* the same save carries everything typed so far, so choosing a photo never wipes unsaved text */
-  function typed(){
-    return {
-      siteName: $("wsn").value,
-      about: { heading: $("wah").value, text: $("wat").value },
-      contact: { heading: $("wch").value, email: $("wce").value, phone: $("wcp").value },
-      footer: { copyright: $("wfc").value, instagram: $("wfi").value }
-    };
-  }
-  function setPhoto(key, field){ return function(photoId){
-    var patch = $("wsn") ? typed() : {};
-    patch[key] = patch[key] || {}; patch[key][field] = photoId;
-    return send("/settings", "PUT", patch).then(function(r){ if (r) W.dirtyForm = false; return r; }); }; }
-  var ap = photoPicker("wapic", "About photo", s.about.photoId, setPhoto("about", "photoId"));
-  var bp = photoPicker("wbpic", "Contact banner photo", s.contact.bannerPhotoId, setPhoto("contact", "bannerPhotoId"));
-  $("wbody").innerHTML = '<h3 class="sec">Site</h3>'
+  $("wbody").innerHTML = '<h3 class="sec">Pages</h3>'
+    + '<p class="hint" style="margin:0 0 12px">Home, About, Contact, a page for each gallery and any page you add are made of blocks you can add, arrange, style and animate, with a live preview. Changes stay a draft until you publish.</p>'
+    + '<button class="btn" id="wedit">Open the page editor</button>'
+    + '<h3 class="sec">Site</h3>'
     + '<div class="field"><label>Site name</label><input type="text" id="wsn" value="'+esc(s.siteName)+'"><div class="hint">Shown in browser tabs, and instead of a logo if you have none.</div></div>'
-    + '<h3 class="sec">About</h3>'
-    + '<div class="field"><label>Heading</label><input type="text" id="wah" value="'+esc(s.about.heading)+'"></div>'
-    + '<div class="field"><label>Text</label><textarea id="wat" rows="7">'+esc(s.about.text)+'</textarea><div class="hint">Leave an empty line between paragraphs.</div></div>'
-    + ap.html
-    + '<h3 class="sec">Contact</h3>'
-    + '<div class="field"><label>Heading</label><input type="text" id="wch" value="'+esc(s.contact.heading)+'"></div>'
-    + '<div class="row2"><div class="field"><label>Email</label><input type="email" id="wce" value="'+esc(s.contact.email)+'"></div>'
-    + '<div class="field"><label>Phone</label><input type="text" id="wcp" value="'+esc(s.contact.phone)+'"></div></div>'
-    + bp.html
     + '<h3 class="sec">Footer</h3>'
     + '<div class="row2"><div class="field"><label>Copyright line</label><input type="text" id="wfc" value="'+esc(s.footer.copyright)+'"></div>'
     + '<div class="field"><label>Instagram link</label><input type="url" id="wfi" value="'+esc(s.footer.instagram)+'" placeholder="https://www.instagram.com/…"></div></div>'
     + '<button class="btn" id="wsavep">Save changes</button>';
-  ap.wire(); bp.wire();
+  $("wedit").onclick = function(){ if (window.SiteBuilder){ W.active = false; SiteBuilder.open(); } };
   $("wsavep").onclick = function(){
-    send("/settings", "PUT", typed()).then(function(r){ if (r) changed("Saved"); });
+    send("/settings", "PUT", { siteName: $("wsn").value, footer: { copyright: $("wfc").value, instagram: $("wfi").value } })
+      .then(function(r){ if (r) changed("Saved"); });
   };
 }
 
@@ -409,5 +388,5 @@ function styleScreen(){
 }
 
 /* one entry in the heading's section menu; leaving stops background repaints */
-K.addSection("website", "Website", K.icons.globe, function(){ websiteView("galleries"); }, function(){ W.active = false; }, 30);
+K.addSection("website", "Website", K.icons.globe, function(){ websiteView("galleries"); }, function(){ W.active = false; if (window.SiteBuilder) SiteBuilder.close(); }, 30);
 })();
