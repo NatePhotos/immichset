@@ -2,6 +2,7 @@
    alerts - in the gallery app's own database, so the nightly backup covers it. */
 
 import { cleanPages } from './pages.mjs';
+import { cleanSite } from './sitewide.mjs';
 import { FONTS } from './theme.mjs';
 
 export { FONTS };
@@ -124,7 +125,28 @@ export function createStore(db, { now = Date.now } = {}) {
      revision so an editor's autosave is refused only when the pages changed elsewhere, not on every photo upload. */
   const pagesRev = () => Number(meta('_pagesRev') || 0);
   function getPages() { const raw = meta('s:pages'); return raw == null ? null : JSON.parse(raw); }
-  function setPages(pages) { setMeta('s:pages', pages == null ? null : JSON.stringify(pages)); setMeta('_pagesRev', pagesRev() + 1); }
+  /* The site (s:site) is part of the same draft: saved, discarded, published and restored with the pages, under the
+     same revision. null means never saved. A stored value that no longer passes the checks (corrupt, or from another
+     version) counts as unsaved, so the build never sees a malformed site. */
+  function getSite() {
+    const raw = meta('s:site');
+    if (raw == null) return null;
+    try { return cleanSite(JSON.parse(raw)).site || null; } catch { return null; }
+  }
+  function setDraft(pages, site) {
+    setMeta('s:pages', pages == null ? null : JSON.stringify(pages));
+    setMeta('s:site', site == null ? null : JSON.stringify(site));
+    setMeta('_pagesRev', pagesRev() + 1);
+  }
+  function checkSite(raw, prefix = '') {
+    let r;
+    try { r = cleanSite(raw); } catch (err) {
+      if (!(err instanceof TypeError)) throw err;
+      r = { errors: ['The header, footer, theme or wording has a value of the wrong kind'] };
+    }
+    if (!r.site) { const e = new InputError(prefix + r.errors[0]); e.errors = r.errors; throw e; }
+    return r.site;
+  }
 
   /* Row ids are never reused: saved pages keep pointing at photos and galleries by id after they are deleted, so a
      new row must not inherit a dead one's id. The high-water marks live beside the other meta values. */
@@ -189,10 +211,10 @@ export function createStore(db, { now = Date.now } = {}) {
     }
   }
   const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
-  const snapshot = () => JSON.stringify({ settings: getSettings(), galleries: q.galAll.all(), photos: q.phoAll.all(), pages: getPages() });
+  const snapshot = () => JSON.stringify({ settings: getSettings(), galleries: q.galAll.all(), photos: q.phoAll.all(), pages: getPages(), site: getSite() });
 
   return {
-    rev, meta, setMeta, getSettings, pagesRev, getPages,
+    rev, meta, setMeta, getSettings, pagesRev, getPages, getSite,
     gallery: id => galDto(q.galGet.get(id)),
     photo: id => phoDto(q.phoGet.get(id)),
 
@@ -204,6 +226,7 @@ export function createStore(db, { now = Date.now } = {}) {
         galleries: q.galAll.all().map(r => ({ ...galDto(r), photos: photos.filter(p => p.galleryId === r.id) })),
         pagePhotos: photos.filter(p => p.galleryId == null),
         pages: getPages(),
+        site: getSite(),
       };
     },
 
@@ -222,13 +245,21 @@ export function createStore(db, { now = Date.now } = {}) {
       });
     },
 
-    putPages(expectedPagesRev, raw) {
+    /* rawSite undefined keeps the saved site as it is (an editor opened before it could be edited sends pages only).
+       Pages and site are both checked before anything is written. */
+    putPages(expectedPagesRev, raw, rawSite) {
       if (expectedPagesRev != null && expectedPagesRev !== pagesRev()) throw new StaleError();
       const galleries = q.galAll.all().map(galDto);
       const photoIds = new Set(q.phoAll.all().map(p => p.id));
-      const { pages, errors } = cleanPages(raw, { galleries, photoIds });
+      let cleaned;
+      try { cleaned = cleanPages(raw, { galleries, photoIds }); } catch (err) {
+        if (!(err instanceof TypeError)) throw err;
+        cleaned = { errors: ['The pages have a value of the wrong kind'] };
+      }
+      const { pages, errors } = cleaned;
       if (!pages) { const e = new InputError(errors[0]); e.errors = errors; throw e; }
-      mutate(null, () => setPages(pages));
+      const site = rawSite === undefined ? getSite() : checkSite(rawSite);
+      mutate(null, () => setDraft(pages, site));
       return { pagesRev: pagesRev() };
     },
     /* back to the pages of a published version; with none, back to the pages made from the settings */
@@ -248,7 +279,9 @@ export function createStore(db, { now = Date.now } = {}) {
         }
         pages = r.pages;
       }
-      mutate(null, () => setPages(pages));
+      /* likewise the site; a version without one goes back to the one made from the settings */
+      const site = snap.site == null ? null : checkSite(snap.site, 'The published header, footer, theme or wording can’t be restored as they are: ');
+      mutate(null, () => setDraft(pages, site));
       return { pagesRev: pagesRev() };
     },
 
@@ -334,8 +367,9 @@ export function createStore(db, { now = Date.now } = {}) {
         }
         raiseSeq('photo'); raiseSeq('gallery');
         putSettings(snap.settings);
-        /* versions published before pages existed have no "pages": they go back to pages made from their settings */
-        setPages(Object.hasOwn(snap, 'pages') ? snap.pages : null);
+        /* versions published before pages existed have no "pages", and before the site could be edited no "site":
+           both go back to what is made from their settings */
+        setDraft(Object.hasOwn(snap, 'pages') ? snap.pages : null, Object.hasOwn(snap, 'site') ? snap.site : null);
       });
     },
     referencedFileKeys() {
