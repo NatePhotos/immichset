@@ -6,6 +6,8 @@ import { join, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createStore, StaleError, InputError, FONTS, DEFAULT_STYLE } from './store.mjs';
 import { build } from './build.mjs';
+import { migratePages, resolvePages, cleanPages } from './pages.mjs';
+import { listBlockTypes, STYLE_SCHEMA, MOTION_SCHEMA, STYLE_DEFAULTS, MOTION_DEFAULTS } from './blocks/registry.mjs';
 import { createPublisher } from './publish.mjs';
 import { createWatcher } from './watch.mjs';
 import { pagesHash } from './blake3.mjs';
@@ -23,6 +25,7 @@ const isSafeSvg = b => { const t = b.toString('utf8');
   return /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(t) && !SVG_BAD.some(re => re.test(t)); };
 const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 const FRESH_MS = 10 * 60_000;
+const PAGES_MAX = 2 * 1024 * 1024;     /* a whole site's pages in one save; larger is refused before parsing finishes */
 
 export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload, tellAdmin, fetch: f = globalThis.fetch }) {
   const dir = join(cfg.dataDir, 'site');
@@ -158,15 +161,43 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
     await watcher.resolve('restore', 'Website restore works again', ['The last restore went through.']);
   }
 
+  /* ---- pages ---- */
+  const pagesOf = st => resolvePages(st.pages ?? migratePages(st.settings, st.galleries), st.galleries);
+  const photoIdsOf = st => new Set([...st.pagePhotos, ...st.galleries.flatMap(g => g.photos)].map(p => p.id));
+  /* the editor's live preview: the real build of pages that are not saved yet, as one self-contained page */
+  function renderDraft(raw, slug) {
+    const st = store.getState();
+    const { pages, errors } = cleanPages(raw, { galleries: st.galleries, photoIds: photoIdsOf(st) });
+    if (!pages) { const e = new InputError(errors[0]); e.errors = errors; throw e; }
+    const { files } = build({ ...st, pages }, { base: '/admin/site-preview/', siteUrl: cfg.siteUrl, editor: true });
+    return { html: files.get(slug ? `${slug}/index.html` : 'index.html') ?? files.get('404.html') };
+  }
+  /* back to the pages the live site shows (or, never published, the pages made from the settings) */
+  function discardPages() {
+    const ok = store.listPublishes().filter(p => p.status === 'ok');
+    const live = ok.find(p => p.deploymentId === store.meta('liveDeploymentId')) || ok[0];
+    store.discardPages(live ? store.getPublish(live.id).snapshot : null);
+    return { pages: pagesOf(store.getState()), pagesRev: store.pagesRev() };
+  }
+
   /* ---- helpers ---- */
   const revOf = req => (req.headers['x-site-rev'] == null ? null : Number(req.headers['x-site-rev']));
+  const pagesRevOf = req => (req.headers['x-pages-rev'] == null ? null : Number(req.headers['x-pages-rev']));
+  async function readBody(req, res, limit) {
+    try { return await readJson(req, limit); }
+    catch (e) {
+      const big = /too large/.test(e.message);
+      json(res, big ? 413 : 400, { error: big ? 'That is too much to save at once' : 'That request was not valid' });
+      return null;
+    }
+  }
   async function respond(res, fn, okCode = 200) {
     try {
       const out = await fn();
       return json(res, okCode, { ...(out || {}), rev: store.rev() });
     } catch (e) {
       if (e instanceof StaleError) return json(res, 409, { error: 'stale' });
-      if (e instanceof InputError) return json(res, 400, { error: e.message });
+      if (e instanceof InputError) return json(res, 400, { error: e.message, ...(e.errors ? { errors: e.errors } : {}) });
       console.error('site:', e.message);
       return json(res, 502, { error: e.message });
     }
@@ -185,14 +216,29 @@ export function createSite({ db, cfg, json, readJson, adminOk, immich, canUpload
   async function admin(req, res, path, url) {
     const m = req.method;
     if (path === '/api/admin/site' && m === 'GET') {
+      const st = store.getState();
       return json(res, 200, {
-        state: store.getState(), rev: store.rev(), publishes: store.listPublishes(),
+        state: st, rev: store.rev(), publishes: store.listPublishes(),
         dirty: store.rev() !== Number(store.meta('publishedRev') ?? -1),
         canPublish: publisher.ready,
         missing: publisher.ready ? null : 'Publishing is not set up yet: add CF_ACCOUNT_ID, CF_PAGES_TOKEN and CF_PAGES_PROJECT to galleryapp.',
         liveDeploymentId: store.meta('liveDeploymentId'),
         fonts: FONTS, defaults: DEFAULT_STYLE, liveUrl: cfg.siteUrl || null, publishing: busy === 'publish',
+        pages: pagesOf(st), pagesRev: store.pagesRev(), pagesSaved: st.pages != null,
       });
+    }
+    if (path === '/api/admin/site/blocks' && m === 'GET') {
+      return json(res, 200, { types: listBlockTypes(), style: STYLE_SCHEMA, motion: MOTION_SCHEMA,
+                              styleDefaults: STYLE_DEFAULTS, motionDefaults: MOTION_DEFAULTS });
+    }
+    if (path === '/api/admin/site/pages' && m === 'PUT') {
+      const b = await readBody(req, res, PAGES_MAX); if (!b) return;
+      return respond(res, () => store.putPages(pagesRevOf(req), b.pages));
+    }
+    if (path === '/api/admin/site/pages/discard' && m === 'POST') return respond(res, () => discardPages());
+    if (path === '/api/admin/site/render' && m === 'POST') {
+      const b = await readBody(req, res, PAGES_MAX); if (!b) return;
+      return respond(res, () => renderDraft(b.pages, String(b.slug ?? '')));
     }
     if (path === '/api/admin/site/settings' && m === 'PUT') {
       const b = await readJson(req, 256 * 1024);
