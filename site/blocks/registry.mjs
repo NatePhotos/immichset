@@ -10,10 +10,14 @@ import * as heading from './heading.mjs';
 import * as richText from './rich-text.mjs';
 import * as button from './button.mjs';
 import * as spacer from './spacer.mjs';
+import * as columns from './columns.mjs';
+import * as contact from './contact.mjs';
+import * as embed from './embed.mjs';
+import * as customHtml from './custom-html.mjs';
 import { cleanStyle, cleanMotion, wrap, esc } from './common.mjs';
 export { STYLE_DEFAULTS, STYLE_SCHEMA, MOTION_DEFAULTS, MOTION_SCHEMA } from './common.mjs';
 
-const TYPES = [hero, heading, richText, image, imageText, galleryCards, photoGrid, button, spacer];
+const TYPES = [hero, heading, richText, image, imageText, galleryCards, photoGrid, button, spacer, columns, contact, embed, customHtml];
 export const BLOCK_TYPES = new Map(TYPES.map(t => [t.type, t]));
 const ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
