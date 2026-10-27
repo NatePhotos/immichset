@@ -140,9 +140,14 @@ function close(){
   B.frame = null;
   var app = document.getElementById("app"); if (app) app.classList.remove("dzfull");
 }
+/* false when the person chooses to stay because some edits are not saved; otherwise the editor is closed */
+function tryLeave(){
+  if (!B.open) return true;
+  if ((B.stale || B.bad) && !confirm("Some of your latest changes are not saved. Leave anyway and lose them?")) return false;
+  close(); return true;
+}
 function leave(){
-  if ((B.stale || B.bad) && !confirm("Some of your latest changes are not saved. Leave anyway and lose them?")) return;
-  close(); if (window.websiteView) window.websiteView("pages"); }
+  if (!tryLeave()) return; if (window.websiteView) window.websiteView("pages"); }
 function chrome(){
   K.chrome({ title: "Pages", crumb: "Website", back: leave, section: "website", full: true, actions: [
     { label: "Open preview", onClick: function(){ var p = page(); window.open("/admin/site-preview/" + (p && p.slug ? encodeURIComponent(p.slug) + "/" : ""), "_blank", "noopener"); } },
@@ -421,4 +426,5 @@ function deleteBlock(id){
 }
 
 window.SiteBuilder = { open: open, close: close, isOpen: isOpen };
+window.SiteBuilder.leave = tryLeave;
 })();

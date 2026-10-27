@@ -169,7 +169,7 @@ function sortable(container, itemSel, onDone){
 
 /* ---------- shell ---------- */
 window.websiteView = function(screen, gid){
-  if (window.SiteBuilder && SiteBuilder.isOpen()) SiteBuilder.close();
+  if (window.SiteBuilder && SiteBuilder.isOpen() && SiteBuilder.leave() === false) return;
   W.active = true;
   W.screen = screen || W.screen || "galleries"; W.gid = gid || null;
   wchrome();
@@ -388,5 +388,5 @@ function styleScreen(){
 }
 
 /* one entry in the heading's section menu; leaving stops background repaints */
-K.addSection("website", "Website", K.icons.globe, function(){ websiteView("galleries"); }, function(){ W.active = false; if (window.SiteBuilder) SiteBuilder.close(); }, 30);
+K.addSection("website", "Website", K.icons.globe, function(){ websiteView("galleries"); }, function(){ if (window.SiteBuilder && SiteBuilder.leave() === false) return false; W.active = false; }, 30);
 })();

@@ -9,7 +9,7 @@ test('the page editor is loaded by the panel and opened from the Website section
   assert.match(admin, /<script src="\/design-admin\.js"><\/script>\n<script src="\/builder-admin\.js"><\/script>/, 'after the Design editor, whose styles it shares');
   assert.match(builder, /window\.SiteBuilder = \{ open: open, close: close, isOpen: isOpen \}/);
   assert.match(siteAdmin, /W\.active = false; SiteBuilder\.open\(\)/, 'the Website screens stop repainting under the editor');
-  assert.match(siteAdmin, /if \(window\.SiteBuilder\) SiteBuilder\.close\(\)/, 'leaving the section closes the editor');
+  assert.match(siteAdmin, /if \(window\.SiteBuilder && SiteBuilder\.leave\(\) === false\) return false; W\.active = false;/, 'leaving the section closes the editor, unless the person stays to keep unsaved edits');
   assert.match(siteAdmin, /window\.WebsiteKit = \{ upload: uploadOne \}/);
 });
 
@@ -60,8 +60,18 @@ test('pages: add, rename, address, menu, SEO, duplicate, delete, reorder; home a
 test('unsaved work is guarded after a failed save, and the footer never claims to be saving when it cannot', () => {
   assert.match(builder, /function unsaved\(\)\{ return dirtyLocal\(\) \|\| B\.stale \|\| B\.bad; \}/);
   assert.match(builder, /if \(B\.open && unsaved\(\)\)/, 'closing the tab warns');
-  assert.match(builder, /function leave\(\)\{\s*if \(\(B\.stale \|\| B\.bad\) && !confirm\(/, 'Back asks first');
+  assert.match(builder, /function tryLeave\(\)\{\s*if \(!B\.open\) return true;\s*if \(\(B\.stale \|\| B\.bad\) && !confirm\(/, 'Back asks first');
   assert.match(builder, /if \(B\.stale \|\| B\.bad\) toast\("Some of your latest page changes were not saved"\)/, 'closing any other way says so');
   assert.match(builder, /if \(!B\.open && !r\.ok\) toast\(/, 'a save that fails after closing is reported');
   assert.match(builder, /if \(B\.stale\) setStatus\("Not saved: changed somewhere else", true\); else setStatus\("Saving…"\)/);
+});
+
+test('switching section can be cancelled, so unsaved edits are not lost by navigating', () => {
+  assert.match(admin, /if \(cur && cur\.leave && cur\.leave\(\) === false\) return;/, 'only an explicit false cancels');
+  assert.match(admin, /return cur\.leave\(\); \}/, 'leaveFor passes the answer on');
+  assert.match(admin, /if \(leaveFor\("galleries"\) === false\) return;/);
+  assert.match(admin, /function kitNewGallery\(\)\{ if \(leaveFor\("galleries"\) === false\) return;/);
+  assert.match(builder, /window\.SiteBuilder\.leave = tryLeave/);
+  assert.match(builder, /function tryLeave\(\)\{[^]*?!confirm\([^]*?return false;[^]*?close\(\); return true;/);
+  assert.match(siteAdmin, /SiteBuilder\.isOpen\(\) && SiteBuilder\.leave\(\) === false\) return;/, 'websiteView too');
 });

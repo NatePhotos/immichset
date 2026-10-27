@@ -650,7 +650,7 @@ function goSection(key){
   var cur = sectionOf(curSection), next = sectionOf(key);
   if (!next) return;
   if (key === curSection){ if (next.top) next.top(); return; }
-  if (cur && cur.leave) cur.leave();
+  if (cur && cur.leave && cur.leave() === false) return;   /* only an explicit false cancels the switch */
   next.open();
 }
 function navItem(s, cls){
@@ -2182,10 +2182,10 @@ function editorView(g){
 }
 /* the Website section (site-admin.js) is a separate classic script and uses these */
 /* another section jumping into a gallery or the editor leaves itself first, as goSection does */
-function leaveFor(key){ var cur = sectionOf(curSection); if (curSection !== key && cur && cur.leave) cur.leave(); }
+function leaveFor(key){ var cur = sectionOf(curSection); if (curSection !== key && cur && cur.leave) return cur.leave(); }
 function kitOpenGallery(id, tab, pane){
   var from = curSection;
-  leaveFor("galleries");
+  if (leaveFor("galleries") === false) return;
   if (S.galleries.some(function(x){ return x.id === id; })) return openGallery(id, tab, pane);
   api("/galleries").then(function(r){   /* made since the list was loaded */
     if (curSection !== from) return;      /* went somewhere else meanwhile */
@@ -2193,7 +2193,7 @@ function kitOpenGallery(id, tab, pane){
     openGallery(id, tab, pane);
   });
 }
-function kitNewGallery(){ leaveFor("galleries"); editorView(null); }
+function kitNewGallery(){ if (leaveFor("galleries") === false) return; editorView(null); }
 /* ---------- contacts: the addresses collected so far, ready for a mailing ---------- */
 var CT = { seq:0, gallery:"all", who:"all", hidden:false, list:[], sel:{} };
 function contactsQs(extra){
