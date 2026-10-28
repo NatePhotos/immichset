@@ -2613,7 +2613,7 @@ async function adminRoutes(req, res, path, url) {
   if (am) {
     const list = await albumAssets(am[1], { fresh: true });
     if (url.searchParams.get('sort') === 'oldest') list.reverse();
-    return json(res, 200, { assets: list.slice(0, 400) });
+    return json(res, 200, { assets: list });
   }
 
   const im = path.match(/^\/api\/admin\/img\/([0-9a-f-]{36})$/i);

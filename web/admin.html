@@ -458,8 +458,8 @@ function imgSrc(id,size){ return id ? "/api/admin/img/"+id+"?size="+(size||"thum
    to answer at once. A CSS background cannot say it failed, so each tile loads through an image that
    can be asked again, a little later each time, and the picture is put on the tile once it arrives. */
 function paintThumbs(root){
-  Array.prototype.forEach.call(root.querySelectorAll(".p[data-id]"), function(el){
-    if (el.dataset.t) return; el.dataset.t = "1";
+  var tiles = Array.prototype.filter.call(root.querySelectorAll(".p[data-id]"), function(el){ return !el.dataset.t; });
+  function load(el){
     var id = el.dataset.id, tries = 0;
     (function go(){
       var im = new Image(), src = imgSrc(id) + (tries ? "&r=" + tries : "");
@@ -467,7 +467,14 @@ function paintThumbs(root){
       im.onerror = function(){ if (++tries <= 8) setTimeout(go, Math.min(20000, 1500 * tries * tries)); };
       im.src = src;
     })();
-  });
+  }
+  tiles.forEach(function(el){ el.dataset.t = "1"; });
+  /* a big album is loaded as it is scrolled to, not all at once */
+  if (tiles.length <= 120 || !("IntersectionObserver" in window)) return tiles.forEach(load);
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if (e.isIntersecting){ io.unobserve(e.target); load(e.target); } });
+  }, { rootMargin: "800px 0px" });
+  tiles.forEach(function(el){ io.observe(el); });
 }
 /* every cover in the panel is cropped the same way the client's is, or the focal
    point is something you set blind and only see on the gallery itself */
@@ -1559,8 +1566,7 @@ function paneSet(g, setId){
       if (what === "menu") return popMenu(ev.target, actionsFor(id));
       openLb(idxOf(id));
     };
-    $("setN").textContent = list.length + " photo" + (list.length===1?"":"s")
-      + (list.length >= 400 ? " · showing the first 400" : "");
+    $("setN").textContent = list.length + " photo" + (list.length===1?"":"s");
     drawBar();
   }
 

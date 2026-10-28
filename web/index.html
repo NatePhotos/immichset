@@ -845,31 +845,55 @@ function render(){
   layout();
 }
 
-/* loads images as they approach the viewport, newest-visible first,
-   and holds off while the user is flinging through the gallery */
-var pending = [];
-var lastY = window.scrollY, lastT = Date.now(), fast = false, idleT;
+/* Loads images as they approach the viewport, nearest the middle of the screen first. Only a few are
+   in flight at once, so a photo scrolled to is never queued behind dozens already asked for further
+   up the page; and when scrolling stops, anything still loading well off screen is called back. */
+var pending = [], loading = [], inflight = 0, MAXF = 8;
+var lastY = window.scrollY, lastT = Date.now(), fast = false, idleT, dwellT;
 window.addEventListener("scroll", function(){
   var now = Date.now(), dy = Math.abs(window.scrollY - lastY), dt = Math.max(1, now - lastT);
   fast = (dy/dt) > 2.2;           /* px per ms */
   lastY = window.scrollY; lastT = now;
-  clearTimeout(idleT);
-  idleT = setTimeout(function(){ fast = false; drain(); }, 120);
+  clearTimeout(idleT); clearTimeout(dwellT);
+  idleT = setTimeout(function(){ fast = false; recall(); drain(); dwellT = setTimeout(prefetchDwelt, 350); }, 120);
 }, {passive:true});
 
-function drain(){
-  if (fast) return;
+function recall(){
   var vh = window.innerHeight;
-  pending.sort(function(a,b){
-    return Math.abs(a.getBoundingClientRect().top - vh/2) - Math.abs(b.getBoundingClientRect().top - vh/2);
+  loading.slice().forEach(function(im){
+    var r = im.getBoundingClientRect();
+    if (r.bottom > -vh && r.top < vh * 2) return;       /* near the screen: let it finish */
+    var src = im._src;
+    im.removeAttribute("src");                           /* the browser drops the request */
+    im.dataset.src = src;
+    if (im._release) im._release();
+    if (pending.indexOf(im) < 0) pending.push(im);
   });
-  var next = pending.splice(0, 12);
-  next.forEach(function(im){
+}
+
+function drain(){
+  if (fast || inflight >= MAXF || !pending.length) return;
+  var vh = window.innerHeight;
+  var keyed = pending.map(function(im){ return [Math.abs(im.getBoundingClientRect().top - vh/2), im]; });
+  keyed.sort(function(a,b){ return a[0] - b[0]; });
+  pending = keyed.map(function(k){ return k[1]; });
+  pending.splice(0, MAXF - inflight).forEach(function(im){
     if (!im.dataset.src) return;
     var r = im.getBoundingClientRect();
     im.fetchPriority = (r.bottom > 0 && r.top < vh) ? "high" : "low";
-    var src = im.dataset.src, tries = 0;
+    var src = im.dataset.src, tries = 0, freed = false;
+    im._src = src;
+    inflight++; loading.push(im);
+    function release(){
+      if (freed) return; freed = true;
+      inflight--; var i = loading.indexOf(im); if (i >= 0) loading.splice(i, 1);
+      im._release = null;
+      drain();
+    }
+    im._release = release;
+    im.addEventListener("load", release, {once:true});
     im.onerror = function(){
+      release();
       /* a photo added a moment ago may not have its thumbnail yet: ask again, a little later each time */
       if (++tries > 6) { im.onerror = null; return; }
       setTimeout(function(){ im.src = src + (src.indexOf("?") < 0 ? "?" : "&") + "r=" + tries; }, 1200 * tries * tries);
@@ -877,7 +901,25 @@ function drain(){
     im.src = src;
     delete im.dataset.src;
   });
-  if (pending.length) setTimeout(drain, 60);
+}
+
+/* Someone who stops on a photo is likely to open it: fetch the screen-size version of the few nearest
+   the middle now, so the lightbox opens on a finished picture. Quietly skipped on a data saver. */
+var warmed = {};
+function prefetchDwelt(){
+  if (inflight || (navigator.connection && navigator.connection.saveData)) return;
+  var vh = window.innerHeight, cells = [];
+  Array.prototype.forEach.call(document.querySelectorAll("#grid .cell"), function(c){
+    var r = c.getBoundingClientRect();
+    if (r.bottom > 0 && r.top < vh) cells.push([Math.abs((r.top + r.bottom) / 2 - vh / 2), c]);
+  });
+  cells.sort(function(a,b){ return a[0] - b[0]; });
+  cells.slice(0, 4).forEach(function(k){
+    var a = view[Number(k[1].dataset.idx)];
+    if (!a || !a.isImage || warmed[a.id]) return;
+    warmed[a.id] = true;
+    var im = new Image(); im.fetchPriority = "low"; im.src = imgUrl(a.id, "preview");
+  });
 }
 
 var io = new IntersectionObserver(function(entries){
