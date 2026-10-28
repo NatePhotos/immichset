@@ -272,6 +272,7 @@ for (const [table, col, decl] of [['email_templates', 'kind', "TEXT NOT NULL DEF
                                   ['galleries', 'sort_order', 'TEXT'],
                                   ['galleries', 'design', 'TEXT'],
                                   ['galleries', 'design_draft', 'TEXT'],
+                                  ['registrations', 'share_token', 'TEXT'],
                                   ['events', 'detail', 'TEXT']]) {
   const has = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
   if (!has) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); console.log(`migrated: ${table}.${col}`); }
@@ -319,6 +320,8 @@ const q = {
   regGet:     db.prepare('SELECT * FROM registrations WHERE gallery_id = ? AND email = ?'),
   regIns:     db.prepare('INSERT INTO registrations (gallery_id,email,name) VALUES (?,?,?)'),
   regById:    db.prepare('SELECT * FROM registrations WHERE id = ?'),
+  regByShare: db.prepare('SELECT * FROM registrations WHERE gallery_id = ? AND share_token = ?'),
+  regSetShare: db.prepare('UPDATE registrations SET share_token = ? WHERE id = ?'),
   regList:    db.prepare('SELECT * FROM registrations WHERE gallery_id = ? ORDER BY created_at DESC'),
   evIns:      db.prepare('INSERT INTO events (gallery_id,reg_id,type,asset_id,ip,ua,detail) VALUES (?,?,?,?,?,?,?)'),
   dlList:     db.prepare(`SELECT e.type, e.asset_id, e.detail, e.created_at, e.reg_id, r.email, r.name
@@ -1430,6 +1433,17 @@ function galleryDescriptor(gallery, base, gate) {
   };
 }
 
+/* the asset ids a request narrows the gallery to: ?picks=1 is the visitor's own favourites, ?picks=<token> is
+   a list a client shared by link (null when neither, empty when the token is unknown). It only chooses which
+   photos; the gate and the download setting still decide who may see or take them. */
+function pickedIds(gallery, who, url) {
+  const p = url.searchParams.get('picks');
+  if (!p) return null;
+  if (p === '1') return who.r ? new Set(q.favMine.all(who.r).map(x => x.asset_id)) : null;
+  const reg = /^[A-Za-z0-9_-]{16,64}$/.test(p) ? q.regByShare.get(gallery.id, p) : null;
+  return new Set(reg ? q.favMine.all(reg.id).map(x => x.asset_id) : []);
+}
+
 async function galleryRoutes(req, res, gallery, rest, url) {
   const sess = sessionFor(req, gallery);
 
@@ -1516,11 +1530,31 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     if (!sets.length) return json(res, 200, { setId: null, assets: [] });
     const asked = Number(url.searchParams.get('set') || 0);
     const set = sets.find(x => x.id === asked) || sets[0];
-    const list = await albumAssets(set.album_id);
+    let list = await albumAssets(set.album_id);
     /* Immich hands them back newest first; chronological is the other way round */
     if (gallery.sort_order === 'oldest') list.reverse();
+    const picked = pickedIds(gallery, who, url);
+    if (picked && url.searchParams.get('picks') !== '1') {
+      /* a shared list spans every set, so it is not cut by the one being viewed */
+      list = (await allAssets(gallery)).filter(a => picked.has(a.id));
+      if (gallery.sort_order === 'oldest') list.reverse();
+      log(gallery, who.r, 'shared_view', null, req);
+      return json(res, 200, { setId: null, assets: list });
+    }
     log(gallery, who.r, 'view', null, req);
     return json(res, 200, { setId: set.id, assets: list });
+  }
+
+  if (rest === '/favourites/share' && req.method === 'POST') {
+    if (!who.r) return json(res, 401, { error: 'who', gate: 'email' });
+    if (!q.favCount.get(who.r).n) return json(res, 400, { error: 'no_picks' });
+    let reg = q.regById.get(who.r);
+    if (!reg.share_token) {
+      q.regSetShare.run(randomBytes(18).toString('base64url'), reg.id);
+      reg = q.regById.get(who.r);
+    }
+    log(gallery, reg.id, 'share_picks', null, req);
+    return json(res, 200, { path: `/${encodeURIComponent(gallery.slug)}?picks=${reg.share_token}` });
   }
 
   if (rest === '/favourites') {
@@ -1569,7 +1603,8 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     if (!gallery.allow_download) return json(res, 403, { error: 'download_disabled' });
     const sets = setsOf(gallery);
     const only = sets.find(x => x.id === Number(url.searchParams.get('set') || 0));
-    const picks = url.searchParams.get('picks') === '1' && !!who.r;
+    const picked = pickedIds(gallery, who, url);
+    const picks = !!picked;
     const wantIds = url.searchParams.get('ids');
     const key = clientKey(gallery, who, req);
 
@@ -1582,8 +1617,7 @@ async function galleryRoutes(req, res, gallery, rest, url) {
     } else {
       let list = only ? await albumAssets(only.album_id) : await allAssets(gallery);
       if (picks) {
-        const mine = new Set(q.favMine.all(who.r).map(x => x.asset_id));
-        list = (await allAssets(gallery)).filter(a => mine.has(a.id));
+        list = (await allAssets(gallery)).filter(a => picked.has(a.id));
       } else if (wantIds) {
         /* a hand-picked batch: only ids this gallery actually holds */
         const want = new Set(String(wantIds).split(',').filter(x => /^[0-9a-f-]{36}$/i.test(x)));

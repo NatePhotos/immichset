@@ -132,6 +132,7 @@ header{position:sticky;top:0;z-index:30;background:var(--header-bg);backdrop-fil
 .hcount{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;margin-right:10px}
 .hbtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;padding:10px 8px;border:none;background:transparent;color:var(--page-fg);opacity:.72;font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;transition:opacity .22s}
 .hbtn:hover{opacity:1}
+.hbtn[hidden]{display:none}
 .hbtn svg{display:none;flex:0 0 auto}
 .hbtn[disabled]{opacity:.3;cursor:default}
 @media(max-width:700px){
@@ -321,6 +322,7 @@ footer a:hover{color:var(--page-fg)}
         <div class="hcount" id="hCount"></div>
       <button class="hbtn" id="btnFav" aria-label="Favourites" title="Favourites" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg><span>Favourites</span></button>
       <button class="hbtn" id="btnAll" aria-label="Download all" title="Download all"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg><span>Download All</span></button>
+      <button class="hbtn" hidden id="btnShareFav" aria-label="Share favourites" title="Share favourites"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path transform="translate(-1 -3) scale(.9)" d="M14 5l6 5.5-6 5.5v-3.2c-4.4 0-7.3 1.3-9.5 4.7.6-4.6 3.2-8.2 9.5-8.9z"/><path fill="currentColor" stroke-width="2" transform="translate(13.2 13.2) scale(.42)" d="M12 20l-1.3-1.2C6.1 14.7 3.2 12.1 3.2 8.9c0-2.5 2-4.4 4.5-4.4 1.4 0 2.8.7 3.6 1.8l.7.9.7-.9c.8-1.1 2.2-1.8 3.6-1.8 2.5 0 4.5 1.9 4.5 4.4 0 3.2-2.9 5.8-7.5 9.9z"/></svg><span>Share Favourites</span></button>
       <button class="hbtn" id="btnShare" aria-label="Share" title="Share"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5l6 5.5-6 5.5v-3.2c-4.4 0-7.3 1.3-9.5 4.7.6-4.6 3.2-8.2 9.5-8.9z"/></svg><span>Share</span></button>
       <button class="hbtn" id="btnSlides" aria-label="Slideshow" title="Slideshow"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5z"/></svg><span>Slideshow</span></button>
       </div>
@@ -476,6 +478,9 @@ var slug = null;
    preview routes (no gate, no activity log, never the originals). The marker only changes where data comes from. */
 var PREVIEW = (document.querySelector('meta[name="ims-preview"]') || {}).content || null;
 if (PREVIEW) slug = "preview";
+/* ?picks=<token> is somebody's shared list of favourites: the same page and the same gate, narrowed to those photos */
+var SHARED = (!PREVIEW && /^[A-Za-z0-9_-]{16,64}$/.test(new URLSearchParams(location.search).get("picks") || ""))
+  ? new URLSearchParams(location.search).get("picks") : null;
 var BASE = PREVIEW ? (API + "/admin/design-preview/" + PREVIEW) : (slug ? (API + "/g/" + encodeURIComponent(slug)) : null);
 if (PREVIEW) window.addEventListener("message", function(ev){
   /* only the admin page that framed this one, and only these two messages; the CSS is the server's own output */
@@ -692,11 +697,13 @@ function paintHearts(){
   });
 }
 function paintFavUi(){
+  if (SHARED) return;
   paintHearts();
   var n = favCount();
   var b = $("btnFav");
   if (b){
     b.hidden = n === 0 && !favOnly;
+    $("btnShareFav").hidden = !(favOnly && n > 0);
     b.classList.toggle("on", favOnly);
     var lab = b.querySelector("span");
     if (lab) lab.textContent = favOnly ? "All Photos" : ("Favourites \u00b7 " + n);
@@ -725,6 +732,7 @@ function drawSets(){
 
 function loadGallery(setId){
   var q = setId ? "/assets?set=" + encodeURIComponent(setId) : "/assets";
+  if (SHARED) q = "/assets?picks=" + SHARED;
   getJSON(q).then(function(r){
     if (r.status === 401) { var g = r.body && r.body.gate; return showGate(g || "email"); }
     if (!r.ok) return fail("Couldn't load photos","Something went wrong loading this gallery. Please try again shortly.");
@@ -822,6 +830,10 @@ function render(){
     full.src = coverSrc;
   } else { $("cover").classList.add("ready"); }
 
+  if (SHARED){
+    $("btnFav").style.display = "none";
+    $("lbFav").style.display = "none";
+  }
   if (link && link.allowDownload === false){
     $("btnAll").setAttribute("disabled","");
     $("lbDl").style.display = "none";
@@ -902,7 +914,7 @@ function makeCell(a, w, h){
   hb.setAttribute("aria-label", "Favourite");
   hb.innerHTML = HEART;
   hb.addEventListener("click", function(ev){ ev.stopPropagation(); toggleFav(a.id, hb); });
-  c.appendChild(hb);
+  if (!SHARED) c.appendChild(hb);
   c.addEventListener("click", function(){ open(Number(c.dataset.idx)); });
   return c;
 }
@@ -1301,13 +1313,15 @@ $("btnFav").addEventListener("click", function(){
 $("btnSlides").addEventListener("click", startSlides);
 
 /* ---------- share ---------- */
-function shareUrl(){ return location.origin + location.pathname; }
+var shareLink = null;   /* set while the dialog is sharing the client's favourites rather than the gallery */
+function shareUrl(){ return shareLink || (location.origin + location.pathname + (SHARED ? "?picks=" + SHARED : "")); }
 function shareOpen(){
+  $("shareT").textContent = shareLink ? "Share your favourites" : "Share";
   $("shareUrl").value = shareUrl();
   $("share").classList.add("on");
   $("shareCopy").textContent = "Copy";
 }
-function shareClose(){ $("share").classList.remove("on"); }
+function shareClose(){ $("share").classList.remove("on"); shareLink = null; }
 function copyText(t){
   if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t);
   return new Promise(function(ok, no){
@@ -1343,7 +1357,14 @@ function shareVia(via){
     else shareCopy("Link copied");
   }
 }
-$("btnShare").addEventListener("click", shareOpen);
+$("btnShare").addEventListener("click", function(){ shareLink = null; shareOpen(); });
+$("btnShareFav").addEventListener("click", function(){
+  postJSON("/favourites/share", {}).then(function(r){
+    if (!r.ok || !r.body || !r.body.path) return toast(r.body && r.body.error === "no_picks" ? "Heart a photo first" : "Couldn't make the link");
+    shareLink = location.origin + r.body.path;
+    shareOpen();
+  }).catch(function(){ toast("Couldn't make the link"); });
+});
 $("shareX").addEventListener("click", shareClose);
 $("share").addEventListener("click", function(e){ if (e.target === $("share")) shareClose(); });
 $("shareCopy").addEventListener("click", function(){ shareCopy(); });
@@ -1484,7 +1505,7 @@ function startLink(url){
 $("btnAll").addEventListener("click", function(){
   if (!view.length || $("btnAll").hasAttribute("disabled")) return;
   var sets = (link && link.sets) || [];
-  var qs = favOnly ? "?picks=1" : (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : "");
+  var qs = SHARED ? "?picks=" + SHARED : favOnly ? "?picks=1" : (sets.length > 1 && curSet ? "?set=" + encodeURIComponent(curSet) : "");
   var ticket = null, timer = null, stopped = false, tries = 0;
 
   function end(){ stopped = true; clearTimeout(timer); progClose(); }

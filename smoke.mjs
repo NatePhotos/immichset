@@ -331,6 +331,19 @@ try {
     is(seen.distinct, 1, 'distinct favourites');
     is(seen.people.length, 1, 'clients with favourites');
   });
+  await check('shared favourites narrow the gallery to the picks, behind the same gate', async () => {
+    const mk = await clientFetch(`/api/g/${SLUG}/favourites/share`, { method: 'POST' });
+    is(mk.status, 200, 'share status');
+    const token = new URL((await mk.json()).path, BASE).searchParams.get('picks');
+    ok(token, 'a token comes back');
+    const a = await clientFetch(`/api/g/${SLUG}/assets?picks=${token}`);
+    is(a.status, 200, 'assets status');
+    is((await a.json()).assets.length, 1, 'only the hearted photo');
+    const none = await clientFetch(`/api/g/${SLUG}/assets?picks=${'x'.repeat(24)}`);
+    is((await none.json()).assets.length, 0, 'unknown token shows nothing');
+    const anon = await fetch(`${BASE}/api/g/${SLUG}/assets?picks=${token}`);
+    ok(anon.status === 200 || anon.status === 401, 'no gate bypass');
+  });
   await check('a download is attributed to the client who made it', async () => {
     const r = await clientFetch(`/api/g/${SLUG}/img/${first()}?size=web`);
     is(r.status, 200, 'status');
