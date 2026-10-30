@@ -1073,6 +1073,12 @@ function close(){
   $("lb").classList.remove("vis");
   setTimeout(function(){ $("lb").classList.remove("on"); $("lbStage").innerHTML=""; document.body.classList.remove("lb-open"); }, 260);
   unlockScroll();
+  /* leave off at the photo last looked at, not where the lightbox was opened */
+  var cell = document.querySelector('#grid .cell[data-idx="' + cur + '"]');
+  if (cell){
+    var r = cell.getBoundingClientRect(), vh = window.innerHeight;
+    if (r.top < 0 || r.bottom > vh) window.scrollTo(0, Math.max(0, window.scrollY + r.top + r.height / 2 - vh / 2));
+  }
 }
 function show(){
   var a = view[cur]; if (!a) return;
